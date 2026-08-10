@@ -100,6 +100,8 @@ cccr mongodb services orders
 cccr analyze microservices path order-service shipping-service
 cccr analyze audit
 cccr analyze coverage
+cccr analyze request-reply
+cccr export request-reply --html request-reply.html
 ```
 
 Kafka summaries include the statically inferred Java payload types for each

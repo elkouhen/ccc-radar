@@ -159,6 +159,49 @@ def topic_summary(catalog: ArchitectureCatalog, topic: str) -> dict[str, object]
     }
 
 
+def request_reply_patterns(catalog: ArchitectureCatalog) -> dict[str, object]:
+    """Find Kafka request/reply candidates using the Strategy1 naming convention.
+
+    A reply topic named ``retour_<request-topic>`` is paired only when the
+    matching request topic is also indexed. This is a convention-based view,
+    not evidence of a runtime request/reply exchange.
+    """
+    topics = sorted({
+        endpoint.topic
+        for endpoint in catalog.endpoints
+        if endpoint.system == "kafka" and not endpoint.topic_dynamic
+    })
+    topics_by_folded_name = {topic.casefold(): topic for topic in topics}
+    pairs = {
+        (topics_by_folded_name[reply_topic[len("retour_"):].casefold()], reply_topic)
+        for reply_topic in topics
+        if reply_topic.casefold().startswith("retour_")
+        and reply_topic[len("retour_"):].casefold() in topics_by_folded_name
+    }
+    patterns = []
+    for request_topic, reply_topic in sorted(pairs, key=lambda pair: (pair[0], pair[1])):
+        request = topic_summary(catalog, request_topic)
+        reply = topic_summary(catalog, reply_topic)
+        patterns.append(
+            {
+                "request_topic": request_topic,
+                "reply_topic": reply_topic,
+                "request_producers": request["producers"],
+                "request_consumers": request["consumers"],
+                "reply_producers": reply["producers"],
+                "reply_consumers": reply["consumers"],
+            }
+        )
+    return {
+        "kind": "kafka_request_reply_patterns",
+        "strategy": "strategy1",
+        "detection": "topic naming convention: retour_<request-topic>",
+        "confidence": "conventional",
+        "count": len(patterns),
+        "patterns": patterns,
+    }
+
+
 def api_summary(catalog: ArchitectureCatalog, api: str) -> dict[str, object]:
     endpoints = [endpoint for endpoint in catalog.endpoints if endpoint.system == "rest" and endpoint.topic == api]
     return {
@@ -622,6 +665,25 @@ def _render_item(item: dict[str, object]) -> str:
             lines.append("  " + " -> ".join(node["name"] for node in path["nodes"]))
         if item["truncated"]:
             lines.append("  Résultats tronqués par la limite demandée.")
+        return "\n".join(lines)
+    if kind == "kafka_request_reply_patterns":
+        lines = [f"[patterns Kafka request/reply] {item['count']} détecté(s)"]
+        for pattern in item["patterns"]:
+            lines.append(f"  {pattern['request_topic']} -> {pattern['reply_topic']}")
+            lines.append(
+                "    requête: producteurs="
+                f"{', '.join(pattern['request_producers']) or '-'} "
+                "consommateurs="
+                f"{', '.join(pattern['request_consumers']) or '-'}"
+            )
+            lines.append(
+                "    réponse: producteurs="
+                f"{', '.join(pattern['reply_producers']) or '-'} "
+                "consommateurs="
+                f"{', '.join(pattern['reply_consumers']) or '-'}"
+            )
+        if not item["patterns"]:
+            lines.append("  Aucun couple correspondant à la convention retour_<request-topic>.")
         return "\n".join(lines)
     name = item.get("name") or item.get("topic") or item.get("module") or ""
     details = []

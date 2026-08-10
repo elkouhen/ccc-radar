@@ -21,6 +21,7 @@ from ccc_radar.architecture import (
     list_objects as list_architecture_objects,
     neighbors as architecture_neighbors,
     render_text as render_architecture_text,
+    request_reply_patterns,
     show_object as show_architecture_object,
     trace_topic_flows,
 )
@@ -47,6 +48,7 @@ from ccc_radar.render import (
     render_endpoints_text,
     render_graph_html,
     render_graph_likec4,
+    render_request_reply_html,
     render_graph_json,
     render_module_detail_json,
     render_module_detail_text,
@@ -388,7 +390,7 @@ def mongodb_cmd(
 
 def analyze_cmd(
     arguments: list[str] = typer.Argument(
-        None, help="Cible et requête : microservices, topics, apis, mongodb, audit ou coverage."
+        None, help="Cible et requête : microservices, topics, apis, mongodb, request-reply, audit ou coverage."
     ),
     root: Optional[Path] = typer.Option(  # noqa: UP007
         None, "--root", help="Répertoire parent indexé. Défaut : répertoire courant."
@@ -413,13 +415,14 @@ def analyze_cmd(
     `cccr analyze topics trace orders.created`
     `cccr analyze apis providers "POST /payments"`
     `cccr analyze mongodb services orders`
+    `cccr analyze request-reply`
     `cccr analyze audit`
     `cccr analyze coverage`
     """
     arguments = arguments or []
     if not arguments:
         typer.echo(
-            "Usage : `cccr analyze <microservices|topics|apis|mongodb|audit|coverage> ...`.", err=True
+            "Usage : `cccr analyze <microservices|topics|apis|mongodb|request-reply|audit|coverage> ...`.", err=True
         )
         raise typer.Exit(code=2)
     subject = arguments[0]
@@ -485,6 +488,9 @@ def analyze_cmd(
             raise typer.Exit(code=2)
         _emit_architecture(result, json_output)
         return
+    if subject in {"request-reply", "request_reply"} and len(arguments) == 1:
+        _render_request_reply_patterns(workspace_root, json_output)
+        return
     if subject == "audit" and len(arguments) == 1:
         _render_audit(workspace_root, workspace, json_output)
         return
@@ -492,7 +498,7 @@ def analyze_cmd(
         _render_inventory_coverage(workspace_root, json_output)
         return
     typer.echo(
-        "Usage : `cccr analyze <microservices|topics|apis|mongodb|audit|coverage> ...`.", err=True
+        "Usage : `cccr analyze <microservices|topics|apis|mongodb|request-reply|audit|coverage> ...`.", err=True
     )
     raise typer.Exit(code=2)
 
@@ -728,6 +734,15 @@ def analyze_coverage(
 ) -> None:
     """Mesurer les relations et intégrations non résolues de l'index."""
     _render_inventory_coverage(_option_root(root), _option_json(json_output))
+
+
+@analyze_app.command("request-reply")
+def analyze_request_reply(
+    root: Path | None = typer.Option(None, "--root", help="Répertoire indexé à analyser."),
+    json_output: bool = typer.Option(False, "--json"),
+) -> None:
+    """Lister les patterns Kafka request/reply détectés par Strategy1."""
+    _render_request_reply_patterns(_option_root(root), _option_json(json_output))
 
 
 @analyze_microservices_app.command("calls")
@@ -1383,6 +1398,25 @@ def export_modules_cmd(
     )
 
 
+@export_app.command(name="request-reply")
+def export_request_reply_cmd(
+    html: Path | None = typer.Option(None, "--html", help="Fichier HTML à produire."),
+) -> None:
+    """Exporter une vue dédiée des patterns Kafka request/reply Strategy1.
+
+    Exemple : `cccr export request-reply --html request-reply.html`.
+    """
+    if html is None:
+        typer.echo("`cccr export request-reply` requiert --html FILE.", err=True)
+        raise typer.Exit(code=2)
+    repo_root = Path.cwd()
+    _require_index(repo_root)
+    with Store(repo_root, readonly=True) as store:
+        result = request_reply_patterns(build_catalog(store.all_modules(), store.all_endpoints()))
+    html.write_text(render_request_reply_html(result), encoding="utf-8")
+    typer.echo(f"Vue request/reply écrite dans {html} ({result['count']} pattern(s)).")
+
+
 def _render_audit(repo_root: Path, workspace: Path | None, json_output: bool) -> None:
     inventory = load_architecture_inventory(repo_root, workspace)
     risks = assess_architecture(
@@ -1399,6 +1433,14 @@ def _render_inventory_coverage(repo_root: Path, json_output: bool) -> None:
     with Store(repo_root, readonly=True) as store:
         catalog = build_catalog(store.all_modules(), store.all_endpoints())
         result = inventory_coverage(catalog, store.all_architecture_relations())
+    _emit_architecture(result, json_output)
+
+
+def _render_request_reply_patterns(repo_root: Path, json_output: bool) -> None:
+    _require_index(repo_root)
+    with Store(repo_root, readonly=True) as store:
+        catalog = build_catalog(store.all_modules(), store.all_endpoints())
+        result = request_reply_patterns(catalog)
     _emit_architecture(result, json_output)
 
 

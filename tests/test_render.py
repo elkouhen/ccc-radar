@@ -12,6 +12,7 @@ from ccc_radar.render import (
     render_graph_html,
     render_graph_json,
     render_graph_likec4,
+    render_request_reply_html,
     render_graph_text,
     write_graph_d2,
 )
@@ -523,6 +524,25 @@ def test_render_graph_html_exposes_strategy1_request_reply_patterns() -> None:
     assert "Pattern request/reply Kafka" in document
     assert '"confidence": "conventional"' in document
     assert "Relation conventionnelle : Strategy1" in document
+
+
+def test_render_request_reply_html_renders_compact_convention_view() -> None:
+    document = render_request_reply_html({
+        "count": 1,
+        "patterns": [{
+            "request_topic": "orders.request",
+            "reply_topic": "retour_orders.request",
+            "request_producers": ["orders"],
+            "request_consumers": ["payments"],
+            "reply_producers": ["payments"],
+            "reply_consumers": ["orders"],
+        }],
+    })
+
+    assert "Kafka request/reply" in document
+    assert "orders.request" in document
+    assert "retour_orders.request" in document
+    assert "Request producers" in document
 
 
 def test_render_graph_html_embeds_maven_gradle_dependency_tree() -> None:

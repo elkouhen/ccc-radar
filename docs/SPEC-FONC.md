@@ -547,6 +547,19 @@ type, provenance, confidence, module, location and Java class when known. The
 current model covers module/microservice, API, Kafka topic, DTO, MongoDB
 collection, Java class, Java method and Spring property objects.
 
+### `cccr analyze request-reply [--json]`
+
+Lists Kafka request/reply candidates using the Strategy1 naming convention
+`retour_<request-topic>`.
+Each pair includes its request and reply topics plus their indexed producers and
+consumers. Both topics must be present in the index. This is a conventional
+architecture view, not proof of a runtime request/reply exchange.
+
+### `cccr export request-reply --html FILE`
+
+Writes a dedicated, standalone HTML view of the same convention-based Kafka
+request/reply candidates, including request/reply producers and consumers.
+
 ```json
 [
   {"name": "orders-api", "build_system": "maven", "version": "3.1.0",
@@ -614,6 +627,7 @@ the **Java/Spring microservices extension**.
 | `architecture_catalog(kind, action="list", name=None, target=None, workspace_root=None, max_depth=12, limit=50)` | `dict` | CLI-aligned catalog navigation for microservices, modules, topics, DTOs, HTTP APIs, MongoDB collections and endpoints | Covers list/show/neighbors plus the subject-specific actions documented by the tool |
 | `architecture_audit(workspace_root=None)` | `list[dict]` | Equivalent to `cccr analyze audit --json` | Distinct from `audit_dependency_graph`, which adds dependency-topology checks |
 | `architecture_coverage()` | `dict` | Equivalent to `cccr analyze coverage --json` | Current repository only, because it reads its persisted evidenced relations |
+| `list_request_reply_patterns()` | `dict` | Equivalent to `cccr analyze request-reply --json` | Current repository only; derives Kafka pairs from the Strategy1 `retour_` convention |
 
 `findings` uses a precision-first lexical match. Every query token must be
 present in the indexed rule, message, path, taxonomy, snippet or severity;

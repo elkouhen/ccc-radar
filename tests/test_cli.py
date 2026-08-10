@@ -113,6 +113,43 @@ def test_analyze_coverage_reports_unresolved_inventory_facts(
     assert coverage["unresolved"]["unmatched_http_calls"][0]["topic_or_api"] == "GET <dynamic>"
 
 
+def test_analyze_request_reply_lists_strategy1_naming_convention_pairs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    module = DiscoveredModule(
+        name="orders", path=tmp_path / "orders", build_system="maven", version=None,
+        kind="microservice", starts_application=True, configuration_example="",
+    )
+    endpoints = [
+        MessageEndpoint(
+            id="request-producer", role="produce", system="kafka", topic="orders.request",
+            topic_dynamic=False, source="code", framework="spring-kafka", path="orders/Request.java",
+            start_line=10, end_line=10, snippet="send", module="orders",
+        ),
+        MessageEndpoint(
+            id="reply-consumer", role="consume", system="kafka", topic="retour_orders.request",
+            topic_dynamic=False, source="code", framework="spring-kafka", path="orders/Reply.java",
+            start_line=20, end_line=20, snippet="listen", module="orders",
+        ),
+    ]
+    with Store(tmp_path) as store:
+        store.replace_modules([module])
+        store.replace_endpoints_for_files([endpoint.path for endpoint in endpoints], endpoints)
+
+    result = runner.invoke(app, ["analyze", "request-reply", "--json"])
+
+    assert result.exit_code == 0
+    patterns = json.loads(result.output)
+    assert patterns["count"] == 1
+    assert patterns["confidence"] == "conventional"
+    assert patterns["patterns"] == [{
+        "request_topic": "orders.request", "reply_topic": "retour_orders.request",
+        "request_producers": ["orders"], "request_consumers": [],
+        "reply_producers": [], "reply_consumers": ["orders"],
+    }]
+
+
 @pytest.mark.parametrize(
     "command",
     [

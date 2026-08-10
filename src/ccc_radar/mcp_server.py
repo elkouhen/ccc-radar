@@ -13,6 +13,7 @@ from ccc_radar.architecture import (
     list_objects,
     neighbors,
     normalize_kind,
+    request_reply_patterns,
     show_object,
     trace_topic_flows,
 )
@@ -182,6 +183,20 @@ def architecture_coverage() -> dict[str, object]:
     with Store(repo_root, readonly=True) as store:
         catalog = build_catalog(store.all_modules(), store.all_endpoints())
         return inventory_coverage(catalog, store.all_architecture_relations())
+
+
+@mcp.tool()
+def list_request_reply_patterns() -> dict[str, object]:
+    """List Kafka request/reply candidates from the Strategy1 topic convention.
+
+    Equivalent to `cccr analyze request-reply --json`. It matches
+    `retour_<request-topic>` only when the request topic is indexed too.
+    """
+    repo_root = _repo_root()
+    _require_index(repo_root)
+    with Store(repo_root, readonly=True) as store:
+        catalog = build_catalog(store.all_modules(), store.all_endpoints())
+        return request_reply_patterns(catalog)
 
 
 @mcp.tool()

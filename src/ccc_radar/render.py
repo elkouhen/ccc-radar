@@ -2,6 +2,7 @@ import json
 import os
 import re
 import subprocess
+from html import escape
 from pathlib import Path
 from typing import NotRequired, TypedDict
 from urllib.parse import quote
@@ -918,6 +919,41 @@ def _complexity_levels(relation_counts: dict[str, int]) -> dict[str, str]:
             levels[node_id] = level
         offset += group_size
     return levels
+
+
+def render_request_reply_html(result: dict[str, object]) -> str:
+    """Render a compact, standalone view of Strategy1 request/reply candidates."""
+    patterns = result["patterns"]
+    assert isinstance(patterns, list)
+    rows = []
+    for pattern in patterns:
+        assert isinstance(pattern, dict)
+        request_producers = ", ".join(pattern["request_producers"]) or "—"
+        request_consumers = ", ".join(pattern["request_consumers"]) or "—"
+        reply_producers = ", ".join(pattern["reply_producers"]) or "—"
+        reply_consumers = ", ".join(pattern["reply_consumers"]) or "—"
+        rows.append(
+            "<article class=\"pattern\">"
+            f"<div class=\"topic request\">{escape(str(pattern['request_topic']))}</div>"
+            "<div class=\"arrow\">→<small>retour_</small></div>"
+            f"<div class=\"topic reply\">{escape(str(pattern['reply_topic']))}</div>"
+            "<dl>"
+            f"<dt>Request producers</dt><dd>{escape(request_producers)}</dd>"
+            f"<dt>Request consumers</dt><dd>{escape(request_consumers)}</dd>"
+            f"<dt>Reply producers</dt><dd>{escape(reply_producers)}</dd>"
+            f"<dt>Reply consumers</dt><dd>{escape(reply_consumers)}</dd>"
+            "</dl></article>"
+        )
+    body = "\n".join(rows) or (
+        "<p class=\"empty\">No indexed topic pair matches the "
+        "<code>retour_&lt;request-topic&gt;</code> convention.</p>"
+    )
+    count = int(result["count"])
+    return f"""<!doctype html>
+<html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">
+<title>Kafka request/reply patterns</title><style>
+:root{{color-scheme:dark;font-family:Inter,ui-sans-serif,system-ui,sans-serif;background:#101827;color:#e6edf7}}body{{max-width:1120px;margin:0 auto;padding:42px 24px}}h1{{margin:0 0 8px}}.subtitle{{color:#9aabc4;margin:0 0 30px}}.badge{{display:inline-block;background:#5b21b6;color:#f5f3ff;border-radius:99px;padding:4px 10px;font-size:.85rem}}.pattern{{display:grid;grid-template-columns:minmax(180px,1fr) 72px minmax(180px,1fr);gap:16px;align-items:center;background:#172235;border:1px solid #263854;border-radius:14px;padding:20px;margin:14px 0}}.topic{{border-radius:9px;padding:13px;font-weight:650;overflow-wrap:anywhere}}.request{{background:#12375c;border:1px solid #2586d7}}.reply{{background:#402064;border:1px solid #9666e9}}.arrow{{text-align:center;font-size:2rem;color:#b794f6}}.arrow small{{display:block;font-size:.72rem;color:#9aabc4}}dl{{grid-column:1 / -1;display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:4px 0 0}}dt{{font-size:.76rem;color:#9aabc4}}dd{{margin:4px 0 0;overflow-wrap:anywhere}}.empty{{padding:24px;background:#172235;border-radius:12px}}@media(max-width:700px){{.pattern{{grid-template-columns:1fr}}.arrow{{transform:rotate(90deg)}}dl{{grid-template-columns:1fr 1fr}}}}
+</style></head><body><span class=\"badge\">Strategy1 convention</span><h1>Kafka request/reply</h1><p class=\"subtitle\">{count} candidate pair(s) detected from <code>retour_&lt;request-topic&gt;</code>. This view is convention-based, not a runtime trace.</p>{body}</body></html>"""
 
 
 def _likec4_complexity(
