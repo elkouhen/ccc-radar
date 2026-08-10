@@ -332,9 +332,16 @@ def build_graph(endpoints_by_service: dict[str, list[MessageEndpoint]]) -> list[
         seen.add(key)
         edges.append(GraphEdge("rest", call_service, service, call, None))
 
+    # A dynamic topic is evidence of a Kafka integration, not an identity.
+    # Matching two `<dynamic>` placeholders would fabricate an inter-service
+    # dependency, so only statically resolved topic names may form a Kafka edge.
     for produce_service, produce in produces:
+        if produce.topic_dynamic:
+            continue
         for consume_service, consume in consumes:
             if produce_service == consume_service:
+                continue
+            if consume.topic_dynamic:
                 continue
             if produce.topic == consume.topic:
                 key = ("kafka", produce_service, consume_service, produce.id, consume.id)

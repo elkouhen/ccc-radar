@@ -16,11 +16,12 @@ def make_endpoint(
     module: str | None = None,
     snippet: str = "",
     topic_dynamic: bool = False,
+    system: str = "rest",
 ) -> MessageEndpoint:
     return MessageEndpoint(
         id=compute_endpoint_id(role, topic, path, start_line, end_line),
         role=role,
-        system="rest",
+        system=system,
         topic=topic,
         topic_dynamic=topic_dynamic,
         source="code",
@@ -239,6 +240,25 @@ def test_unresolved_configured_client_domain_emits_warning() -> None:
     assert not [e for e in result["edges"] if e["kind"] == "calls_external"]
     assert any("ghost" in warning for warning in result["warnings"])
     assert result["summary"]["configured_client_relations"] == 0
+
+
+def test_dynamic_kafka_topics_remain_service_scoped_unresolved_evidence() -> None:
+    producer = make_endpoint(
+        "produce", "<dynamic>", "orders/Publisher.java", module="orders",
+        system="kafka", topic_dynamic=True,
+    )
+    consumer = make_endpoint(
+        "consume", "<dynamic>", "payments/Listener.java", module="payments",
+        system="kafka", topic_dynamic=True,
+    )
+
+    result = build_dependency_graph({"orders": [producer], "payments": [consumer]}, {})
+
+    dynamic_topics = [node for node in result["nodes"] if node["kind"] == "topic"]
+    assert {node["id"] for node in dynamic_topics} == {
+        "topic:orders:<dynamic>", "topic:payments:<dynamic>",
+    }
+    assert not any(edge["source"] == "topic:orders:<dynamic>" for edge in result["edges"])
 
 
 def test_external_rest_api_properties_client_creates_an_annotated_microservice() -> None:

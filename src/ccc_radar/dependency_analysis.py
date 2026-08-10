@@ -153,7 +153,11 @@ def build_dependency_graph(
 
     for service, endpoint in _effective_kafka_endpoints(endpoints_by_service):
         service_id = add_node("microservice", service)
-        topic_id = add_node("topic", endpoint.topic)
+        # Dynamic topic expressions are useful unresolved evidence but do not
+        # identify a shared Kafka topic. Scope their node to the declaring
+        # service so the dependency graph cannot accidentally connect two
+        # independent `<dynamic>` expressions.
+        topic_id = add_node("topic", endpoint.topic, service if endpoint.topic_dynamic else None)
         confidence = "medium" if endpoint.topic_dynamic else "high"
         if endpoint.role == "produce":
             label = f"publishes {endpoint.message_type}" if endpoint.message_type else "publishes"

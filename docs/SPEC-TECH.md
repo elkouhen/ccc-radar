@@ -550,6 +550,13 @@ The imperative producer extractor also recognizes `StreamBridge.send(topic,
 payload)` as `spring-cloud-stream` when a `StreamBridge` marker is present in
 the source file.
 
+**Dependency correctness**: two dynamic Kafka expressions (including the
+`<dynamic>` placeholder) are never matched together. The runtime interaction
+graph creates Kafka producer/consumer edges only for the same statically
+resolved topic. The typed dependency graph retains dynamic integrations as
+service-scoped unresolved topic nodes, so they remain visible without creating
+a fictional path between microservices.
+
 **Kafka Streams DSL (BACKLOG Q25)**: second Kafka integration style,
 distinct from the imperative `@KafkaListener`/`KafkaTemplate.send`
 idiom (`StreamsBuilder.stream(...)` = consume, `KStream.to(...)` = produce).

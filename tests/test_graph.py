@@ -306,6 +306,19 @@ def test_build_graph_keeps_configured_client_dependency_without_target_resource(
     assert all(not edge.from_endpoint.topic_dynamic for edge in edges)
 
 
+def test_build_graph_never_links_two_dynamic_kafka_topic_expressions() -> None:
+    producer = replace(
+        make_endpoint("produce", "<dynamic>", "orders/Publisher.java", system="kafka"),
+        topic_dynamic=True,
+    )
+    consumer = replace(
+        make_endpoint("consume", "<dynamic>", "payments/Listener.java", system="kafka"),
+        topic_dynamic=True,
+    )
+
+    assert build_graph({"orders": [producer], "payments": [consumer]}) == []
+
+
 def test_find_outbound_calls_in_consumers_flags_call_inside_handler_range() -> None:
     endpoints = [
         make_endpoint("consume", "orders.created", "app/OrderConsumer.java", 15, 25, system="kafka"),
