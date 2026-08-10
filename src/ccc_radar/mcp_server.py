@@ -7,6 +7,18 @@ from ccc_radar.code_search import search_code_with_findings as run_code_search
 from ccc_radar.coco_indexer import ENGINE_META_VALUE, index_repo_with_cocoindex
 from ccc_radar.config import ConfigError, load_config
 from ccc_radar.architecture_inventory import load_architecture_inventory
+from ccc_radar.architecture import (
+    analyze as analyze_architecture,
+    build_catalog,
+    find_microservice_paths,
+    inventory_coverage,
+    list_objects,
+    neighbors,
+    normalize_kind,
+    show_object,
+    trace_topic_flows,
+)
+from ccc_radar.audit import assess_architecture, render_audit_json
 from ccc_radar.dependency_analysis import (
     DependencyAuditResult,
     DependencyGraphResult,
@@ -80,6 +92,98 @@ def _dependency_inventory(
         _repo_root(), Path(workspace_root) if workspace_root else None
     )
     return inventory.endpoints_by_service, inventory.modules_by_service, inventory.warnings
+
+
+def _architecture_catalog(workspace_root: str | None):
+    inventory = load_architecture_inventory(
+        _repo_root(), Path(workspace_root) if workspace_root else None
+    )
+    return build_catalog(inventory.modules, inventory.endpoints), inventory
+
+
+@mcp.tool()
+def architecture_catalog(
+    kind: str,
+    action: str = "list",
+    name: str | None = None,
+    target: str | None = None,
+    workspace_root: str | None = None,
+    max_depth: int = 12,
+    limit: int = 50,
+) -> dict[str, object]:
+    """Navigation MCP équivalente aux commandes CLI `microservices`, `topics`,
+    `dtos`, `apis` et `mongodb`.
+
+    `kind` accepte microservice, module, topic, dto, api, collection ou endpoint.
+    `action` accepte list, show, neighbors; topic accepte aussi producers,
+    consumers, trace; dto producers/consumers; api providers/consumers;
+    collection services; microservice path, calls, dependencies, impact,
+    external-apis et orphan-integrations. `name` est l'objet concerné et
+    `target` est la destination d'un path.
+    """
+    normalized_kind = normalize_kind(kind)
+    if normalized_kind is None:
+        raise ValueError(f"Type d'architecture inconnu : {kind}")
+    catalog, _inventory = _architecture_catalog(workspace_root)
+    action = action.casefold()
+    if action == "list":
+        return {"kind": normalized_kind, "items": list_objects(catalog, normalized_kind)}
+    if action == "show":
+        if name is None:
+            raise ValueError("`name` est requis pour l'action show.")
+        result = show_object(catalog, normalized_kind, name)
+    elif action == "neighbors":
+        if name is None:
+            raise ValueError("`name` est requis pour l'action neighbors.")
+        result = neighbors(catalog, normalized_kind, name)
+    elif normalized_kind == "topic" and action in {"producers", "consumers"}:
+        result = analyze_architecture(catalog, action, name)
+    elif normalized_kind == "topic" and action == "trace" and name is not None:
+        result = trace_topic_flows(catalog, name, max_depth=max_depth, limit=limit)
+    elif normalized_kind == "dto" and action in {"producers", "consumers"} and name is not None:
+        summary = show_object(catalog, "dto", name)
+        key = "producer_microservices" if action == "producers" else "consumer_microservices"
+        result = {"query": action, "dto": name, "microservices": summary[key]} if summary else None
+    elif normalized_kind == "api" and action in {"providers", "consumers"} and name is not None:
+        summary = show_object(catalog, "api", name)
+        result = {"query": action, "api": name, "microservices": summary[action]} if summary else None
+    elif normalized_kind == "collection" and action == "services" and name is not None:
+        summary = show_object(catalog, "collection", name)
+        result = {"query": action, "collection": name, "microservices": summary["modules"]} if summary else None
+    elif normalized_kind == "microservice" and action == "path" and name and target:
+        result = find_microservice_paths(catalog, name, target, max_depth=max_depth, limit=limit)
+    elif normalized_kind == "microservice" and action in {"calls", "dependencies", "impact", "external-apis", "orphan-integrations"}:
+        result = analyze_architecture(catalog, action, name)
+    else:
+        raise ValueError(f"Action {action!r} incompatible avec {normalized_kind!r}.")
+    if result is None:
+        raise ValueError(f"Objet d'architecture introuvable : {name or target or kind}")
+    return result
+
+
+@mcp.tool()
+def architecture_audit(workspace_root: str | None = None) -> list[dict[str, object]]:
+    """Équivalent structuré de `cccr analyze audit [--workspace ROOT]`."""
+    inventory = load_architecture_inventory(
+        _repo_root(), Path(workspace_root) if workspace_root else None
+    )
+    risks = assess_architecture(
+        inventory.endpoints_by_service,
+        build_graph(inventory.endpoints_by_service),
+        modules=inventory.modules,
+        endpoints_by_module=inventory.endpoints_by_module,
+    )
+    return render_audit_json(risks)
+
+
+@mcp.tool()
+def architecture_coverage() -> dict[str, object]:
+    """Équivalent structuré de `cccr analyze coverage --json` du projet courant."""
+    repo_root = _repo_root()
+    _require_index(repo_root)
+    with Store(repo_root, readonly=True) as store:
+        catalog = build_catalog(store.all_modules(), store.all_endpoints())
+        return inventory_coverage(catalog, store.all_architecture_relations())
 
 
 @mcp.tool()

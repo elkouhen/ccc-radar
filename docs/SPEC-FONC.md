@@ -628,7 +628,7 @@ Restart the client after registering the server.
 
 ## 3. MCP server
 
-Eleven tools, each annotated with a concrete return type (`TypedDict` or
+Fourteen tools, each annotated with a concrete return type (`TypedDict` or
 dataclass, never `str`) — FastMCP derives an `outputSchema` from it field by
 field, exposed to MCP clients in addition to the usual JSON text
 (`structuredContent` *and* text `content`, both in the same response; a client
@@ -655,6 +655,9 @@ the **Java/Spring microservices extension**.
 | `list_workspace_services(root)` | `WorkspaceResult` | Maven/Gradle workspace discovery + endpoint/finding counts per runtime service — equivalent to CLI `cccr microservices` | Read-only (ADR-30) |
 | `list_modules()` | `list[ModuleSummary]` | Indexed module inventory | Includes persisted MongoDB and OpenAPI metadata |
 | `trace_message_flow(query, workspace_root=None)` | `FlowResultInfo` | Detailed MCP-only trace of a topic/route and its sites (producers/consumers, or servers/callers), including overlapping findings | No-match or ambiguous query → `ToolError` |
+| `architecture_catalog(kind, action="list", name=None, target=None, workspace_root=None, max_depth=12, limit=50)` | `dict` | CLI-aligned catalog navigation for microservices, modules, topics, DTOs, HTTP APIs, MongoDB collections and endpoints | Covers list/show/neighbors plus the subject-specific actions documented by the tool |
+| `architecture_audit(workspace_root=None)` | `list[dict]` | Equivalent to `cccr analyze audit --json` | Distinct from `audit_dependency_graph`, which adds dependency-topology checks |
+| `architecture_coverage()` | `dict` | Equivalent to `cccr analyze coverage --json` | Current repository only, because it reads its persisted evidenced relations |
 
 `search` adds to each code result:
 - `findings`: list of findings whose `path` is identical to the returned source
