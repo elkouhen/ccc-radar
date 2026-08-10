@@ -29,6 +29,19 @@
 | `code_search.py` | `search_code_with_findings`: code (via `ccc`) + findings annotation + degraded modes orchestration — implementation shared by CLI/MCP | `ccc_bridge`, `render`, `store` |
 | `cli.py` | Typer application for setup, findings, code search and architecture exploration (`microservices`, `topics`, `apis`, `mongodb`, `modules`, `analyze`, `export`) | all modules above |
 | `mcp_server.py` | `FastMCP` stdio server, tools | `code_search`, `config`, `dependency_analysis`, `embedder`, `graph`, `indexer`, `render`, `search`, `store`, `workspace` |
+| `architecture.py` | Catalog queries for microservices, topics, APIs, MongoDB and DTOs | `models`, `modules` |
+| `audit.py` | Architecture-risk assessment over the catalog | `architecture`, `models` |
+| `flow.py` | Topic/route tracing with finding overlap and optional vector fallback | `models`, `store` |
+| `doctor.py` | Validates architecture rule-pack configuration | `config` |
+| `java_parser.py` | Shared cached Tree-sitter Java parsing and syntax helpers | — |
+| `topic_expressions.py` | Parses Spring topic-property expressions | — |
+| `inventory_freshness.py` | Endpoint inventory signature and stale-index warning | — |
+| `paths.py` | Central `.cccr` state paths | — |
+
+For the maintainer-oriented ownership map and dependency rules, see
+[`ARCHITECTURE.md`](./ARCHITECTURE.md). Public cross-module dependencies use a
+named non-private function; helpers whose name starts with `_` stay local to
+their module.
 
 The overall dependency direction is broadly `cli.py`/`mcp_server.py` → business
 logic → `store.py`. The public embedder factory lives in `embedder.py` and is

@@ -601,7 +601,14 @@ def _discover_openapi_files(
     return tuple(sorted(contracts))
 
 
-def _has_rest_controllers(module_dir: Path, module_roots: set[Path]) -> tuple[str, ...]:
+def discover_rest_controllers(module_dir: Path, module_roots: set[Path]) -> tuple[str, ...]:
+    """Return controller source files belonging to a module.
+
+    This is deliberately a small public discovery API: both the module
+    inventory and endpoint scanner need the same definition of a REST-capable
+    module. Keeping it here prevents their source-set filtering from
+    diverging.
+    """
     """Détecte les classes Java annotées avec @RestController.
 
     Retourne une tuple de chaînes au format "ClassName (relative/path.java)".
@@ -649,7 +656,7 @@ def _enrich_module(
         blocking_points = ()
 
     # Détecter les contrôleurs REST
-    rest_controllers = _has_rest_controllers(module.path, module_roots)
+    rest_controllers = discover_rest_controllers(module.path, module_roots)
 
     openapi_files = _discover_openapi_files(
         module.path,
@@ -788,7 +795,7 @@ def discover_module_dependencies(root: Path, modules: list[DiscoveredModule]) ->
     dependencies: set[ModuleDependency] = set()
     for module in modules:
         if module.build_system == "maven":
-            targets = _maven_module_dependencies(module.path / "pom.xml")
+            targets = maven_module_dependencies(module.path / "pom.xml")
         else:
             targets = _gradle_module_dependencies(module.path)
         for target in targets:
@@ -798,7 +805,8 @@ def discover_module_dependencies(root: Path, modules: list[DiscoveredModule]) ->
     return sorted(dependencies)
 
 
-def _maven_module_dependencies(pom_path: Path) -> set[str]:
+def maven_module_dependencies(pom_path: Path) -> set[str]:
+    """Return direct Maven artifact dependencies declared by ``pom_path``."""
     try:
         root = ET.fromstring(pom_path.read_text(encoding="utf-8", errors="replace"))
     except (ET.ParseError, OSError):

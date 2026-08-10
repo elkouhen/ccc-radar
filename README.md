@@ -32,6 +32,7 @@ Implementation, storage, and MCP details are in
 - [`docs/SPEC-FONC.md`](docs/SPEC-FONC.md) — CLI, MCP, and error behavior.
 - [`docs/SPEC-TECH.md`](docs/SPEC-TECH.md) — modules, storage, and algorithms.
 - [`docs/ADR.md`](docs/ADR.md) — architecture decisions.
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — maintainer code map and ownership boundaries.
 - [`reports/README.md`](reports/README.md) — index of example reports.
 The Claude Code skill (`SKILL.md`) is distributed separately in
 [`ccc-radar-skill`](https://github.com/elkouhen/ccc-radar-skill); its behavior

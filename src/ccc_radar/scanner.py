@@ -19,7 +19,7 @@ from ccc_radar import java_parser
 from ccc_radar import maven as maven_module
 from ccc_radar.gradle import gradle_service_for_path
 from ccc_radar.maven import module_name_for_path
-from ccc_radar.modules import _has_rest_controllers, _maven_module_dependencies
+from ccc_radar.modules import discover_rest_controllers, maven_module_dependencies
 from ccc_radar.models import Finding, MessageEndpoint, compute_endpoint_id, compute_finding_id
 from ccc_radar.topic_expressions import spring_topic_reference
 
@@ -1216,7 +1216,7 @@ def _module_has_spring_data_rest(repo_root_str: str, rel_path: str) -> bool:
         current = current.parent
     if pom is None:
         return False
-    return any("data-rest" in dependency for dependency in _maven_module_dependencies(pom))
+    return any("data-rest" in dependency for dependency in maven_module_dependencies(pom))
 
 
 def _infer_spring_data_rest_endpoints(repo_root: Path, rel_path: str) -> list[MessageEndpoint]:
@@ -1348,7 +1348,7 @@ def _openapi_generator_contract_paths(repo_root_str: str) -> tuple[str, ...]:
     for pom_path in sorted(repo_root.rglob("pom.xml")):
         try:
             module_dir = pom_path.parent
-            if not _has_rest_controllers(module_dir, set()):
+            if not discover_rest_controllers(module_dir, set()):
                 continue
             for module_relative in maven_module.detect_openapi_generator_input_specs(pom_path):
                 contracts.add((module_dir / module_relative).relative_to(repo_root).as_posix())
@@ -1379,7 +1379,7 @@ def _infer_openapi_generator_endpoints(repo_root: Path, rel_path: str) -> list[M
     path = repo_root / rel_path
     if path.name != "pom.xml":
         return []
-    if not _has_rest_controllers(path.parent, set()):
+    if not discover_rest_controllers(path.parent, set()):
         return []
     endpoints: list[MessageEndpoint] = []
     for module_relative in maven_module.detect_openapi_generator_input_specs(path):

@@ -1,9 +1,8 @@
 """Tests pour la détection des contrôleurs REST et clients OpenAPI générés."""
 
 from pathlib import Path
-import pytest
 
-from ccc_radar.modules import _has_rest_controllers, discover_modules
+from ccc_radar.modules import discover_rest_controllers, discover_modules
 from ccc_radar.maven import (
     _has_openapi_generator_plugin,
     detect_openapi_generated_clients,
@@ -108,7 +107,7 @@ def _write_pom_with_openapi_spec(
     )
 
 
-def test_has_rest_controllers_with_restcontroller_annotation(tmp_path: Path) -> None:
+def test_discovers_rest_controllers_with_restcontroller_annotation(tmp_path: Path) -> None:
     """Teste la détection des classes @RestController."""
     # Créer la structure de répertoires
     java_dir = tmp_path / "src" / "main" / "java" / "com" / "example" / "controller"
@@ -119,14 +118,14 @@ def test_has_rest_controllers_with_restcontroller_annotation(tmp_path: Path) -> 
     _write_rest_controller(controller_file, "UserController")
 
     # Tester la détection
-    controllers = _has_rest_controllers(tmp_path, set())
+    controllers = discover_rest_controllers(tmp_path, set())
 
     assert len(controllers) == 1
     assert "UserController" in controllers[0]
     assert "UserController.java" in controllers[0]
 
 
-def test_has_rest_controllers_multiple_controllers(tmp_path: Path) -> None:
+def test_discovers_multiple_rest_controllers(tmp_path: Path) -> None:
     """Teste la détection de plusieurs contrôleurs REST."""
     java_dir = tmp_path / "src" / "main" / "java" / "com" / "example" / "controller"
     java_dir.mkdir(parents=True)
@@ -136,7 +135,7 @@ def test_has_rest_controllers_multiple_controllers(tmp_path: Path) -> None:
     _write_rest_controller(java_dir / "OrderController.java", "OrderController")
     _write_rest_controller(java_dir / "ProductController.java", "ProductController")
 
-    controllers = _has_rest_controllers(tmp_path, set())
+    controllers = discover_rest_controllers(tmp_path, set())
 
     assert len(controllers) == 3
     assert any("UserController" in ctrl for ctrl in controllers)
@@ -144,7 +143,7 @@ def test_has_rest_controllers_multiple_controllers(tmp_path: Path) -> None:
     assert any("ProductController" in ctrl for ctrl in controllers)
 
 
-def test_has_rest_controllers_without_restcontroller(tmp_path: Path) -> None:
+def test_does_not_discover_non_controller_sources(tmp_path: Path) -> None:
     """Teste qu'aucun contrôleur n'est détecté sans @RestController."""
     java_dir = tmp_path / "src" / "main" / "java" / "com" / "example"
     java_dir.mkdir(parents=True)
@@ -162,7 +161,7 @@ public class RegularClass {
 """
     )
 
-    controllers = _has_rest_controllers(tmp_path, set())
+    controllers = discover_rest_controllers(tmp_path, set())
 
     assert len(controllers) == 0
 
@@ -319,6 +318,6 @@ public class StandardController {}
 """
     )
 
-    controllers = _has_rest_controllers(tmp_path, set())
+    controllers = discover_rest_controllers(tmp_path, set())
     assert len(controllers) == 1
     assert any("StandardController" in ctrl for ctrl in controllers)
