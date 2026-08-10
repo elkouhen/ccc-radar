@@ -116,7 +116,7 @@ they are not cross-module entry points.
 | Semgrep invocation or endpoint extraction | `scanner.py` |
 | Maven/Gradle module facts or Java source inventory | `modules.py`, `maven.py`, `gradle.py` |
 | SQLite schema or queries | `store.py` |
-| JSON, terminal, HTML, Draw.io, or LikeC4 presentation | `render.py` |
+| JSON, terminal, HTML, D2, or LikeC4 presentation | `render.py` |
 
 ## Dependency rules
 
@@ -139,7 +139,7 @@ callers have migrated:
 
 1. `scanner.py`: Semgrep execution, Semgrep JSON conversion, REST extraction,
    Kafka extraction, and manifest import.
-2. `render.py`: findings output, graph JSON/text, graph HTML/Draw.io, LikeC4,
+2. `render.py`: findings output, graph JSON/text, graph HTML/D2, LikeC4,
    and module output.
 3. `cli.py`: setup/index/search commands, architecture navigation commands,
    export commands, and shared option/context helpers.

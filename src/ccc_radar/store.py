@@ -115,7 +115,7 @@ class Store:
         self,
         exc_type: type[BaseException] | None,
         exc: BaseException | None,
-        tb: TracebackType | None,
+        _tb: TracebackType | None,
     ) -> None:
         assert self._conn is not None
         if exc_type is None and not self._readonly:

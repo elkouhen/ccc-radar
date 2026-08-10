@@ -326,7 +326,7 @@ def find_microservice_paths(
     """Return bounded shortest directed paths between two microservices.
 
     Kafka is represented by an explicit topic node, preserving the same
-    topology as the interactive and Draw.io graph exports. REST stays a direct
+    topology as the interactive graph exports. REST stays a direct
     service-to-service relation labelled with the matched API.
     """
     if (

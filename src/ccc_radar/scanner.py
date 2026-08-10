@@ -478,10 +478,6 @@ def _find_first_literal(snippet: str) -> tuple[str | None, bool]:
 # des appels réels. Best-effort ligne par ligne (ADR-26, pas d'AST) : la
 # classe/interface la plus proche au-dessus de la méthode, avec ses lignes
 # d'annotation contiguës.
-_CLASS_DECL_RE = re.compile(
-    r"^\s*(?:public\s+|private\s+|protected\s+|final\s+|abstract\s+|static\s+)*"
-    r"(?:class|interface|record)\s+\w+"
-)
 _MAPPING_ANNOTATION_RE = re.compile(r"@\w+Mapping\s*(?:\(([^)]*)\))?")
 _MAPPING_ANNOTATION_BLOCK_RE = re.compile(r"@\w+Mapping\s*(?:\((.*?)\))?", re.DOTALL)
 _REQUEST_MAPPING_BLOCK_RE = re.compile(r"@RequestMapping\s*(?:\((.*?)\))?", re.DOTALL)
@@ -491,18 +487,7 @@ _REQUEST_PARAM_RE = re.compile(
 _NON_PATH_MAPPING_ATTRS = {"method", "produces", "consumes", "headers", "params", "name"}
 _FEIGN_CLIENT_RE = re.compile(r"@FeignClient\s*\((.*?)\)", re.DOTALL)
 _NAMED_STRING_ARG_RE = re.compile(r'(\w+)\s*=\s*"([^"]*)"')
-_REST_CLIENT_RECEIVER_RE = re.compile(r"\b([A-Za-z_]\w*)\s*\.")
 _OPENAPI_HTTP_METHODS = frozenset({"get", "post", "put", "patch", "delete", "head", "options"})
-_METHOD_DECL_RE = re.compile(
-    r"^\s*(?:public|private|protected)?(?:\s+static)?(?:\s+final)?[\w<>\[\], ?]+\s+\w+\s*\([^;]*\)\s*\{?"
-)
-_MESSAGE_BUILDER_ASSIGNMENT_RE = re.compile(
-    r"^\s*(?:[\w<>\[\], ?]+|var)\s+(\w+)\s*=\s*MessageBuilder\b"
-)
-_MESSAGE_BUILDER_TOPIC_RE = re.compile(
-    r"\.setHeader\(\s*(?:TOPIC|KafkaHeaders\.TOPIC)\s*,\s*([^)]+?)\s*\)"
-)
-_MESSAGE_SEND_RE = re.compile(r"\.send\(\s*(\w+)\s*\)\s*;")
 _REST_TEMPLATE_CALL_RE = re.compile(
     r"\.(getForObject|getForEntity|postForObject|postForEntity|put|delete)\(\s*(.+?)\s*(?:,|\))",
     re.DOTALL,
@@ -572,10 +557,6 @@ def _mapping_args_have_only_non_path_attrs(args: str) -> bool:
         if key not in _NON_PATH_MAPPING_ATTRS:
             return False
     return True
-
-
-def _mapping_args_have_http_method(args: str) -> bool:
-    return "method" in args
 
 
 def _next_declaration_line(lines: list[str], start_idx: int) -> int | None:
@@ -660,35 +641,6 @@ def _resolve_rest_path_expression(
     if not raw:
         return "<dynamic>", True
     return _normalize_rest_path(raw), dynamic
-
-
-def _annotation_block_before_declaration(lines: list[str], decl_idx: int) -> str:
-    block: list[str] = []
-    idx = decl_idx - 1
-    while idx >= 0:
-        stripped = lines[idx].strip()
-        if not stripped:
-            if block:
-                break
-            idx -= 1
-            continue
-        if stripped.startswith("@"):
-            block.append(lines[idx])
-            idx -= 1
-            continue
-        if block:
-            if _CLASS_DECL_RE.match(lines[idx]) or _METHOD_DECL_RE.match(lines[idx]):
-                break
-            block.append(lines[idx])
-            idx -= 1
-            continue
-        if stripped.endswith(("(", ")", ",")) or "=" in stripped:
-            block.append(lines[idx])
-            idx -= 1
-            continue
-        break
-    annotation_block = "\n".join(reversed(block))
-    return annotation_block if "@" in annotation_block else ""
 
 
 @lru_cache(maxsize=1024)
@@ -1048,10 +1000,6 @@ def _infer_generic_request_mapping_endpoints(repo_root: Path, rel_path: str) -> 
                     )
                 )
     return endpoints
-
-
-def _annotation_has_key(annotation, source: bytes, key: str) -> bool:
-    return java_parser.annotation_argument(annotation, source, key=key) is not None
 
 
 def _ast_mapping_value(
@@ -1974,72 +1922,6 @@ def _resolve_topic_expression(
         if resolved is not None:
             return resolved, False
     return "<dynamic>", True
-
-
-def _infer_message_builder_kafka_producers(
-    repo_root: Path, rel_path: str
-) -> list[MessageEndpoint]:
-    path = repo_root / rel_path
-    try:
-        lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
-    except OSError:
-        return []
-
-    builders: dict[str, list[tuple[str, bool, int, str]]] = {}
-    inferred: list[MessageEndpoint] = []
-    idx = 0
-    while idx < len(lines):
-        line = lines[idx]
-        match = _MESSAGE_BUILDER_ASSIGNMENT_RE.match(line)
-        if match is None:
-            idx += 1
-            continue
-        var_name = match.group(1)
-        block_lines = [line]
-        block_end = idx
-        while block_end + 1 < len(lines):
-            if ".build()" in lines[block_end]:
-                break
-            block_end += 1
-            block_lines.append(lines[block_end])
-            if ".build()" in lines[block_end]:
-                break
-        block_snippet = "\n".join(block_lines)
-        topic_match = _MESSAGE_BUILDER_TOPIC_RE.search(block_snippet)
-        if topic_match is not None:
-            topic, dynamic = _resolve_topic_expression(
-                topic_match.group(1), repo_root, rel_path
-            )
-            builders.setdefault(var_name, []).append((topic, dynamic, idx + 1, block_snippet))
-        idx = block_end + 1
-
-    for line_no, line in enumerate(lines, start=1):
-        send_match = _MESSAGE_SEND_RE.search(line)
-        if send_match is None:
-            continue
-        candidates = builders.get(send_match.group(1), [])
-        built_message = None
-        for candidate in candidates:
-            if candidate[2] <= line_no:
-                built_message = candidate
-        if built_message is None:
-            continue
-        topic, dynamic, _, builder_snippet = built_message
-        inferred.append(
-            _build_endpoint(
-                repo_root,
-                rel_path,
-                line_no,
-                line_no,
-                "produce",
-                "kafka",
-                topic,
-                "spring-kafka",
-                f"{builder_snippet}\n{line.strip()}",
-                topic_dynamic=dynamic,
-            )
-        )
-    return inferred
 
 
 def _invocation_receiver(source: bytes, object_node) -> str | None:
@@ -3110,128 +2992,6 @@ def discover_rest_api_client_configurations(repo_root: Path) -> None:
         )
         _rest_configuration_client_domains_in_module(str(repo_root), module_root_rel)
     _trace_rest_client("rest_client.search.workspace_end", modules=len(module_roots))
-
-
-def _client_type_for_receiver(source: bytes, root, receiver: str) -> str | None:
-    """Type déclaré du champ ou paramètre utilisé comme client injecté."""
-    for node in java_parser.walk(root):
-        if node.type == "formal_parameter":
-            name_node = node.child_by_field_name("name")
-            type_node = node.child_by_field_name("type")
-            if (
-                name_node is not None
-                and type_node is not None
-                and java_parser.node_text(source, name_node) == receiver
-            ):
-                return _simple_java_type(java_parser.node_text(source, type_node))
-            continue
-        if node.type != "field_declaration":
-            continue
-        for declarator in node.children:
-            if declarator.type != "variable_declarator":
-                continue
-            name_node = declarator.child_by_field_name("name")
-            if name_node is None or java_parser.node_text(source, name_node) != receiver:
-                continue
-            type_node = node.child_by_field_name("type")
-            if type_node is not None:
-                return _simple_java_type(java_parser.node_text(source, type_node))
-    return None
-
-
-def _rest_configuration_domain_hint(repo_root: Path, source_path: str, snippet: str) -> str | None:
-    """Domaine du client injecté au point d'appel, si non ambigu."""
-    microservice = _rest_client_microservice_name(
-        _rest_configuration_module_root(repo_root, source_path)
-    )
-    receiver_match = _REST_CLIENT_RECEIVER_RE.search(snippet)
-    if receiver_match is None:
-        _trace_rest_client(
-            "rest_client.search.call_ignored",
-            microservice=microservice,
-            path=source_path,
-            reason="no_receiver",
-        )
-        return None
-    receiver = receiver_match.group(1)
-    _trace_rest_client(
-        "rest_client.search.call",
-        microservice=microservice,
-        path=source_path,
-        receiver=receiver,
-    )
-    clients = _rest_configuration_client_domains(str(repo_root), source_path)
-    if not clients:
-        _trace_rest_client(
-            "rest_client.search.call_ignored",
-            microservice=microservice,
-            path=source_path,
-            receiver=receiver,
-            reason="no_configured_client",
-        )
-        return None
-    parsed = java_parser.parse_java(str(repo_root), source_path)
-    if parsed is None:
-        _trace_rest_client(
-            "rest_client.search.call_ignored",
-            microservice=microservice,
-            path=source_path,
-            receiver=receiver,
-            reason="caller_unparsed",
-        )
-        return None
-    source, root = parsed
-    client_type = _client_type_for_receiver(source, root, receiver)
-    candidates = [
-        domain
-        for declared_type, bean_name, domain in clients
-        if receiver == bean_name or (client_type is not None and client_type == declared_type)
-    ]
-    unique_domains = set(candidates)
-    _trace_rest_client(
-        "rest_client.search.match",
-        microservice=microservice,
-        path=source_path,
-        receiver=receiver,
-        api_type=client_type,
-        candidates=sorted(unique_domains),
-    )
-    if len(unique_domains) != 1:
-        _trace(
-            "rest_client.configuration.unresolved",
-            microservice=microservice,
-            path=source_path,
-            receiver=receiver,
-            api_type=client_type,
-            candidates=sorted(unique_domains),
-        )
-        _trace_rest_client(
-            "rest_client.search.unresolved",
-            microservice=microservice,
-            path=source_path,
-            receiver=receiver,
-            api_type=client_type,
-            candidates=sorted(unique_domains),
-        )
-        return None
-    domain = next(iter(unique_domains))
-    _trace(
-        "rest_client.configuration.resolved",
-        microservice=microservice,
-        path=source_path,
-        receiver=receiver,
-        api_type=client_type,
-        domain=domain,
-    )
-    _trace_rest_client(
-        "rest_client.search.resolved",
-        microservice=microservice,
-        path=source_path,
-        receiver=receiver,
-        api_type=client_type,
-        domain=domain,
-    )
-    return domain
 
 
 def _extract_kafka_topic(

@@ -452,10 +452,6 @@ prefix remains unknown).
 **`@FeignClient` base URL + `RestTemplate` calls (BACKLOG-9 N1)**:
 `parse_semgrep_endpoints` now specializes `framework=resttemplate` calls and
 Feign declarative bases.
-- `_annotation_block_before_declaration` re-reads the full annotation block
-  immediately above a class/interface, including multi-line annotations such as
-  `@FeignClient(\n ... \n)`, then `_class_base_path` looks first for
-  `@RequestMapping`, otherwise for `@FeignClient`.
 - For Feign, `url=` and `path=` are read through `_FEIGN_CLIENT_RE` and
   `_named_string_arg`, resolved by `_resolve_rest_path_expression` (literal,
   Spring placeholder, or same-file `@Value` field), then merged with the
@@ -603,16 +599,12 @@ present, otherwise `None` (never guessed).
 
 **Spring producer `send(Message<?>)` (BACKLOG-6 N1)**: `KafkaTemplate.send`
 may receive a `Message<?>` whose topic is stored in the header
-`TOPIC`/`KafkaHeaders.TOPIC`, therefore absent from the `.send(...)` call. For
-that case, `scanner.py` adds `_infer_message_builder_kafka_producers`:
-best-effort reading of the Java file, identifying a local assignment built from
-`MessageBuilder...setHeader(TOPIC | KafkaHeaders.TOPIC, expr)...build()`,
-memorizing `expr` per variable, then emitting a `produce` endpoint when a
-`.send(variable)` appears later. `_resolve_topic_expression` reuses the same
-resolution hierarchy as the rest of Kafka scanning (literal, Spring placeholder,
-`@Value` field in the same file, otherwise `<dynamic>`). The scope stays
-intentionally local to the file and variable so it covers the observed Spring
-idiom without introducing false positives from pseudo-global flow analysis.
+`TOPIC`/`KafkaHeaders.TOPIC`, therefore absent from the `.send(...)` call. The
+AST-based Kafka detector follows the local `MessageBuilder...setHeader(TOPIC |
+KafkaHeaders.TOPIC, expr)...build()` assignment in the enclosing method, then
+emits a `produce` endpoint for the later `.send(variable)`. Topic resolution
+uses the same hierarchy as the rest of Kafka scanning (literal, Spring
+placeholder, `@Value` field in the same file, otherwise `<dynamic>`).
 
 `scanner.clear_analysis_caches()` (BACKLOG-16 P2) clears all path-based
 best-effort analysis `lru_cache`s (`_java_qualified_name`,

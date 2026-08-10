@@ -1,8 +1,6 @@
 import json
-import math
 import re
 import subprocess
-import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import ccc_radar.render as render_module
@@ -11,7 +9,6 @@ from ccc_radar.models import Finding, MessageEndpoint, compute_endpoint_id
 from ccc_radar.modules import DiscoveredModule, ModuleDependency, MongoMethod
 from ccc_radar.render import (
     render_graph_d2,
-    render_graph_drawio,
     render_graph_html,
     render_graph_json,
     render_graph_likec4,
@@ -72,48 +69,6 @@ def _fixture() -> dict[str, list[MessageEndpoint]]:
             ),
         ],
     }
-
-
-def _vertex_for_service(root: ET.Element, service: str) -> ET.Element:
-    return next(
-        cell
-        for cell in root.iter("mxCell")
-        if cell.get("vertex") == "1" and f"<b>{service}</b>" in (cell.get("value") or "")
-    )
-
-
-def _vertex_rectangles(root: ET.Element) -> list[tuple[int, int, int, int]]:
-    rectangles = []
-    for cell in root.iter("mxCell"):
-        if cell.get("vertex") != "1":
-            continue
-        geometry = cell.find("mxGeometry")
-        assert geometry is not None
-        rectangles.append(
-            (
-                int(float(geometry.get("x", "0"))),
-                int(float(geometry.get("y", "0"))),
-                int(float(geometry.get("width", "0"))),
-                int(float(geometry.get("height", "0"))),
-            )
-        )
-    return rectangles
-
-
-def _rectangles_overlap(
-    first: tuple[int, int, int, int], second: tuple[int, int, int, int]
-) -> bool:
-    ax, ay, aw, ah = first
-    bx, by, bw, bh = second
-    return ax < bx + bw and bx < ax + aw and ay < by + bh and by < ay + ah
-
-
-def _rectangle_gap(first: tuple[int, int, int, int], second: tuple[int, int, int, int]) -> float:
-    ax, ay, aw, ah = first
-    bx, by, bw, bh = second
-    dx = max(bx - (ax + aw), ax - (bx + bw), 0)
-    dy = max(by - (ay + ah), ay - (by + bh), 0)
-    return math.hypot(dx, dy)
 
 
 def test_render_graph_json_expands_kafka_edges_via_topic_nodes() -> None:
@@ -232,9 +187,6 @@ def test_renderers_use_a_triangle_for_external_microservices() -> None:
     }
     edges = build_graph(endpoints_by_service)
 
-    drawio = ET.fromstring(render_graph_drawio(endpoints_by_service, edges))
-    assert "shape=triangle" in _vertex_for_service(drawio, "partner-catalog").get("style", "")
-
     d2 = render_graph_d2(endpoints_by_service, edges)
     assert "shape: triangle" in d2
 
@@ -284,36 +236,12 @@ def test_render_graph_text_formats_services_edges_and_outbound_calls() -> None:
     assert "[kafka_consume] orders.created --orders.created--> service-b" in text
 
 
-def test_render_graph_drawio_produces_well_formed_xml() -> None:
-    endpoints_by_service = _fixture()
-    edges = build_graph(endpoints_by_service)
-
-    document = render_graph_drawio(endpoints_by_service, edges)
-
-    root = ET.fromstring(document)
-    edge_cells = [cell for cell in root.iter("mxCell") if cell.get("edge") == "1"]
-
-    service_b_label = _vertex_for_service(root, "service-b").get("value") or ""
-    assert "1 ressource exposée" in service_b_label
-    assert "GET" in service_b_label
-    assert "/orders" in service_b_label
-    assert "Aucune ressource HTTP détectée" in (_vertex_for_service(root, "service-a").get("value") or "")
-    assert any(cell.get("value") == "<b>orders.created</b>" for cell in root.iter("mxCell"))
-    assert len(edge_cells) == 3
-    assert all("strokeColor=#d32f2f" not in cell.get("style", "") for cell in edge_cells)
 
 
 def test_graph_renderers_include_mongodb_collections_when_requested() -> None:
     endpoints_by_service = _fixture()
     edges = build_graph(endpoints_by_service)
     collections = {"service-a": ["orders"], "service-b": ["payments"]}
-
-    drawio = render_graph_drawio(endpoints_by_service, edges, collections)
-    root = ET.fromstring(drawio)
-    values = [cell.get("value") or "" for cell in root.iter("mxCell")]
-    assert any("orders" in value and "MongoDB" in value for value in values)
-    assert any("payments" in value and "MongoDB" in value for value in values)
-    assert sum(cell.get("value") == "stocke" for cell in root.iter("mxCell")) == 2
 
     document = render_graph_html(endpoints_by_service, edges, collections)
     assert '"id": "mongodb_collection:service-a:orders"' in document
@@ -850,243 +778,22 @@ def test_complexity_levels_split_all_nodes_into_balanced_terciles() -> None:
     assert levels["microservice:orders"] == "high"
 
 
-def test_render_graph_drawio_uses_distinct_readable_styles() -> None:
-    endpoints_by_service = _fixture()
-    edges = build_graph(endpoints_by_service)
-
-    root = ET.fromstring(render_graph_drawio(endpoints_by_service, edges, {"service-a": ["orders"]}))
-    model = next(root.iter("mxGraphModel"))
-    edge_styles = {
-        cell.get("value"): cell.get("style", "")
-        for cell in root.iter("mxCell")
-        if cell.get("edge") == "1"
-    }
-
-    assert model.get("page") == "0"
-    assert "shape=hexagon" in _vertex_for_service(root, "service-a").get("style", "")
-    assert "shape=ellipse" in next(
-        cell.get("style", "")
-        for cell in root.iter("mxCell")
-        if cell.get("value") == "<b>orders.created</b>"
-    )
-    assert "rounded=1" in next(
-        cell.get("style", "")
-        for cell in root.iter("mxCell")
-        if "MongoDB" in cell.get("value", "")
-    )
-    assert "strokeColor=#4f79b5" in edge_styles["service-b: GET /orders"]
-    assert "dashed=1" in edge_styles["orders.created"]
-    assert "labelBackgroundColor=#ffffff" in edge_styles["service-b: GET /orders"]
 
 
-def test_render_graph_drawio_deduplicates_duplicate_visual_edges() -> None:
-    endpoints_by_service = {
-        "service-a": [
-            make_endpoint(
-                "call", "GET /orders", "a/Client1.java", 5, 5, snippet="http://service-b"
-            ),
-            make_endpoint(
-                "call", "GET /orders", "a/Client2.java", 15, 15, snippet="http://service-b"
-            ),
-        ],
-        "service-b": [make_endpoint("serve", "GET /orders", "b/Controller.java", 10, 10)],
-    }
-    edges = build_graph(endpoints_by_service)
-
-    document = render_graph_drawio(endpoints_by_service, edges)
-
-    root = ET.fromstring(document)
-    edge_cells = [cell for cell in root.iter("mxCell") if cell.get("edge") == "1"]
-    assert len(edge_cells) == 1
-    assert edge_cells[0].get("value") == "service-b: GET /orders"
 
 
-def test_render_graph_drawio_bundles_parallel_relations_in_a_multiline_label() -> None:
-    endpoints_by_service = {
-        "service-a": [
-            make_endpoint(
-                "call", "GET /orders", "a/Client.java", 5, 5, snippet="http://service-b"
-            ),
-            make_endpoint(
-                "call", "POST /orders", "a/Client.java", 10, 10, snippet="http://service-b"
-            ),
-        ],
-        "service-b": [
-            make_endpoint("serve", "GET /orders", "b/Controller.java", 10, 10),
-            make_endpoint("serve", "POST /orders", "b/Controller.java", 20, 20),
-        ],
-    }
-
-    root = ET.fromstring(render_graph_drawio(endpoints_by_service, build_graph(endpoints_by_service)))
-    edge_cells = [cell for cell in root.iter("mxCell") if cell.get("edge") == "1"]
-
-    assert len(edge_cells) == 1
-    assert edge_cells[0].get("value") == "service-b: GET /orders<br/>service-b: POST /orders"
-    assert edge_cells[0].find("mxGeometry/Array[@as='points']") is None
 
 
-def test_render_graph_drawio_keeps_a_service_and_topic_with_the_same_name_distinct() -> None:
-    endpoints_by_service = {
-        "orders": [make_endpoint("produce", "orders", "orders/Producer.java", system="kafka")],
-        "notifications": [
-            make_endpoint("consume", "orders", "notifications/Consumer.java", system="kafka")
-        ],
-    }
-
-    root = ET.fromstring(render_graph_drawio(endpoints_by_service, build_graph(endpoints_by_service)))
-    vertices = [cell for cell in root.iter("mxCell") if cell.get("vertex") == "1"]
-    edges = [cell for cell in root.iter("mxCell") if cell.get("edge") == "1"]
-    vertex_ids = {cell.get("id") for cell in vertices}
-
-    assert len(vertices) == 3
-    assert len(vertex_ids) == 3
-    assert len(edges) == 2
-    assert all(cell.get("source") in vertex_ids and cell.get("target") in vertex_ids for cell in edges)
 
 
-def test_render_graph_drawio_uses_affinity_seed_positions_for_kafka_graph() -> None:
-    endpoints_by_service = {
-        "orders": [make_endpoint("produce", "orders.created", "orders/Producer.java", system="kafka")],
-        "payments": [
-            make_endpoint("consume", "orders.created", "payments/Listener.java", system="kafka"),
-            make_endpoint("produce", "payments.completed", "payments/Producer.java", system="kafka"),
-        ],
-        "notifications": [
-            make_endpoint("consume", "payments.completed", "notifications/Listener.java", system="kafka")
-        ],
-    }
-
-    root = ET.fromstring(render_graph_drawio(endpoints_by_service, build_graph(endpoints_by_service)))
-    rectangles = {}
-    for cell in root.iter("mxCell"):
-        if cell.get("vertex") != "1":
-            continue
-        geometry = cell.find("mxGeometry")
-        assert geometry is not None
-        value = cell.get("value") or ""
-        name = next(
-            name
-            for name in ("orders", "payments", "notifications", "orders.created", "payments.completed")
-            if f"<b>{name}</b>" in value
-        )
-        rectangles[name] = (
-            int(float(geometry.get("x", "0"))),
-            int(float(geometry.get("y", "0"))),
-            int(float(geometry.get("width", "0"))),
-            int(float(geometry.get("height", "0"))),
-        )
-
-    assert _rectangle_gap(rectangles["orders.created"], rectangles["orders"]) < 250
-    assert _rectangle_gap(rectangles["orders.created"], rectangles["payments"]) < 250
-    assert _rectangle_gap(rectangles["payments.completed"], rectangles["payments"]) < 250
-    assert _rectangle_gap(rectangles["payments.completed"], rectangles["notifications"]) < 250
 
 
-def test_render_graph_drawio_separates_overlapping_nodes() -> None:
-    endpoints_by_service = {
-        "orders": [
-            make_endpoint("produce", "orders.created", "orders/Producer.java", system="kafka"),
-            make_endpoint("produce", "orders.cancelled", "orders/CancelProducer.java", system="kafka"),
-        ],
-        "payments": [
-            make_endpoint("consume", "orders.created", "payments/Listener.java", system="kafka"),
-            make_endpoint("produce", "payments.completed", "payments/Producer.java", system="kafka"),
-        ],
-        "notifications": [
-            make_endpoint("consume", "payments.completed", "notifications/Listener.java", system="kafka"),
-            make_endpoint("consume", "orders.cancelled", "notifications/CancelListener.java", system="kafka"),
-        ],
-        "audit": [
-            make_endpoint("consume", "orders.created", "audit/OrdersListener.java", system="kafka"),
-            make_endpoint("consume", "payments.completed", "audit/PaymentsListener.java", system="kafka"),
-        ],
-    }
-
-    root = ET.fromstring(render_graph_drawio(endpoints_by_service, build_graph(endpoints_by_service)))
-    rectangles = _vertex_rectangles(root)
-
-    for i, first in enumerate(rectangles):
-        for second in rectangles[i + 1 :]:
-            assert not _rectangles_overlap(first, second)
 
 
-def test_render_graph_drawio_keeps_50_nodes_and_450_edges_separate() -> None:
-    endpoints_by_service: dict[str, list[MessageEndpoint]] = {}
-    for service_index in range(25):
-        service = f"service-{service_index:02d}"
-        endpoints = [
-            make_endpoint(
-                "produce",
-                f"topic-{service_index:02d}",
-                f"{service}/Producer.java",
-                system="kafka",
-            )
-        ]
-        endpoints.extend(
-            make_endpoint(
-                "consume",
-                f"topic-{(service_index + offset) % 25:02d}",
-                f"{service}/Listener{offset}.java",
-                start_line=offset,
-                end_line=offset,
-                system="kafka",
-            )
-            for offset in range(1, 18)
-        )
-        endpoints_by_service[service] = endpoints
-
-    document = render_graph_drawio(endpoints_by_service, build_graph(endpoints_by_service))
-    root = ET.fromstring(document)
-    rectangles = _vertex_rectangles(root)
-    edge_cells = [cell for cell in root.iter("mxCell") if cell.get("edge") == "1"]
-
-    assert len(rectangles) == 50
-    assert len(edge_cells) == 450
-    for i, first in enumerate(rectangles):
-        for second in rectangles[i + 1 :]:
-            assert not _rectangles_overlap(first, second)
 
 
-def test_render_graph_drawio_does_not_encode_layer_or_port_constraints() -> None:
-    endpoints_by_service = _fixture()
-    root = ET.fromstring(render_graph_drawio(endpoints_by_service, build_graph(endpoints_by_service)))
-
-    edge_cells = [cell for cell in root.iter("mxCell") if cell.get("edge") == "1"]
-
-    assert edge_cells
-    assert all("exitX=" not in (cell.get("style") or "") for cell in edge_cells)
-    assert all("exitY=" not in (cell.get("style") or "") for cell in edge_cells)
-    assert all("entryX=" not in (cell.get("style") or "") for cell in edge_cells)
-    assert all("entryY=" not in (cell.get("style") or "") for cell in edge_cells)
-    assert all(cell.find("mxGeometry/Array[@as='points']") is None for cell in edge_cells)
 
 
-def test_render_graph_drawio_seed_positions_keep_topic_near_related_services() -> None:
-    endpoints_by_service = _fixture()
-    root = ET.fromstring(render_graph_drawio(endpoints_by_service, build_graph(endpoints_by_service)))
-
-    service_a = _vertex_for_service(root, "service-a")
-    service_b = _vertex_for_service(root, "service-b")
-    service_a_position = (
-        int(float(service_a.find("mxGeometry").get("x", "0"))),  # type: ignore[union-attr]
-        int(float(service_a.find("mxGeometry").get("y", "0"))),  # type: ignore[union-attr]
-    )
-    service_b_position = (
-        int(float(service_b.find("mxGeometry").get("x", "0"))),  # type: ignore[union-attr]
-        int(float(service_b.find("mxGeometry").get("y", "0"))),  # type: ignore[union-attr]
-    )
-    topic = next(
-        cell
-        for cell in root.iter("mxCell")
-        if cell.get("vertex") == "1" and cell.get("value") == "<b>orders.created</b>"
-    )
-    topic_position = (
-        int(float(topic.find("mxGeometry").get("x", "0"))),  # type: ignore[union-attr]
-        int(float(topic.find("mxGeometry").get("y", "0"))),  # type: ignore[union-attr]
-    )
-
-    assert math.dist(topic_position, service_a_position) < 320
-    assert math.dist(topic_position, service_b_position) < 320
 
 
 def test_render_graph_d2_encodes_rest_and_kafka_edges() -> None:
@@ -1106,32 +813,6 @@ def test_render_graph_d2_encodes_rest_and_kafka_edges() -> None:
     assert "style.stroke-dash: 3" in rendered
 
 
-def test_render_graph_drawio_uses_deterministic_elastic_seed() -> None:
-    endpoints_by_service = _fixture()
-    edges = build_graph(endpoints_by_service)
-
-    document = render_graph_drawio(endpoints_by_service, edges)
-
-    root = ET.fromstring(document)
-    positions = {}
-    for cell in root.iter("mxCell"):
-        if cell.get("vertex") != "1":
-            continue
-        geometry = cell.find("mxGeometry")
-        assert geometry is not None
-        value = cell.get("value") or ""
-        name = next(
-            name
-            for name in ("service-a", "service-b", "orders.created")
-            if f"<b>{name}</b>" in value
-        )
-        positions[name] = (
-            int(float(geometry.get("x", "0"))),
-            int(float(geometry.get("y", "0"))),
-        )
-
-    assert render_graph_drawio(endpoints_by_service, edges) == document
-    assert len(set(positions.values())) == 3
 
 
 def test_write_graph_d2_writes_raw_source_when_extension_is_d2(tmp_path) -> None:
