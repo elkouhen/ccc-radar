@@ -6,6 +6,7 @@ import subprocess
 from html import escape as html_escape
 from pathlib import Path
 from typing import NotRequired, TypedDict
+from urllib.parse import quote
 
 import yaml
 from xml.sax.saxutils import quoteattr
@@ -812,6 +813,8 @@ def render_graph_html(
     build_modules: list[DiscoveredModule] | None = None,
     module_dependencies: list[ModuleDependency] | None = None,
     source_roots: list[Path] | None = None,
+    findings_by_service: dict[str, list[Finding]] | None = None,
+    vscode_wsl_distro: str | None = None,
 ) -> str:
     """Render an interactive Sigma.js graph as a self-contained HTML document.
 
@@ -897,6 +900,23 @@ def render_graph_html(
                     }
                     for path in openapi_files
                 ],
+                **(
+                    {
+                        "findings": [
+                            {
+                                "severity": finding.severity,
+                                "rule_id": finding.rule_id,
+                                "message": finding.message,
+                                "path": finding.path,
+                                "start_line": finding.start_line,
+                                "vscode_uri": _vscode_uri(finding, module, source_roots, vscode_wsl_distro),
+                            }
+                            for finding in findings_by_service.get(name, [])
+                        ]
+                    }
+                    if findings_by_service is not None
+                    else {}
+                ),
                 "label": "\n".join(label_lines),
                 "width": 320,
                 "height": 76 + 18 * max(1, len(shown_apis)),
@@ -2518,6 +2538,27 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
       section.append(heading, list);
       container.append(section);
     }
+    function appendFindings(findings, container = details) {
+      if (!findings.length) return;
+      const section = document.createElement("section");
+      section.className = "details-section";
+      const heading = document.createElement("h2");
+      heading.textContent = `Findings (${findings.length})`;
+      const list = document.createElement("ul");
+      findings.forEach(finding => {
+        const item = document.createElement("li");
+        const link = document.createElement("a");
+        link.href = finding.vscode_uri;
+        link.textContent = `[${finding.severity}] ${finding.rule_id} · ${finding.path}:${finding.start_line}`;
+        link.title = "Ouvrir ce finding dans VS Code";
+        const message = document.createElement("div");
+        message.textContent = finding.message;
+        item.append(link, message);
+        list.append(item);
+      });
+      section.append(heading, list);
+      container.append(section);
+    }
     function appendRelationList(title, links, currentId, labelForLink, container = details) {
       const seen = new Set();
       const entries = links.flatMap(link => {
@@ -3043,6 +3084,7 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
         const kafkaConsumptions = edges.filter(link => link.kind === "kafka" && link.target === id);
         const mongoCollections = edges.filter(link => link.kind === "mongodb" && link.source === id);
         const openApiContracts = node.openapi_contracts || [];
+        appendFindings(node.findings || []);
         const publishedApis = [
           ...openApiContracts.map(contract => ({
             label: `${contract.spec ? "Contrat OpenAPI" : "Contrat OpenAPI indisponible"} · ${contract.path}`,
@@ -3470,6 +3512,20 @@ def _rest_resources_served(endpoints: list[MessageEndpoint]) -> list[str]:
             if endpoint.system == "rest" and endpoint.role == "serve"
         }
     )
+
+
+def _vscode_uri(finding: Finding, module: DiscoveredModule | None, source_roots: list[Path] | None, wsl_distro: str | None = None) -> str:
+    """Build a VS Code deep link for an evidenced finding location."""
+    candidates = ([module.path] if module is not None else []) + list(source_roots or [])
+    for root in candidates:
+        candidate = (root / finding.path).resolve()
+        if candidate.is_file():
+            prefix = f"vscode://vscode-remote/wsl+{quote(wsl_distro, safe='')}" if wsl_distro else "vscode://file"
+            return f"{prefix}/{quote(candidate.as_posix(), safe='/')}:{finding.start_line}"
+    root = candidates[0] if candidates else Path.cwd()
+    candidate = (root / finding.path).resolve()
+    prefix = f"vscode://vscode-remote/wsl+{quote(wsl_distro, safe='')}" if wsl_distro else "vscode://file"
+    return f"{prefix}/{quote(candidate.as_posix(), safe='/')}:{finding.start_line}"
 
 
 def _openapi_contract_evidence_path(endpoint: MessageEndpoint) -> str:

@@ -1292,6 +1292,9 @@ def export_microservices_cmd(
     c4: Optional[Path] = typer.Option(
         None, "--c4", help="Répertoire du projet LikeC4 à produire."
     ),
+    vscode_wsl_distro: Optional[str] = typer.Option(
+        None, "--vscode-wsl-distro", help="Distribution WSL des liens VS Code."
+    ),
     json_output: bool = typer.Option(False, "--json", help="Écrire le graphe structuré sur la sortie standard."),
 ) -> None:
     """Exporter les dépendances microservices, topics Kafka et collections MongoDB.
@@ -1322,6 +1325,8 @@ def export_microservices_cmd(
                 graph_data.build_modules,
                 graph_data.module_dependencies,
                 graph_data.source_roots,
+                graph_data.findings_by_service,
+                vscode_wsl_distro,
             ),
             encoding="utf-8",
         )
