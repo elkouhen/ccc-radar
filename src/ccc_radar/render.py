@@ -2382,22 +2382,45 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
         const reply = nodeDataById.get(pattern.target);
         const requestProducers = graphData.links
           .filter(link => link.target === pattern.source && link.kind === "kafka")
-          .map(link => nodeDataById.get(link.source)?.name).filter(Boolean);
+          .map(link => link.source);
         const requestConsumers = graphData.links
           .filter(link => link.source === pattern.source && link.kind === "kafka")
-          .map(link => nodeDataById.get(link.target)?.name).filter(Boolean);
+          .map(link => link.target);
         const replyProducers = graphData.links
           .filter(link => link.target === pattern.target && link.kind === "kafka")
-          .map(link => nodeDataById.get(link.source)?.name).filter(Boolean);
+          .map(link => link.source);
         const replyConsumers = graphData.links
           .filter(link => link.source === pattern.target && link.kind === "kafka")
-          .map(link => nodeDataById.get(link.target)?.name).filter(Boolean);
-        requestReplyPatternsList.append(referenceItem(
-          `${request?.name || pattern.source} → ${reply?.name || pattern.target}`,
-          `requête +${[...new Set(requestProducers)].join(", ") || "—"} / -${[...new Set(requestConsumers)].join(", ") || "—"} · réponse +${[...new Set(replyProducers)].join(", ") || "—"} / -${[...new Set(replyConsumers)].join(", ") || "—"}`,
-          "Voir dans le graphe",
-          () => { setToolbarTab("graph"); selectNode(pattern.source); },
-        ));
+          .map(link => link.target);
+        const sources = requestProducers.filter(service => replyConsumers.includes(service));
+        const destinations = requestConsumers.filter(service => replyProducers.includes(service));
+        const servicePairs = [...new Set(sources)].flatMap(source =>
+          [...new Set(destinations)].filter(target => target !== source).map(target => ({ source, target }))
+        );
+        if (!servicePairs.length) {
+          requestReplyPatternsList.append(referenceItem(
+            `${request?.name || pattern.source} → ${reply?.name || pattern.target}`,
+            "Couple de topics détecté ; les services qui réalisent l’aller-retour ne sont pas tous indexés.",
+            "Voir dans le graphe",
+            () => { setToolbarTab("graph"); selectNode(pattern.source); },
+          ));
+          return;
+        }
+        servicePairs.forEach(({ source, target }) => {
+          const sourceName = nodeDataById.get(source)?.name || source;
+          const targetName = nodeDataById.get(target)?.name || target;
+          requestReplyPatternsList.append(referenceItem(
+            `${sourceName} ⇄ ${targetName}`,
+            `${request?.name || pattern.source} → ${reply?.name || pattern.target} · chemin le plus court entre services`,
+            "Voir le chemin",
+            () => {
+              setToolbarTab("graph");
+              const path = shortestPath(source, target);
+              if (path) showPath(path, [source, target]);
+              else setDetailsEmpty(`Aucun chemin orienté entre ${sourceName} et ${targetName}.`);
+            },
+          ));
+        });
       });
       requestReplyTitle.textContent = `Patterns request/reply Kafka (${patterns.length})`;
     }

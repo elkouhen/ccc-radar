@@ -562,7 +562,9 @@ request/reply candidates, including request/reply producers and consumers.
 
 The existing `cccr export microservices --html FILE` also provides a
 **Request/reply** tab. It lists the detected pairs and can focus each pair in
-the runtime graph.
+the runtime graph. When the same services publish the request/consume the
+reply and consume the request/publish the reply, it detects the service
+round-trip and displays the directed shortest path between those services.
 
 ```json
 [
