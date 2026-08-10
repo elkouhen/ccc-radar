@@ -77,7 +77,7 @@ ccc/findings use case. Rendering only serializes their results.
 ```mermaid
 flowchart TD
     CLI["CLI: microservices / export / analyze"] --> InventoryLoader
-    MCP["MCP: graph / dependency_graph / trace_message_flow"] --> InventoryLoader
+    MCP["MCP: graph / dependency_graph"] --> InventoryLoader
     InventoryLoader["architecture_inventory.load_architecture_inventory"] --> Store["Store (read-only)"]
     InventoryLoader --> Federation["workspace.discover_workspace_services + load_federation"]
     Store --> Catalog["architecture.build_catalog"]
