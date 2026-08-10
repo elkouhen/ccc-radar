@@ -2,8 +2,6 @@ from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
 
-from ccc_radar.code_search import CodeSearchResult
-from ccc_radar.code_search import search_code_with_findings as run_code_search
 from ccc_radar.coco_indexer import ENGINE_META_VALUE, index_repo_with_cocoindex
 from ccc_radar.config import ConfigError, load_config
 from ccc_radar.architecture_inventory import load_architecture_inventory
@@ -250,25 +248,6 @@ def reindex_findings() -> IndexReport:
 
 
 @mcp.tool()
-def search(
-    query: str,
-    limit: int = 5,
-    offset: int = 0,
-    lang: str | None = None,
-    path: str | None = None,
-    refresh: bool = False,
-) -> CodeSearchResult:
-    """Recherche sémantique de code (via ccc) annotée des findings Semgrep connus
-    sur chaque résultat. Le classement favorise légèrement les résultats
-    portant un finding connu (plus fortement si sévérité ERROR) par rapport à
-    un résultat de pertinence sémantique proche mais sans finding. Outil à
-    privilégier pour explorer du code en tenant compte de sa dette sécurité.
-    Même comportement, mêmes paramètres et même nom de tool que le `search`
-    de ccc ; équivalent à la CLI `cccr search`.
-    """
-    return run_code_search(
-        _repo_root(), query, limit=limit, offset=offset, lang=lang, path=path, refresh=refresh
-    )
 
 
 @mcp.tool()

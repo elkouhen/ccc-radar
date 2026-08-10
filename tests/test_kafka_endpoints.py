@@ -9,8 +9,8 @@ from ccc_radar.scanner import (
     infer_json_kafka_flow_graph_endpoints,
     infer_markdown_topic_manifest_endpoints,
     resolve_spring_property,
-    run_semgrep_endpoints,
 )
+from ccc_radar.semgrep import run_semgrep_endpoints
 from ccc_radar.models import MessageEndpoint, compute_endpoint_id
 
 # Le pack de règles vit dans le repo skill (ccc-radar-skill/skills/cccr/

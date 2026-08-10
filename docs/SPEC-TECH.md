@@ -11,7 +11,8 @@
 |---|---|---|
 | `models.py` | `Finding`, `MessageEndpoint` and evidenced `ArchitectureRelation` frozen facts | — |
 | `config.py` | `Config`, `load_config`, `init_config`, `ConfigError` | — |
-| `scanner.py` | Semgrep execution (subprocess) + JSON parsing → `Finding` ; `run_semgrep_endpoints`/`parse_semgrep_endpoints` + `infer_framework_endpoints` → `MessageEndpoint` (rules `metadata.category: endpoint-inventory`, REST K11 + Kafka K2, plus inferred Spring endpoints) ; `resolve_spring_property` (K2, ADR-28) ; `_module_for_path` (Maven then Gradle fallback, BACKLOG-15 H1) | `models`, `config`, `maven`, `gradle` |
+| `semgrep.py` | Optional Semgrep execution (subprocess) + JSON parsing → `Finding` and rule-based REST endpoint inventory | `config`, `models`, `scanner` |
+| `scanner.py` | Local Java/Spring/Kafka endpoint inference; `resolve_spring_property` (K2, ADR-28); `_module_for_path` (Maven then Gradle fallback, BACKLOG-15 H1) | `models`, `maven`, `gradle` |
 | `gradle.py` | Gradle service detection by Spring Boot `main()` class, complementing `maven.py` when no `pom.xml` exists (BACKLOG-15 H1, ADR-33): `gradle_service_for_path` | — |
 | `store.py` | `Store`: SQLite persistence (findings, endpoints, normalized architecture relations, module dependencies, experimental code chunks, file hashes, meta, embeddings) | `models` |
 | `relations.py` | Materializes typed, evidenced relations between modules/services, APIs, topics, DTOs, collections, classes, methods and Spring properties | `models`, `modules` |
@@ -22,13 +23,11 @@
 | `graph.py` | Interaction graph derived at query time (BACKLOG-10 K12): `build_graph`, `find_outbound_calls_in_consumers`, `group_endpoints_by_module`, `paths_match` | `models` |
 | `dependency_analysis.py` | Typed runtime dependency topology and static graph audit: Kafka/HTTP/MongoDB relations, event cycles and blocking calls | `audit`, `graph`, `models`, `modules` |
 | `workspace.py` | Read-only federation of a multi-service Maven/Gradle directory (BACKLOG-11 A2, ADR-30/33): `discover_workspace_services`, `load_federation` | `models`, `store` |
-| `render.py` | Text/JSON serialization of findings, architecture objects, graphs and workspace discovery; Sigma.js HTML and LikeC4 graph exports | `search`, `ccc_bridge`, `graph`, `workspace` |
+| `render.py` | Text/JSON serialization of findings, architecture objects, graphs and workspace discovery; Sigma.js HTML and LikeC4 graph exports | `search`, `graph`, `workspace` |
 | `configuration.py` | Extracts Spring property keys from production code and constructs a synthetic typed YAML template (`<secret>` for sensitive keys) | — |
 | `modules.py` | Discovers every Maven/Gradle module and creates its persisted audit snapshot for `cccr modules` | `configuration`, `maven`, `gradle` |
-| `ccc_bridge.py` | Bridge to the external `ccc` CLI: `search_code`, `annotate_with_findings` | `models`, `store` |
-| `code_search.py` | `search_code_with_findings`: code (via `ccc`) + findings annotation + degraded modes orchestration — implementation shared by CLI/MCP | `ccc_bridge`, `render`, `store` |
-| `cli.py` | Typer application for setup, findings, code search and architecture exploration (`microservices`, `topics`, `apis`, `mongodb`, `modules`, `analyze`, `export`) | all modules above |
-| `mcp_server.py` | `FastMCP` stdio server, tools | `code_search`, `config`, `dependency_analysis`, `embedder`, `graph`, `indexer`, `render`, `search`, `store`, `workspace` |
+| `cli.py` | Typer application for setup, findings and architecture exploration (`microservices`, `topics`, `apis`, `mongodb`, `modules`, `analyze`, `export`) | all modules above |
+| `mcp_server.py` | `FastMCP` stdio server, tools | `config`, `dependency_analysis`, `embedder`, `graph`, `indexer`, `render`, `search`, `store`, `workspace` |
 | `architecture.py` | Catalog queries for microservices, topics, APIs, MongoDB and DTOs | `models`, `modules` |
 | `architecture_inventory.py` | Single read-only loader normalizing current-index or workspace-federation facts for graph, audit, CLI and MCP queries | `graph`, `inventory_freshness`, `store`, `workspace` |
 | `audit.py` | Architecture-risk assessment over the catalog | `architecture`, `models` |
@@ -658,44 +657,7 @@ source file, returns lines `[start_line-before, end_line+after]` bounded to
 errors per finding: JSON exposes `context: null` and `context_error`, text
 rendering displays an unavailable context note.
 
-## 6. Code search + findings join
-
-`code_search.search_code_with_findings(repo_root, query, limit, offset, lang,
-path, refresh)` delegates code search exclusively to `ccc`. It forwards all
-parameters unchanged and then annotates those exact `CodeHit` values. It never
-over-fetches, substitutes a local code index, truncates again or re-ranks.
-
-### Bridge with `ccc` (`ccc_bridge.py`)
-
-`ccc search <query> --limit N [--offset N] [--lang L] [--path GLOB]
-[--refresh]` is called as a subprocess (`cwd=repo_root`) — optional flags are
-only added to the command line if they differ from their default value.
-**The `--json` flag does not exist** in the version of `ccc` installed
-(verified through `ccc search --help`) — see ADR-10. `search_code` therefore
-parses the real text format:
-```
---- Result 1 (score: 0.657) ---
-File: src/mailer.py:1-6 [python]
-<content...>
-```
-through two regexes anchored on that format (`_RESULT_HEADER_RE`,
-`_FILE_LINE_RE`), splitting blocks on `\n(?=--- Result \d+ )`. A block that does
-not match both regexes is silently ignored (no error — undetected format drift).
-
-Before spawning the subprocess, `search_code` now fails fast if `ccc` is absent
-from `PATH`, or if the fallback bridge would need a `ccc` index that is not
-ready (`.cocoindex_code/target_sqlite.db` missing while `refresh=False`). The
-subprocess is also bounded by `CCCR_CCC_SEARCH_TIMEOUT_S` (default 20 seconds):
-`ccc` missing from PATH, missing code index, timeout, or non-zero return code
-all surface as `CccUnavailable`, which the CLI/MCP layer turns into a blocking
-error instead of letting the caller hang until its own timeout.
-
-`annotate_with_findings(code_hits, store)`: load only findings for the paths
-present in `code_hits`, then join by strict path equality. This represents the
-source file/class returned by `ccc`, even when its excerpt only covers one
-method. Each joined finding is serialized without the `score` field.
-
-### 6bis. Interaction graph (`graph.py`, BACKLOG-10 K12)
+## 6. Interaction graph (`graph.py`, BACKLOG-10 K12)
 
 Pure functions, no SQLite write (ADR-27):
 
@@ -884,7 +846,7 @@ Consumed by `cccr search --json`, the MCP tool `search_findings`, and (without
 }
 ```
 This schema must not be modified without updating the serialization points in
-`render.py` and `ccc_bridge.py`.
+`render.py`.
 
 ## 8. Tests and fixtures
 

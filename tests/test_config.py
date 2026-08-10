@@ -69,6 +69,15 @@ def test_load_config_missing_rules_field_raises(tmp_path: Path) -> None:
         load_config(tmp_path)
 
 
+def test_load_config_allows_no_rules_when_semgrep_is_disabled(tmp_path: Path) -> None:
+    write_config(tmp_path, "semgrep_enabled: false\n")
+
+    config = load_config(tmp_path)
+
+    assert config.rules == []
+    assert config.semgrep_enabled is False
+
+
 def test_load_config_missing_file_raises(tmp_path: Path) -> None:
     with pytest.raises(ConfigError, match="cccr init"):
         load_config(tmp_path)

@@ -25,10 +25,11 @@ exclude:                # default: [".git/**", ".venv/**", "node_modules/**", ".
 min_severity: INFO      # INFO | WARNING | ERROR
 embedding_model: ~/models/jina-code-embeddings-1.5b
 semgrep_timeout_s: 120
+semgrep_enabled: true       # set false to disable all Semgrep execution
 ```
 
-- `rules` is the only required field; if it is missing or empty, that is a
-  blocking error (`ConfigError`).
+- `rules` is required when `semgrep_enabled` is `true`; with
+  `semgrep_enabled: false`, it may be omitted and no Semgrep process is run.
 - An invalid `min_severity` (outside `INFO`/`WARNING`/`ERROR`) is a blocking
   error.
 - All other fields have a default value applied silently when absent from the
@@ -91,8 +92,7 @@ Creates `.cccr/config.yml`.
 ### `cccr doctor [--json]`
 
 Read-only preflight for an architecture audit. It reports the availability of
-Semgrep (blocking), `ccc` (warning: only code search needs it), the
-configuration, the active `liveness`/`rest`/`kafka`/`kafka-security` packs,
+Semgrep (blocking), the configuration, the active `liveness`/`rest`/`kafka`/`kafka-security` packs,
 the local embedding model and index state. Any blocking check yields exit code
 2. A graph must not be interpreted as a full REST/Kafka topology while the
 architecture-pack check fails.
@@ -112,8 +112,7 @@ empty; it is never inferred from a topic name or serializer configuration.
   historical incremental engine.
 - `--engine cocoindex`: experimental mode inspired by CocoIndex. It indexes the
   same findings and endpoints, and adds a local code chunk index
-  (`code_chunks` + embeddings) later used by `cccr search` before falling back
-  to `ccc`.
+  (`code_chunks` + embeddings) for local code-index experiments.
 - If the endpoint extractor signature stored in the index is missing or stale,
   `cccr index` implicitly forces a full repo re-scan even without modified
   files, to refresh the REST/Kafka inventory before rewriting
@@ -154,63 +153,10 @@ empty; it is never inferred from a topic name or serializer configuration.
   write, including findings and endpoints).
 - Missing or invalid `.cccr/config.yml`: error message on stderr, exit code 1.
 
-### `cccr search "<query>" [--limit N] [--offset N] [--lang L] [--path GLOB] [--refresh] [--json]`
-`ccc search` enriched with Semgrep findings from the source file/class of each
-result. Same options, same names, as `ccc search`:
-
-| Option | Effect |
-|---|---|
-| `--limit N` | maximum number of results (default 5) |
-| `--offset N` | pagination (default 0) |
-| `--lang L` | keeps only results in language `L` (exact equality) |
-| `--path GLOB` | keeps only results whose path matches the glob (style `fnmatch`) |
-| `--refresh` | reindexes (incrementally) before searching |
-
-`cccr search` is a **strict presentation superset of `ccc search`**: it invokes
-`ccc` with exactly the requested parameters and preserves its result set,
-order, scores and excerpts. It only adds the `findings` and `max_severity`
-fields; findings never alter ranking, pagination or result selection.
-
-Text rendering — identical format to `ccc search`, plus a findings block under
-each relevant result:
-```
---- Result 1 (score: 0.850) ---
-File: src/auth.py:12-34 [python]
-def login(user, password):
-    ...
-
-  ⚠ findings (max: ERROR):
-  [ERROR] custom.sql-fstring  src/auth.py:18-18
-    An SQL query built with an f-string allows SQL injection.
-```
-The displayed `score` remains the raw semantic relevance from `ccc`; the
-severity boost only affects ordering.
-
-`--json` rendering: `CodeSearchResult` object (single stable schema, see §3).
-
-Degraded modes:
-- **Experimental code index absent**: normal behavior; fallback to
-  `ccc search`.
-- **`ccc` code index absent** (`.cocoindex_code/target_sqlite.db`, no local
-  `--engine cocoindex` index, and no `--refresh`) : explicit error
-  `ccc code index absent (.cocoindex_code/target_sqlite.db). Run first: ccc index`,
-  exit code 2 / MCP `ToolError`, instead of waiting for `ccc search` to
-  block indefinitely.
-- **`ccc` unavailable** (missing from PATH, or failing): explicit error,
-  stderr keeps the cause (`ccc not found in PATH...` or return code/stderr from
-  `ccc`), exit code 2. In this case `cccr` does not return a successful
-  findings-only-shaped result.
-- **`ccc search` timeout**: explicit error `ccc search timed out after Ns`
-  (N = `CCCR_CCC_SEARCH_TIMEOUT_S`, default 20), exit code 2 / MCP `ToolError`.
-- **Findings index absent** (but `ccc` available): raw code results, preceded
-  by the warning `findings index absent (run: cccr index): results without findings`,
-  exit code 0.
-
 ### `cccr findings ["<query>"] [options]`
 Without a query, lists indexed findings in deterministic severity/location
-order, with the same filters and pagination. With a query, performs a
-precision-first lexical search in indexed findings **only** (no code search) —
-the old `cccr search`, renamed when `search` became the superset of `ccc search`.
+order, with the same filters and pagination. With a query, it performs a
+precision-first lexical search in indexed findings only.
 Every query token must match a finding's `rule_id`, message, path,
 `CWE`/`OWASP`, snippet or severity. Exact and full-field matches rank first.
 This intentionally favours a short, verifiable result set over broad
@@ -656,7 +602,6 @@ the **Java/Spring microservices extension**.
 | `search_findings(query, severity=None, rule=None, path_glob=None, limit=5, include_context=False)` | `list[FindingHit]` | Precision-first lexical findings search — same contract as `cccr findings --json` | No pagination (`offset`) on the MCP side |
 | `findings_summary()` | `FindingsSummary` | Low-cost aggregated view | Same structure as `cccr summary --json` |
 | `reindex_findings()` | `IndexReport` (dataclass from `indexer.py`, reused as-is) | Incremental reindexing | Fields `scanned, skipped, findings_added, findings_removed, deleted_files` |
-| `search(query, limit=5, offset=0, lang=None, path=None, refresh=False)` | `CodeSearchResult` | Code search annotated with findings from the returned file/class — same tool name, parameters and ordering as `ccc`'s `search`, and equivalent to CLI `cccr search` (shared implementation, `code_search.py`) | Always delegates code search to `ccc` |
 | `list_endpoints(system=None, role=None, topic=None, path_glob=None)` | `list[EndpointHit]` | Filterable raw HTTP/Kafka endpoint inventory | Use `cccr apis` or `cccr topics` for CLI architecture exploration |
 | `graph(workspace_root=None)` | `GraphResult` | Inter-service topology + outbound REST calls in Kafka consumers — equivalent to CLI `cccr export microservices --json` | Without inter-module data, `services`/`nodes`/`edges` are empty and `note` explains why |
 | `dependency_graph(workspace_root=None)` | `DependencyGraphResult` | Typed topology of microservices, Kafka topics, scoped MongoDB collections and external HTTP APIs | Includes HTTP, Kafka, MongoDB read/write and external-call relations with static confidence |
@@ -667,11 +612,6 @@ the **Java/Spring microservices extension**.
 | `architecture_catalog(kind, action="list", name=None, target=None, workspace_root=None, max_depth=12, limit=50)` | `dict` | CLI-aligned catalog navigation for microservices, modules, topics, DTOs, HTTP APIs, MongoDB collections and endpoints | Covers list/show/neighbors plus the subject-specific actions documented by the tool |
 | `architecture_audit(workspace_root=None)` | `list[dict]` | Equivalent to `cccr analyze audit --json` | Distinct from `audit_dependency_graph`, which adds dependency-topology checks |
 | `architecture_coverage()` | `dict` | Equivalent to `cccr analyze coverage --json` | Current repository only, because it reads its persisted evidenced relations |
-
-`search` adds to each code result:
-- `findings`: list of findings whose `path` is identical to the returned source
-  file/class — same contract as `findings`, without the `context` field.
-- `max_severity`: highest severity among attached findings, or `null` if none.
 
 `findings` uses a precision-first lexical match. Every query token must be
 present in the indexed rule, message, path, taxonomy, snippet or severity;
@@ -703,9 +643,7 @@ chooses among:
 2. **Natural-language findings lookup** — `search_findings(...)` to find
    findings from a problem description, a rule/CWE identifier, or a file/path
    clue.
-3. **Code + debt search** — `search(...)` when the question is primarily about
-   code.
-4. **Remediation loop** — `search_findings(..., include_context=true)` →
+3. **Remediation loop** — `search_findings(..., include_context=true)` →
    patch → fresh Semgrep scan on the file if the official MCP is available →
    `reindex_findings()` → same `search_findings(...)` to confirm disappearance;
    stop and report after 2 unsuccessful attempts.
@@ -724,10 +662,9 @@ blocking unnecessarily.
 | No Semgrep config detected and no `--rules` | `cccr init` | first copies skill packs if available, otherwise activates `p/security-audit`, `p/java`, `p/owasp-top-ten` and `p/secrets`, informational stdout message + code 0 |
 | `.cccr/config.yml` already exists | `cccr init` | stderr + code 1, file unchanged |
 | Semgrep fails or exceeds timeout | `cccr index` | stderr + code 2, database unchanged |
-| `.cccr/findings.db` absent | `cccr findings` / `cccr summary` (and `cccr search` if `ccc` is also unavailable) | stderr (exact message) + code 2 |
-| Embeddings incompatible with the query | `cccr findings` (or findings fallback of `cccr search`) | actionable stderr + code 2 |
+| `.cccr/findings.db` absent | `cccr findings` / `cccr summary` | stderr (exact message) + code 2 |
+| Embeddings incompatible with the query | `cccr findings` | actionable stderr + code 2 |
 | Any exception | MCP tools | bubbles up as-is → FastMCP `ToolError` → `isError: true` on the protocol side; the server remains usable for the next call |
-| `ccc` absent or failing | `cccr search` / `search` (MCP) | explicit stderr/exception, code 2 on CLI, `isError: true` on MCP |
 
 ## 6. Liveness rule pack
 

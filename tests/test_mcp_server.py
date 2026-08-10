@@ -143,16 +143,6 @@ def test_mcp_help_documents_client_registration_block() -> None:
 
 
 @pytest.mark.integration
-def test_search_tool_is_exposed_under_the_same_name_as_ccc(
-    fake_ccc_two_results_on_path: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """cccr's code-search MCP tool must be named `search`, like ccc's own
-    tool — not `search_code_with_findings` — so both take the same name."""
-    monkeypatch.chdir(tmp_path)
-
-    result = asyncio.run(mcp.call_tool("search", {"query": "auth"}))
-
-    assert result[1]["results"]
 
 
 def test_graph_tool_returns_outbound_calls_in_kafka_consumer_handlers(

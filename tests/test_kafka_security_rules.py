@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 
 from ccc_radar.config import Config
-from ccc_radar.scanner import run_semgrep
+from ccc_radar.semgrep import run_semgrep
 
 # Le pack de règles vit dans le repo skill (ccc-radar-skill/skills/cccr/
 # rules/kafka-security/), pas dans ce repo (ADR-24). Cible d'analyse :

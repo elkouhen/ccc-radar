@@ -1,26 +1,22 @@
 # ccc-radar (`cccr`)
 
-Semgrep findings index and Java/Spring architecture inventory, complemented by
-[cocoindex-code](https://github.com/cocoindex-io/cocoindex-code) (`ccc`) for
-code search.
+Semgrep findings index and Java/Spring architecture inventory.
 
 `cccr` indexes a project's Semgrep findings locally in `.cccr/findings.db`,
-queries them with precise lexical search, and annotates `ccc` results on demand.
+queries them with precise lexical search.
 
 The product has two complementary uses:
 
 - **Semgrep findings** for agents and developers: `init`, `index`, `findings`,
-  `summary`, `search`, and their related MCP tools.
+  `summary`, and their related MCP tools.
 - **Java/Spring exploration**: REST/Kafka inventory, an inter-service graph,
   and navigation through microservices, topics, APIs, MongoDB collections, and modules.
 
 ## Positioning
 
-`cccr` is a companion to `ccc`, not a fork: it maintains its local Semgrep
-index and joins findings to code-search results on demand. `ccc` remains
-optional and is required only by `cccr search`. The `cccr index --engine
-cocoindex` engine is experimental; it adds a local code-chunk index without
-changing architecture exploration.
+`cccr` maintains its local Semgrep index and architecture inventory. The
+`cccr index --engine cocoindex` engine is experimental; it adds a local
+code-chunk index without changing architecture exploration.
 
 Implementation, storage, and MCP details are in
 [`docs/SPEC-TECH.md`](docs/SPEC-TECH.md).
@@ -41,21 +37,15 @@ remains documented in
 
 ## Related Projects
 
-- [`cocoindex-code`](https://github.com/cocoindex-io/cocoindex-code) (`ccc`)
-  — code indexing and search tool that `cccr` complements. `cccr` does not
-  fork this project or import any of its internal modules (ADR-1).
 - [`ccc-radar-skill`](https://github.com/elkouhen/ccc-radar-skill) —
-  Claude Code skill that orchestrates `ccc` and `cccr` for an agent.
+  Claude Code skill for an agent.
 
 ## Installation
 
-Prerequisites: `uv` and `pipx`. `ccc` is optional: only `cccr search` needs
-it; audit and architecture commands (`index`, `microservices`, `topics`,
-`apis`, `analyze`, `export`) do not.
+Prerequisites: `uv` and `pipx`.
 
 ```bash
 uv tool install ccc-radar
-uv tool install cocoindex-code
 pipx install semgrep
 env -u SSL_CERT_FILE uvx --from huggingface_hub hf download jinaai/jina-code-embeddings-1.5b --local-dir ~/models/jina-code-embeddings-1.5b
 ```
@@ -68,7 +58,7 @@ some workstations.
 
 ### Semgrep Findings
 
-This workflow requires neither `ccc` nor the architecture packs.
+This workflow requires neither an external code-search tool nor the architecture packs.
 
 ```bash
 cccr init
@@ -153,20 +143,6 @@ permettent d'afficher indépendamment ces deux types de relations.
 `cccr index --manifest kafka-flow-graph-anonymous.json` imports a Kafka JSON
 or Markdown manifest when relationships cannot be detected from code. A
 `topics trace` flow is a static hypothesis, never a production trace.
-
-### Optional Code Search
-
-`ccc` is required only by `cccr search`:
-
-```bash
-ccc index
-cccr search "user auth flow"
-```
-
-`cccr search` reuses `ccc search` results and annotates them with findings from
-the same file or class. `cccr index --engine cocoindex` is an experimental
-alternative that adds a local code-chunk index; architecture exploration does
-not require it.
 
 ## Upgrade
 
@@ -266,5 +242,4 @@ For `.cccr/config.yml` field details, see
 
 ## License
 
-[Apache License 2.0](LICENSE), matching
-[`cocoindex-code`](https://github.com/cocoindex-io/cocoindex-code).
+[Apache License 2.0](LICENSE).

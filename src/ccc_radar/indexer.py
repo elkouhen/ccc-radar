@@ -28,10 +28,8 @@ from ccc_radar.scanner import (
     infer_json_kafka_flow_graph_endpoints,
     infer_markdown_topic_manifest_endpoints,
     apply_kafka_topic_strategy1,
-    invoke_semgrep_raw,
-    parse_semgrep_endpoints,
-    parse_semgrep_json,
 )
+from ccc_radar.semgrep import invoke_semgrep_raw, parse_semgrep_endpoints, parse_semgrep_json
 from ccc_radar.store import CodeChunk, Store
 
 
@@ -458,7 +456,8 @@ def index_repo(
     endpoints: list[MessageEndpoint] = []
     if changed:
         endpoints_removed += store.count_endpoints_for_paths(changed)
-        if "semgrep" not in disabled:
+        semgrep_enabled = config.semgrep_enabled and "semgrep" not in disabled
+        if semgrep_enabled:
             scan_scope = "inventaire et findings" if include_semgrep_findings else "inventaire"
             _report_progress(
                 progress,
@@ -509,7 +508,7 @@ def index_repo(
             "→ Indexation : écriture des résultats "
             f"({len(findings)} finding(s), {len(endpoints)} endpoint(s)).",
         )
-        if "semgrep" not in disabled and include_semgrep_findings:
+        if semgrep_enabled and include_semgrep_findings:
             store.replace_findings_for_files(changed, findings)
         store.replace_endpoints_for_files(changed, endpoints)
         _trace("store.endpoints_written", findings=len(findings), endpoints=len(endpoints))

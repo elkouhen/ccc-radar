@@ -26,6 +26,7 @@ class Config:
     min_severity: str = DEFAULT_MIN_SEVERITY
     embedding_model: str = DEFAULT_EMBEDDING_MODEL
     semgrep_timeout_s: int = DEFAULT_SEMGREP_TIMEOUT_S
+    semgrep_enabled: bool = True
 
 
 def load_config(repo_root: Path) -> Config:
@@ -38,8 +39,9 @@ def load_config(repo_root: Path) -> Config:
 
     raw = yaml.safe_load(path.read_text()) or {}
 
-    rules = raw.get("rules")
-    if not rules:
+    semgrep_enabled = bool(raw.get("semgrep_enabled", True))
+    rules = raw.get("rules", [])
+    if semgrep_enabled and not rules:
         raise ConfigError(
             f"Le champ 'rules' est requis et doit être non vide dans {path}."
         )
@@ -58,6 +60,7 @@ def load_config(repo_root: Path) -> Config:
         min_severity=min_severity,
         embedding_model=raw.get("embedding_model", DEFAULT_EMBEDDING_MODEL),
         semgrep_timeout_s=int(raw.get("semgrep_timeout_s", DEFAULT_SEMGREP_TIMEOUT_S)),
+        semgrep_enabled=semgrep_enabled,
     )
 
 
@@ -74,6 +77,7 @@ def init_config(repo_root: Path, rules_path: list[str]) -> Path:
         "min_severity": DEFAULT_MIN_SEVERITY,
         "embedding_model": DEFAULT_EMBEDDING_MODEL,
         "semgrep_timeout_s": DEFAULT_SEMGREP_TIMEOUT_S,
+        "semgrep_enabled": True,
     }
     path.write_text(yaml.dump(content, sort_keys=False))
     return path

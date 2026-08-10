@@ -111,6 +111,23 @@ def test_index_repo_can_disable_semgrep_and_properties(repo_copy: Path, monkeypa
         assert readonly_store.get_meta("endpoint_inventory_indexed") == "1"
 
 
+def test_index_repo_respects_persistently_disabled_semgrep(
+    repo_copy: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        "ccc_radar.indexer.invoke_semgrep_raw",
+        lambda *_args, **_kwargs: pytest.fail("Semgrep ne doit pas être invoqué"),
+    )
+
+    with Store(repo_copy) as store:
+        index_repo(
+            repo_copy,
+            make_config(rules=[], semgrep_enabled=False),
+            store,
+            FakeEmbedder(),
+        )
+
+
 @pytest.mark.integration
 def test_index_repo_without_semgrep_still_indexes_local_kafka_endpoints(
     endpoint_repo_copy: Path,

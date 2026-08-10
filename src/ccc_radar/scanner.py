@@ -1,44 +1,25 @@
 import json
 import os
 import re
-import subprocess
 import sys
-import tempfile
 import time
 from dataclasses import replace
 from functools import lru_cache
 from pathlib import Path
-from typing import Any
 from urllib.parse import urlsplit
 
 import yaml
 
-from ccc_radar.config import Config
 from ccc_radar import gradle as gradle_module
 from ccc_radar import java_parser
 from ccc_radar import maven as maven_module
 from ccc_radar.gradle import gradle_service_for_path
 from ccc_radar.maven import module_name_for_path
 from ccc_radar.modules import discover_rest_controllers, maven_module_dependencies
-from ccc_radar.models import Finding, MessageEndpoint, compute_endpoint_id, compute_finding_id
+from ccc_radar.models import MessageEndpoint, compute_endpoint_id
 from ccc_radar.topic_expressions import spring_topic_reference
 
 SEVERITY_ORDER = ["INFO", "WARNING", "ERROR"]
-
-_SEVERITY_MAP = {
-    "INFO": "INFO",
-    "WARNING": "WARNING",
-    "ERROR": "ERROR",
-    "LOW": "INFO",
-    "MEDIUM": "WARNING",
-    "HIGH": "ERROR",
-    "CRITICAL": "ERROR",
-}
-
-
-class SemgrepError(Exception):
-    pass
-
 
 def _trace(stage: str, **fields: object) -> None:
     """Émet des traces opt-in de l'inventaire REST (`CCCR_TRACE=1`)."""
@@ -68,38 +49,6 @@ def _trace_rest_client(stage: str, **fields: object) -> None:
     )
 
 
-def _semgrep_env() -> dict[str, str]:
-    """Give Semgrep a private writable location for its log.
-
-    A scan is otherwise allowed to fail before producing JSON when
-    ``~/.semgrep/semgrep.log`` is read-only (notably in sandboxes and CI).
-    The version check is disabled in the command below, so Semgrep does not
-    need to create its usual version-check cache either.
-    """
-    env = os.environ.copy()
-    env.setdefault(
-        "SEMGREP_LOG_FILE",
-        os.environ.get("CCCR_SEMGREP_LOG_FILE", str(Path(tempfile.gettempdir()) / "cccr-semgrep.log")),
-    )
-    env.setdefault("SEMGREP_SEND_METRICS", "off")
-    return env
-
-
-def _normalize_severity(raw_severity: str) -> str:
-    severity = _SEVERITY_MAP.get(str(raw_severity).upper())
-    if severity is None:
-        raise SemgrepError(f"Sévérité Semgrep inconnue : {raw_severity!r}")
-    return severity
-
-
-def _normalize_str_or_list(value: Any) -> list[str]:
-    if value is None:
-        return []
-    if isinstance(value, str):
-        return [value]
-    return list(value)
-
-
 def _read_snippet(repo_root: Path, rel_path: str, start_line: int, end_line: int) -> str:
     try:
         lines = (repo_root / rel_path).read_text(
@@ -110,13 +59,6 @@ def _read_snippet(repo_root: Path, rel_path: str, start_line: int, end_line: int
     start_idx = max(start_line - 1, 0)
     end_idx = min(end_line, len(lines))
     return "\n".join(lines[start_idx:end_idx])
-
-
-def _relative_path(raw_path: str, repo_root: Path) -> str:
-    path = Path(raw_path)
-    if path.is_absolute():
-        path = path.relative_to(repo_root.resolve())
-    return path.as_posix()
 
 
 # BACKLOG-13 M1 : module Maven + nom qualifié Java attribués à chaque
@@ -344,63 +286,6 @@ def _module_for_path(repo_root: Path, rel_path: str) -> str | None:
     return module_name_for_path(repo_root, rel_path) or gradle_service_for_path(
         repo_root, rel_path
     )
-
-
-def parse_semgrep_json(raw: str, repo_root: Path) -> list[Finding]:
-    try:
-        data = json.loads(raw)
-    except json.JSONDecodeError as exc:
-        raise SemgrepError(f"Sortie Semgrep JSON invalide : {exc}") from exc
-
-    try:
-        results = data["results"]
-    except (KeyError, TypeError) as exc:
-        raise SemgrepError(
-            f"Sortie Semgrep JSON invalide : champ 'results' manquant ({exc})"
-        ) from exc
-
-    findings: list[Finding] = []
-    for result in results:
-        try:
-            rule_id = result["check_id"]
-            extra = result["extra"]
-            severity = _normalize_severity(extra["severity"])
-            path = _relative_path(result["path"], repo_root)
-            start_line = result["start"]["line"]
-            end_line = result["end"]["line"]
-        except (KeyError, TypeError) as exc:
-            raise SemgrepError(
-                f"Sortie Semgrep JSON invalide : champ manquant ({exc})"
-            ) from exc
-
-        metadata = extra.get("metadata") or {}
-        if metadata.get("category") == "endpoint-inventory":
-            # Règle d'inventaire d'endpoints (K2/K11) : ce n'est pas un
-            # finding, même si elle a tourné dans le même scan Semgrep que
-            # les règles de findings (cccr index les exécute ensemble) —
-            # voir parse_semgrep_endpoints.
-            continue
-
-        snippet = _read_snippet(repo_root, path, start_line, end_line)
-        findings.append(
-            Finding(
-                id=compute_finding_id(rule_id, path, snippet, start_line, end_line),
-                rule_id=rule_id,
-                severity=severity,
-                message=extra.get("message", ""),
-                path=path,
-                start_line=start_line,
-                end_line=end_line,
-                snippet=snippet,
-                fix=extra.get("fix"),
-                cwe=_normalize_str_or_list(metadata.get("cwe")),
-                owasp=_normalize_str_or_list(metadata.get("owasp")),
-                module=_module_for_path(repo_root, path),
-                qualified_name=_java_qualified_name(str(repo_root), path),
-            )
-        )
-
-    return findings
 
 
 # BACKLOG-10 K2/K11 : règles d'inventaire d'endpoints (`metadata.category:
@@ -3036,174 +2921,6 @@ def _extract_kafka_topic(
         return reference.display_name, True
 
     return literal, dynamic
-
-
-def parse_semgrep_endpoints(raw: str, repo_root: Path) -> list[MessageEndpoint]:
-    try:
-        data = json.loads(raw)
-    except json.JSONDecodeError as exc:
-        raise SemgrepError(f"Sortie Semgrep JSON invalide : {exc}") from exc
-
-    try:
-        results = data["results"]
-    except (KeyError, TypeError) as exc:
-        raise SemgrepError(
-            f"Sortie Semgrep JSON invalide : champ 'results' manquant ({exc})"
-        ) from exc
-
-    endpoints: list[MessageEndpoint] = []
-    for result in results:
-        extra = result["extra"]
-        metadata = extra.get("metadata") or {}
-        if metadata.get("category") != "endpoint-inventory":
-            continue
-
-        system = metadata.get("system", "rest")
-        # P2 : les endpoints Kafka viennent désormais de tree-sitter
-        # (`infer_kafka_endpoints`) ; le chemin Semgrep ne traite plus que REST.
-        if system != "rest":
-            continue
-
-        try:
-            path = _relative_path(result["path"], repo_root)
-            start_line = result["start"]["line"]
-            end_line = result["end"]["line"]
-            role = metadata["role"]
-        except (KeyError, TypeError) as exc:
-            raise SemgrepError(
-                f"Règle d'inventaire d'endpoints mal formée : champ manquant ({exc})"
-            ) from exc
-
-        snippet = _read_snippet(repo_root, path, start_line, end_line)
-        framework = metadata.get("framework")
-        is_restclient = False
-
-        if system == "rest":
-            try:
-                http_method = metadata["http_method"]
-            except KeyError as exc:
-                raise SemgrepError(
-                    f"Règle d'inventaire d'endpoints mal formée : champ manquant ({exc})"
-                ) from exc
-            is_restclient = framework == "webclient" and _file_uses_restclient(str(repo_root), path)
-            if framework == "resttemplate":
-                if not _file_uses_resttemplate(str(repo_root), path):
-                    continue
-                extracted = _extract_resttemplate_path(snippet, repo_root, path)
-                if extracted is not None:
-                    route, dynamic = extracted
-                else:
-                    route, dynamic = _extract_rest_path(snippet, repo_root, path, start_line)
-            elif is_restclient:
-                extracted = _extract_restclient_path(snippet, repo_root, path)
-                if extracted is not None:
-                    route, dynamic = extracted
-                else:
-                    route, dynamic = _extract_rest_path(snippet, repo_root, path, start_line)
-            else:
-                route, dynamic = _extract_rest_path(snippet, repo_root, path, start_line)
-            topic = f"{http_method} {route}"
-        else:
-            topic, dynamic = _extract_kafka_topic(snippet, repo_root, path)
-
-        endpoints.append(
-            MessageEndpoint(
-                id=compute_endpoint_id(role, topic, path, start_line, end_line),
-                role=role,
-                system=system,
-                topic=topic,
-                topic_dynamic=dynamic,
-                source="code",
-                framework="restclient" if is_restclient else framework,
-                path=path,
-                start_line=start_line,
-                end_line=end_line,
-                snippet=snippet,
-                module=_module_for_path(repo_root, path),
-                qualified_name=_java_qualified_name(str(repo_root), path),
-                message_type=(
-                    _infer_kafka_message_type(repo_root, path, start_line, role, framework, snippet)
-                    if system == "kafka"
-                    else None
-                ),
-            )
-        )
-
-    return endpoints
-
-
-def invoke_semgrep_raw(
-    repo_root: Path, config: Config, files: list[str] | None = None
-) -> str:
-    """Sortie JSON brute d'un seul scan Semgrep sur `config.rules` (findings
-    et règles d'inventaire d'endpoints mélangées — `parse_semgrep_json` et
-    `parse_semgrep_endpoints` filtrent chacun ce qui les concerne sur la
-    même sortie). Public : `indexer.index_repo` (BACKLOG-11 A1) l'appelle
-    une seule fois par indexation plutôt que de scanner deux fois."""
-    cmd = [
-        "semgrep",
-        "scan",
-        "--json",
-        "--quiet",
-        "--disable-version-check",
-        "--metrics=off",
-        "--x-ignore-semgrepignore-files",
-        "--timeout",
-        str(config.semgrep_timeout_s),
-    ]
-    for rule in config.rules:
-        cmd += ["--config", rule]
-    cmd += files if files else ["."]
-
-    proc = subprocess.run(
-        cmd, cwd=repo_root, capture_output=True, text=True, check=False,
-        env=_semgrep_env(),
-    )
-    if proc.returncode not in (0, 1):
-        raise SemgrepError(
-            f"Semgrep a échoué (code {proc.returncode}) : {proc.stderr.strip()}"
-        )
-    return proc.stdout
-
-
-def run_semgrep(
-    repo_root: Path, config: Config, files: list[str] | None = None
-) -> list[Finding]:
-    raw = invoke_semgrep_raw(repo_root, config, files)
-    findings = parse_semgrep_json(raw, repo_root)
-    min_index = SEVERITY_ORDER.index(config.min_severity)
-    return [f for f in findings if SEVERITY_ORDER.index(f.severity) >= min_index]
-
-
-def run_semgrep_endpoints(
-    repo_root: Path,
-    config: Config,
-    files: list[str] | None = None,
-    *,
-    configured_api_client_strategy1: bool = False,
-) -> list[MessageEndpoint]:
-    """Comme `run_semgrep`, mais pour les règles d'inventaire d'endpoints
-    (BACKLOG-10 K11) — pas de filtre `min_severity` : ce ne sont pas des
-    findings, la sévérité INFO qu'elles portent n'a pas de sens à seuiller."""
-    raw = invoke_semgrep_raw(repo_root, config, files)
-    endpoints = parse_semgrep_endpoints(raw, repo_root)
-    framework_endpoints = infer_framework_endpoints(
-        repo_root, files, configured_api_client_strategy1=configured_api_client_strategy1
-    )
-    # Spring/Feign declaration routes and RestTemplate calls are now emitted
-    # from Tree-sitter below. Keep Semgrep for call patterns it still owns
-    # but do not retain duplicate facts.
-    endpoints = [
-        endpoint for endpoint in endpoints
-        if not (
-            endpoint.path.endswith(".java")
-            and endpoint.framework in {"spring", "feign", "resttemplate", "webclient"}
-        )
-    ]
-    endpoints.extend(framework_endpoints)
-    endpoints.extend(infer_kafka_endpoints(repo_root, files))
-    endpoints.extend(infer_markdown_topic_manifest_endpoints(repo_root, files))
-    return endpoints
 
 
 def clear_analysis_caches() -> None:

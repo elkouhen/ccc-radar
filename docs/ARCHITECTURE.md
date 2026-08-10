@@ -57,20 +57,15 @@ the other.
 
 ```mermaid
 flowchart TD
-    CLI["CLI: findings / summary / search"] --> Query
-    MCP["MCP: search_findings / findings_summary / search"] --> Query
+    CLI["CLI: findings / summary"] --> Query
+    MCP["MCP: search_findings / findings_summary"] --> Query
     Query --> Findings["search.search_findings or search.summary"]
-    Query --> Code["code_search.search_code_with_findings"]
     Findings --> Store["Store (read-only)"]
-    Code --> CCC["ccc_bridge → external ccc"]
-    Code --> Store
     Findings --> Render["render"]
-    Code --> Render
     Render --> Output["terminal JSON or MCP result"]
 ```
 
-`search.py` owns findings query semantics. `code_search.py` owns the combined
-ccc/findings use case. Rendering only serializes their results.
+`search.py` owns local findings query semantics. Rendering only serializes its results.
 
 ### Architecture exploration
 

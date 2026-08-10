@@ -5,11 +5,9 @@ import pytest
 from ccc_radar.config import Config
 from ccc_radar.graph import build_graph
 from ccc_radar.scanner import (
-    SemgrepError,
     infer_framework_endpoints,
-    parse_semgrep_endpoints,
-    run_semgrep_endpoints,
 )
+from ccc_radar.semgrep import SemgrepError, parse_semgrep_endpoints, run_semgrep_endpoints
 
 # Le pack de règles vit dans le repo skill (ccc-radar-skill/skills/cccr/
 # rules/rest/), pas dans ce repo (ADR-24). Les fixtures ci-dessous sont une

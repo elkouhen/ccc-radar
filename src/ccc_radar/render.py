@@ -8,7 +8,6 @@ from urllib.parse import quote
 
 import yaml
 
-from ccc_radar.ccc_bridge import CodeHitWithFindings
 from ccc_radar.flow import FlowResult
 from ccc_radar.graph import (
     GraphEdge,
@@ -105,51 +104,6 @@ def render_search_json(
             )
         )
     return results
-
-
-def render_code_search_text(
-    hits: list[CodeHitWithFindings], warning: str | None = None
-) -> str:
-    """Rendu texte de `cccr search` : même format que `ccc search`
-    (`--- Result N (score) --- / File: ...`), chaque résultat suivi d'un bloc
-    des findings Semgrep qui le chevauchent — un utilisateur de `ccc` garde
-    ses repères, `cccr` ajoute la couche findings.
-    """
-    lines: list[str] = []
-    if warning:
-        lines.append(f"⚠ {warning}")
-        lines.append("")
-    for i, hit in enumerate(hits, start=1):
-        if i > 1:
-            lines.append("")
-        lines.append(f"--- Result {i} (score: {hit['score']:.3f}) ---")
-        lines.append(
-            f"File: {hit['path']}:{hit['start_line']}-{hit['end_line']} [{hit['language']}]"
-        )
-        lines.append(hit["content"])
-        if hit["findings"]:
-            lines.append("")
-            lines.append(f"  ⚠ findings (max: {hit['max_severity']}):")
-            for finding in hit["findings"]:
-                lines.append(
-                    f"  [{finding['severity']}] {finding['rule_id']}  "
-                    f"{finding['path']}:{finding['start_line']}-{finding['end_line']}"
-                )
-                lines.append(f"    {finding['message']}")
-    return "\n".join(lines)
-
-
-def render_fallback_findings_text(fallback: list[FindingHit]) -> str:
-    """Rendu texte du repli findings-only de `cccr search` quand ccc est
-    indisponible — même style numéroté que `cccr findings`."""
-    lines: list[str] = []
-    for i, hit in enumerate(fallback, start=1):
-        lines.append(
-            f"{i}. [{hit['severity']}] {hit['rule_id']}  "
-            f"{hit['path']}:{hit['start_line']}-{hit['end_line']}  ({hit['score']:.2f})"
-        )
-        lines.append(f"   {hit['message']}")
-    return "\n".join(lines)
 
 
 def render_summary_text(result: Summary) -> str:

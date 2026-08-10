@@ -25,7 +25,6 @@ from ccc_radar.architecture import (
     trace_topic_flows,
 )
 from ccc_radar.architecture_inventory import load_architecture_inventory
-from ccc_radar.code_search import search_code_with_findings
 from ccc_radar.audit import assess_architecture, render_audit_json, render_audit_text
 from ccc_radar.config import ConfigError, init_config, load_config
 from ccc_radar.embedder import EmbeddingError, make_embedder, resolve_embedding_model
@@ -44,10 +43,8 @@ from ccc_radar.inventory_freshness import endpoint_inventory_warning
 from ccc_radar.models import Finding, MessageEndpoint
 from ccc_radar.modules import DiscoveredModule, ModuleDependency, discover_modules
 from ccc_radar.render import (
-    render_code_search_text,
     render_endpoints_json,
     render_endpoints_text,
-    render_fallback_findings_text,
     render_graph_html,
     render_graph_likec4,
     render_graph_json,
@@ -65,7 +62,7 @@ from ccc_radar.render import (
     render_workspace_json,
     render_workspace_text,
 )
-from ccc_radar.scanner import SemgrepError
+from ccc_radar.semgrep import SemgrepError
 from ccc_radar.search import SearchError, search_findings
 from ccc_radar.search import summary as compute_summary
 from ccc_radar.paths import config_path, db_path, state_dir
@@ -1067,39 +1064,6 @@ def _require_index(repo_root: Path) -> None:
 
 
 @app.command()
-def search(
-    query: str,
-    limit: int = typer.Option(5, "--limit"),
-    offset: int = typer.Option(0, "--offset"),
-    lang: Optional[str] = typer.Option(None, "--lang"),  # noqa: UP007
-    path: Optional[str] = typer.Option(None, "--path"),  # noqa: UP007
-    refresh: bool = typer.Option(False, "--refresh"),
-    json_output: bool = typer.Option(False, "--json"),
-) -> None:
-    """Recherche de code via `ccc`, dans le même ordre et avec la même limite,
-    annotée des findings du même fichier ou de la même classe.
-
-    Exemples : `cccr search "payment flow"`, `cccr search "MongoTemplate" --limit 10`.
-    """
-    repo_root = Path.cwd()
-
-    try:
-        result = search_code_with_findings(
-            repo_root, query, limit=limit, offset=offset, lang=lang, path=path, refresh=refresh
-        )
-    except (RuntimeError, ConfigError, EmbeddingError) as exc:
-        typer.echo(str(exc), err=True)
-        raise typer.Exit(code=2) from exc
-
-    if json_output:
-        typer.echo(json.dumps(result))
-        return
-
-    if result["findings_only_fallback"]:
-        typer.echo(f"⚠ {result['warning']}", err=True)
-        typer.echo(render_fallback_findings_text(result["findings_only_fallback"]))
-    else:
-        typer.echo(render_code_search_text(result["results"], warning=result["warning"]))
 
 
 @app.command(name="findings")

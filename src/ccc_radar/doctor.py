@@ -35,11 +35,6 @@ def run_doctor(repo_root: Path) -> list[Check]:
             "ok" if shutil.which("semgrep") else "error",
             "Moteur Semgrep disponible." if shutil.which("semgrep") else "Installez Semgrep : pipx install semgrep.",
         ),
-        Check(
-            "ccc (optionnel)",
-            "ok" if shutil.which("ccc") else "warning",
-            "Recherche de code disponible." if shutil.which("ccc") else "Nécessaire uniquement pour `cccr search` : uv tool install cocoindex-code.",
-        ),
     ]
     try:
         config = load_config(repo_root)

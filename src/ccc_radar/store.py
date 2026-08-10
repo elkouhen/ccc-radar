@@ -847,9 +847,8 @@ class Store:
         """Nearest neighbors among `code_chunks`, best first.
 
         `language`/`path_glob` are applied after the KNN fetch (vec0 has no
-        native metadata filter), so the fetch over-requests — same pattern as
-        `ccc_bridge`'s severity overfetch — to survive filtering and `offset`
-        before truncating to `top_k`.
+        native metadata filter), so the fetch over-requests to survive
+        filtering and `offset` before truncating to `top_k`.
         """
         if top_k <= 0 or self.get_meta("code_embedding_dim") is None:
             return []

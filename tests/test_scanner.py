@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from ccc_radar.config import Config
-from ccc_radar.scanner import SemgrepError, invoke_semgrep_raw, parse_semgrep_json, run_semgrep
+from ccc_radar.semgrep import SemgrepError, invoke_semgrep_raw, parse_semgrep_json, run_semgrep
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 VULN_REPO = FIXTURES_DIR / "vuln_repo"
@@ -62,7 +62,7 @@ def test_invoke_semgrep_uses_private_writable_log(
         captured.update(kwargs)
         return subprocess.CompletedProcess([], 0, stdout='{"results": []}', stderr="")
 
-    monkeypatch.setattr("ccc_radar.scanner.subprocess.run", fake_run)
+    monkeypatch.setattr("ccc_radar.semgrep.subprocess.run", fake_run)
 
     assert invoke_semgrep_raw(VULN_REPO, make_config()) == '{"results": []}'
     env = captured["env"]
