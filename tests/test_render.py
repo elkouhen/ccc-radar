@@ -488,6 +488,8 @@ def test_render_graph_html_renders_rest_and_kafka_relations() -> None:
     assert [link["direction"] for link in graph_data["links"]] == ["outgoing", "outgoing", "incoming"]
     assert graph_data["links"][1]["published_message_types"] == ["OrderCreated"]
     assert graph_data["links"][2]["consumed_message_types"] == ["OrderCreated"]
+    assert graph_data["links"][0]["confidence"] == "proved"
+    assert graph_data["links"][0]["provenance"] == "code"
 
 
 def test_render_graph_html_exposes_strategy1_request_reply_patterns() -> None:
@@ -519,6 +521,8 @@ def test_render_graph_html_exposes_strategy1_request_reply_patterns() -> None:
     }
     assert 'id="graph-summary"' in document
     assert "Pattern request/reply Kafka" in document
+    assert '"confidence": "conventional"' in document
+    assert "Relation conventionnelle : Strategy1" in document
 
 
 def test_render_graph_html_embeds_maven_gradle_dependency_tree() -> None:

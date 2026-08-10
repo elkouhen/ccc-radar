@@ -765,12 +765,17 @@ def render_graph_html(
     ]
     links = []
     for source_kind, source_name, target_kind, target_name, label, kind in _visual_graph_edges(edges):
+        confidence, provenance = _visual_link_evidence(
+            kind, source_kind, source_name, target_kind, target_name, edges
+        )
         link = {
             "source": f"{source_kind}:{source_name}",
             "target": f"{target_kind}:{target_name}",
             "kind": kind,
             "direction": "outgoing" if kind == "rest" or source_kind == "microservice" else "incoming",
             "label": label.replace("<br/>", "\\n"),
+            "confidence": confidence,
+            "provenance": provenance,
         }
         if kind == "kafka" and source_kind == "microservice" and target_kind == "kafka_topic":
             link["published_message_types"] = sorted(
@@ -788,6 +793,8 @@ def render_graph_html(
             "kind": kind,
             "direction": "data_access",
             "label": label,
+            "confidence": "inferred",
+            "provenance": "module inventory",
         }
         for source_kind, source_name, target_kind, target_name, label, kind in _mongodb_visual_graph_edges(
             collections_by_service
@@ -802,6 +809,8 @@ def render_graph_html(
                 "kind": "request_reply",
                 "direction": "reply",
                 "label": "request/reply",
+                "confidence": "conventional",
+                "provenance": "Strategy1 · retour_",
             }
             for reply_topic in kafka_topics
             if reply_topic.casefold().startswith("retour_")
@@ -1576,6 +1585,9 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
       <div class="legend-row"><span class="legend-line" style="background:#0072B2"></span>Consommation Kafka</div>
       <div class="legend-row"><span class="legend-line" style="background:#7C3AED"></span>Pattern request/reply Kafka</div>
       <div class="legend-row"><span class="legend-line" style="background:#CC79A7"></span>Acces MongoDB</div>
+      <div class="legend-row"><span class="legend-mark" style="background:#16a34a"></span>Relation prouvee : code ou manifeste</div>
+      <div class="legend-row"><span class="legend-mark" style="background:#d97706"></span>Relation inferee : OpenAPI ou inventaire</div>
+      <div class="legend-row"><span class="legend-mark" style="background:#7c3aed"></span>Relation conventionnelle : Strategy1</div>
     </div>
   </details>
   <div id="details"><div class="details-empty">Selectionnez un noeud pour isoler ses relations et afficher ses APIs.</div></div>
@@ -2943,6 +2955,16 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
       visibleBadge.className = "detail-badge";
       visibleBadge.textContent = `Affichees : ${edges.length}`;
       meta.append(relationBadge, visibleBadge);
+      const confidenceLabels = { proved: "prouvee", inferred: "inferee", conventional: "conventionnelle" };
+      ["proved", "inferred", "conventional"].forEach(confidence => {
+        const count = edges.filter(link => link.confidence === confidence).length;
+        if (!count) return;
+        const badge = document.createElement("span");
+        badge.className = "detail-badge";
+        badge.textContent = `${count} ${confidenceLabels[confidence]}`;
+        badge.title = `Relation ${confidenceLabels[confidence]} : ${[...new Set(edges.filter(link => link.confidence === confidence).map(link => link.provenance))].join(", ")}`;
+        meta.append(badge);
+      });
       if (complexity) {
         const scoreBadge = document.createElement("span");
         scoreBadge.className = `detail-badge complexity ${complexity.level}`;
@@ -3438,6 +3460,35 @@ def _visual_graph_edges(
         (*key, projected[key])
         for key in order
     ]
+
+
+def _visual_link_evidence(
+    kind: str, source_kind: str, source_name: str, target_kind: str, target_name: str,
+    edges: list[GraphEdge],
+) -> tuple[str, str]:
+    """Return the confidence level and origin displayed by the HTML explorer."""
+    candidates = [
+        edge
+        for edge in edges
+        if edge.kind == kind
+        and (
+            (kind == "rest" and edge.from_service == source_name and edge.to_service == target_name)
+            or (kind == "kafka" and source_kind == "microservice" and edge.from_service == source_name and edge.from_endpoint.topic == target_name)
+            or (kind == "kafka" and target_kind == "microservice" and edge.to_service == target_name and edge.from_endpoint.topic == source_name)
+        )
+    ]
+    if not candidates:
+        return "inferred", "inference"
+    endpoints = [endpoint for edge in candidates for endpoint in (edge.from_endpoint, edge.to_endpoint) if endpoint]
+    if any(endpoint.framework == "kafka-topic-strategy1" for endpoint in endpoints):
+        return "conventional", "Strategy1"
+    if any(endpoint.framework == "openapi" for endpoint in endpoints):
+        return "inferred", "OpenAPI"
+    if any(endpoint.topic_dynamic for endpoint in endpoints):
+        return "inferred", "code (dynamic)"
+    if any(endpoint.source == "manifest" for endpoint in endpoints):
+        return "proved", "manifest"
+    return "proved", "code"
 
 
 
