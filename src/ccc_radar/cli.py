@@ -24,6 +24,7 @@ from ccc_radar.architecture import (
     show_object as show_architecture_object,
     trace_topic_flows,
 )
+from ccc_radar.architecture_inventory import load_architecture_inventory
 from ccc_radar.code_search import search_code_with_findings
 from ccc_radar.audit import assess_architecture, render_audit_json, render_audit_text
 from ccc_radar.config import ConfigError, init_config, load_config
@@ -37,7 +38,6 @@ from ccc_radar.graph import (
     GraphEdge,
     build_graph,
     find_outbound_calls_in_consumers,
-    group_endpoints_by_module,
 )
 from ccc_radar.indexer import index_repo
 from ccc_radar.inventory_freshness import endpoint_inventory_warning
@@ -71,7 +71,6 @@ from ccc_radar.search import summary as compute_summary
 from ccc_radar.paths import config_path, db_path, state_dir
 from ccc_radar.store import Store, StoreError
 from ccc_radar.workspace import (
-    dependency_federation_warning,
     discover_maven_services,
     load_federation,
 )
@@ -1181,97 +1180,37 @@ class _MicroserviceGraphData:
 def _load_microservice_graph(
     repo_root: Path, workspace: Path | None, include_mongodb: bool
 ) -> _MicroserviceGraphData:
-    _require_index(repo_root)
-    with Store(repo_root) as store:
-        endpoints = store.all_endpoints()
-        findings = store.all_findings()
-        repo_warning = _current_repo_endpoint_warning(store)
-        indexed_modules = store.all_modules() if include_mongodb else []
-
-    services_by_name: dict[str, list[MessageEndpoint]] = {}
-    edges: list[GraphEdge] = []
-    warnings: list[str] = [repo_warning] if repo_warning else []
-    collections_by_service: dict[str, list[str]] = {}
-    modules_by_service: dict[str, DiscoveredModule] = {}
-    findings_by_service: dict[str, list[Finding]] = {}
-    build_modules: list[DiscoveredModule] = indexed_modules
-    module_dependencies: list[ModuleDependency] = []
-    source_roots = [repo_root.resolve()]
-    cross_module_data_available = False
-    if workspace is not None:
-        services = discover_maven_services(workspace)
-        source_roots = [workspace.resolve(), *(service.path.resolve() for service in services)]
-        federation = load_federation(services)
-        warnings.extend(federation.warnings)
-        build_modules = list(federation.modules.values())
-        module_dependencies = federation.module_dependencies
-        services_by_name = dict(federation.endpoints_by_service)
-        for service, module in federation.modules_by_service.items():
-            if module.starts_application:
-                services_by_name.setdefault(service, [])
-        findings_by_service = federation.findings_by_service
-        if dependency_warning := dependency_federation_warning(services, federation):
-            warnings.append(dependency_warning)
-        edges = build_graph(services_by_name)
-        if include_mongodb:
-            modules_by_service = {
-                service: module
-                for service, module in federation.modules_by_service.items()
-                if service in services_by_name
-            }
-            collections_by_service = {
-                service: list(module.mongo_collections)
-                for service, module in modules_by_service.items()
-                if module.mongo_collections
-            }
-        cross_module_data_available = True
-    else:
-        grouped_endpoints = group_endpoints_by_module(endpoints)
-        with Store(repo_root, readonly=True) as store:
-            module_dependencies = store.all_module_dependencies()
-        indexed_microservices = {
-            module.name for module in indexed_modules if module.starts_application
-        }
-        if grouped_endpoints or indexed_microservices:
-            services_by_name = {
-                service: grouped_endpoints.get(service, [])
-                for service in sorted(set(grouped_endpoints) | indexed_microservices)
-            }
-            findings_by_service = {
-                service: [finding for finding in findings if finding.module == service]
-                for service in services_by_name
-            }
-            edges = build_graph(services_by_name)
-            if include_mongodb:
-                modules_by_service = {
-                    module.name: module
-                    for module in indexed_modules
-                    if module.name in services_by_name
-                }
-                collections_by_service = {
-                    service: list(module.mongo_collections)
-                    for service, module in modules_by_service.items()
-                    if module.mongo_collections
-                }
-            cross_module_data_available = True
+    inventory = load_architecture_inventory(
+        repo_root,
+        workspace,
+        include_runtime_services_without_endpoints=True,
+    )
+    services_by_name = inventory.endpoints_by_service
+    edges = build_graph(services_by_name)
+    modules_by_service = inventory.modules_by_service if include_mongodb else {}
+    collections_by_service = {
+        service: list(module.mongo_collections)
+        for service, module in modules_by_service.items()
+        if module.mongo_collections
+    }
 
     result = render_graph_json(
         list(services_by_name),
         edges,
-        find_outbound_calls_in_consumers(endpoints),
-        warnings=warnings,
-        cross_module_data_available=cross_module_data_available,
+        find_outbound_calls_in_consumers(inventory.endpoints),
+        warnings=inventory.warnings,
+        cross_module_data_available=bool(services_by_name),
     )
     return _MicroserviceGraphData(
         services_by_name,
         edges,
         collections_by_service,
         modules_by_service,
-        findings_by_service,
-        build_modules,
-        module_dependencies,
-        source_roots,
-        warnings,
+        inventory.findings_by_service,
+        inventory.modules,
+        inventory.module_dependencies,
+        inventory.source_roots,
+        inventory.warnings,
         result,
     )
 
@@ -1444,22 +1383,12 @@ def export_modules_cmd(
 
 
 def _render_audit(repo_root: Path, workspace: Path | None, json_output: bool) -> None:
-    _require_index(repo_root)
-    if workspace is not None:
-        federation = load_federation(discover_maven_services(workspace))
-        endpoints_by_service = dict(federation.endpoints_by_service)
-        endpoints_by_module = dict(federation.endpoints_by_module)
-        modules = list(federation.modules_by_service.values())
-    else:
-        with Store(repo_root, readonly=True) as store:
-            endpoints_by_module = group_endpoints_by_module(store.all_endpoints())
-            modules = store.all_modules()
-        endpoints_by_service = endpoints_by_module
+    inventory = load_architecture_inventory(repo_root, workspace)
     risks = assess_architecture(
-        endpoints_by_service,
-        build_graph(endpoints_by_service),
-        modules=modules,
-        endpoints_by_module=endpoints_by_module,
+        inventory.endpoints_by_service,
+        build_graph(inventory.endpoints_by_service),
+        modules=inventory.modules,
+        endpoints_by_module=inventory.endpoints_by_module,
     )
     typer.echo(json.dumps(render_audit_json(risks)) if json_output else render_audit_text(risks))
 
@@ -1590,10 +1519,9 @@ def _selected_microservice(name: str, root: Path):
 
 def _microservice_catalog(root: Path):
     if db_path(root).is_file():
-        with Store(root, readonly=True) as store:
-            modules = store.all_modules()
-            if modules:
-                return build_catalog(modules, store.all_endpoints())
+        inventory = load_architecture_inventory(root)
+        if inventory.modules:
+            return build_catalog(inventory.modules, inventory.endpoints)
     services = discover_maven_services(root)
     federation = load_federation(services)
     modules = [module for module in discover_modules(root) if module.starts_application]

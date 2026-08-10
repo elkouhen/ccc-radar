@@ -6,6 +6,7 @@ from ccc_radar.code_search import CodeSearchResult
 from ccc_radar.code_search import search_code_with_findings as run_code_search
 from ccc_radar.coco_indexer import ENGINE_META_VALUE, index_repo_with_cocoindex
 from ccc_radar.config import ConfigError, load_config
+from ccc_radar.architecture_inventory import load_architecture_inventory
 from ccc_radar.dependency_analysis import (
     DependencyAuditResult,
     DependencyGraphResult,
@@ -23,10 +24,10 @@ from ccc_radar.flow import (
 from ccc_radar.graph import (
     build_graph,
     find_outbound_calls_in_consumers,
-    group_endpoints_by_module,
 )
 from ccc_radar.indexer import IndexReport, index_repo
 from ccc_radar.inventory_freshness import endpoint_inventory_warning
+from ccc_radar.modules import DiscoveredModule
 from ccc_radar.paths import db_path
 from ccc_radar.render import (
     EndpointHit,
@@ -46,9 +47,7 @@ from ccc_radar.render import (
 from ccc_radar.search import search_findings as run_search_findings
 from ccc_radar.search import summary as compute_summary
 from ccc_radar.store import Store
-from ccc_radar.modules import DiscoveredModule
 from ccc_radar.workspace import (
-    dependency_federation_warning,
     discover_maven_services,
     load_federation,
 )
@@ -77,33 +76,10 @@ def _dependency_inventory(
     workspace_root: str | None,
 ) -> tuple[dict[str, list], dict[str, DiscoveredModule], list[str]]:
     """Load runtime services and module metadata for graph-oriented MCP tools."""
-    repo_root = _repo_root()
-    _require_index(repo_root)
-    with Store(repo_root) as store:
-        endpoints = store.all_endpoints()
-        modules = store.all_modules()
-        warning = _current_repo_endpoint_warning(store)
-    warnings = [warning] if warning else []
-    if workspace_root is not None:
-        services = discover_maven_services(Path(workspace_root))
-        federation = load_federation(services)
-        warnings.extend(federation.warnings)
-        if dependency_warning := dependency_federation_warning(services, federation):
-            warnings.append(dependency_warning)
-        return (
-            dict(federation.endpoints_by_service),
-            {
-                service: module
-                for service, module in federation.modules_by_service.items()
-                if service in federation.endpoints_by_service
-            },
-            warnings,
-        )
-    endpoints_by_service = group_endpoints_by_module(endpoints)
-    modules_by_service = {
-        module.name: module for module in modules if module.name in endpoints_by_service
-    }
-    return endpoints_by_service, modules_by_service, warnings
+    inventory = load_architecture_inventory(
+        _repo_root(), Path(workspace_root) if workspace_root else None
+    )
+    return inventory.endpoints_by_service, inventory.modules_by_service, inventory.warnings
 
 
 @mcp.tool()
@@ -227,43 +203,17 @@ def graph(workspace_root: str | None = None) -> GraphResult:
     microservices indexés séparément (BACKLOG-11 A2, lecture seule) —
     sinon `services`/`nodes`/`edges` restent vides, voir `note`.
     """
-    repo_root = _repo_root()
-    _require_index(repo_root)
-    with Store(repo_root) as store:
-        endpoints = store.all_endpoints()
-        repo_warning = _current_repo_endpoint_warning(store)
-    outbound_calls = find_outbound_calls_in_consumers(endpoints)
-
-    if workspace_root is None:
-        grouped_endpoints = group_endpoints_by_module(endpoints)
-        if not grouped_endpoints:
-            return render_graph_json(
-                [],
-                [],
-                outbound_calls,
-                warnings=[repo_warning] if repo_warning else None,
-            )
-        edges = build_graph(grouped_endpoints)
-        return render_graph_json(
-            list(grouped_endpoints),
-            edges,
-            outbound_calls,
-            warnings=[repo_warning] if repo_warning else None,
-            cross_module_data_available=True,
-        )
-
-    services = discover_maven_services(Path(workspace_root))
-    federation = load_federation(services)
-    warnings = ([repo_warning] if repo_warning else []) + federation.warnings
-    if dependency_warning := dependency_federation_warning(services, federation):
-        warnings.append(dependency_warning)
-    edges = build_graph(federation.endpoints_by_service)
+    inventory = load_architecture_inventory(
+        _repo_root(), Path(workspace_root) if workspace_root else None
+    )
+    outbound_calls = find_outbound_calls_in_consumers(inventory.endpoints)
+    edges = build_graph(inventory.endpoints_by_service)
     return render_graph_json(
-        list(federation.endpoints_by_service),
+        list(inventory.endpoints_by_service),
         edges,
         outbound_calls,
-        warnings=warnings,
-        cross_module_data_available=True,
+        warnings=inventory.warnings,
+        cross_module_data_available=workspace_root is not None or bool(inventory.endpoints_by_service),
     )
 
 

@@ -9,8 +9,8 @@ boundary, then read the relevant specification before changing behaviour.
 ```
 CLI / MCP adapters (`cli.py`, `mcp_server.py`)
                 |
-application queries and indexing (`architecture.py`, `search.py`, `flow.py`,
-`dependency_analysis.py`, `indexer.py`, `workspace.py`)
+application queries and indexing (`architecture.py`, `architecture_inventory.py`,
+`search.py`, `flow.py`, `dependency_analysis.py`, `indexer.py`, `workspace.py`)
                 |
 facts and discovery (`scanner.py`, `modules.py`, `maven.py`, `gradle.py`,
 `java_parser.py`, `relations.py`)
@@ -76,12 +76,10 @@ ccc/findings use case. Rendering only serializes their results.
 
 ```mermaid
 flowchart TD
-    CLI["CLI: microservices / topics / APIs / MongoDB / analyze"] --> CatalogLoader
+    CLI["CLI: microservices / export / analyze"] --> InventoryLoader
     MCP["MCP: graph / dependency_graph / trace_message_flow"] --> InventoryLoader
-    CatalogLoader["cli._microservice_catalog"] --> Store["Store (read-only)"]
-    CatalogLoader --> Federation["workspace.discover_maven_services + load_federation"]
-    InventoryLoader["mcp._dependency_inventory"] --> Store
-    InventoryLoader --> Federation
+    InventoryLoader["architecture_inventory.load_architecture_inventory"] --> Store["Store (read-only)"]
+    InventoryLoader --> Federation["workspace.discover_workspace_services + load_federation"]
     Store --> Catalog["architecture.build_catalog"]
     Federation --> Catalog
     Catalog --> Architecture["architecture: list / show / neighbors / path / analyze"]
@@ -95,9 +93,11 @@ flowchart TD
 ```
 
 There are two valid sources of facts: the current repository index (`Store`)
-or a read-only federation of separately indexed services (`workspace`). The
-catalog, graph, dependency audit, and flow tracing are all derived views: they
-must not write back to the index.
+or a read-only federation of separately indexed services (`workspace`).
+`architecture_inventory.load_architecture_inventory` normalizes both sources,
+including freshness and incomplete-federation warnings, before graph and audit
+queries use them. The catalog, graph, dependency audit, and flow tracing are
+all derived views: they must not write back to the index.
 
 ### Reading a call site
 

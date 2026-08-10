@@ -30,6 +30,7 @@
 | `cli.py` | Typer application for setup, findings, code search and architecture exploration (`microservices`, `topics`, `apis`, `mongodb`, `modules`, `analyze`, `export`) | all modules above |
 | `mcp_server.py` | `FastMCP` stdio server, tools | `code_search`, `config`, `dependency_analysis`, `embedder`, `graph`, `indexer`, `render`, `search`, `store`, `workspace` |
 | `architecture.py` | Catalog queries for microservices, topics, APIs, MongoDB and DTOs | `models`, `modules` |
+| `architecture_inventory.py` | Single read-only loader normalizing current-index or workspace-federation facts for graph, audit, CLI and MCP queries | `graph`, `inventory_freshness`, `store`, `workspace` |
 | `audit.py` | Architecture-risk assessment over the catalog | `architecture`, `models` |
 | `flow.py` | Topic/route tracing with finding overlap and optional vector fallback | `models`, `store` |
 | `doctor.py` | Validates architecture rule-pack configuration | `config` |
