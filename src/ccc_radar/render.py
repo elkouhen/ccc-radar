@@ -3520,12 +3520,14 @@ def _vscode_uri(finding: Finding, module: DiscoveredModule | None, source_roots:
     for root in candidates:
         candidate = (root / finding.path).resolve()
         if candidate.is_file():
-            prefix = f"vscode://vscode-remote/wsl+{quote(wsl_distro, safe='')}" if wsl_distro else "vscode://file"
-            return f"{prefix}/{quote(candidate.as_posix(), safe='/')}:{finding.start_line}"
+            if wsl_distro:
+                return f"vscode://file//wsl.localhost/{quote(wsl_distro, safe='')}{quote(candidate.as_posix(), safe='/')}:{finding.start_line}"
+            return f"vscode://file/{quote(candidate.as_posix(), safe='/')}:{finding.start_line}"
     root = candidates[0] if candidates else Path.cwd()
     candidate = (root / finding.path).resolve()
-    prefix = f"vscode://vscode-remote/wsl+{quote(wsl_distro, safe='')}" if wsl_distro else "vscode://file"
-    return f"{prefix}/{quote(candidate.as_posix(), safe='/')}:{finding.start_line}"
+    if wsl_distro:
+        return f"vscode://file//wsl.localhost/{quote(wsl_distro, safe='')}{quote(candidate.as_posix(), safe='/')}:{finding.start_line}"
+    return f"vscode://file/{quote(candidate.as_posix(), safe='/')}:{finding.start_line}"
 
 
 def _openapi_contract_evidence_path(endpoint: MessageEndpoint) -> str:

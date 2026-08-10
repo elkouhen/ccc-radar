@@ -275,8 +275,8 @@ Same “index absent” rules as `findings` (same message, code 2).
 
 ### `cccr export microservices [--workspace ROOT] [--vscode-wsl-distro DISTRO] (--html FILE | --c4 DIR | --json)`
 
-`--vscode-wsl-distro DISTRO` makes finding links in the HTML export use VS
-Code Remote WSL URIs (`vscode://vscode-remote/wsl+DISTRO/...`). This lets an
+`--vscode-wsl-distro DISTRO` makes finding links in the HTML export use the
+Windows WSL UNC path (`vscode://file//wsl.localhost/DISTRO/...`). This lets an
 HTML file opened on Windows navigate to source files indexed inside WSL.
 *Java/Spring microservices extension — beta.*
 
