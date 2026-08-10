@@ -522,6 +522,9 @@ def test_render_graph_html_exposes_strategy1_request_reply_patterns() -> None:
     }
     assert 'id="graph-summary"' in document
     assert "Pattern request/reply Kafka" in document
+    assert 'id="request-reply-tab"' in document
+    assert 'id="request-reply-patterns"' in document
+    assert "renderRequestReplyPatterns" in document
     assert '"confidence": "conventional"' in document
     assert "Relation conventionnelle : Strategy1" in document
 

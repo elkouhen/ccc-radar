@@ -560,6 +560,10 @@ architecture view, not proof of a runtime request/reply exchange.
 Writes a dedicated, standalone HTML view of the same convention-based Kafka
 request/reply candidates, including request/reply producers and consumers.
 
+The existing `cccr export microservices --html FILE` also provides a
+**Request/reply** tab. It lists the detected pairs and can focus each pair in
+the runtime graph.
+
 ```json
 [
   {"name": "orders-api", "build_system": "maven", "version": "3.1.0",

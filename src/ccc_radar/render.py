@@ -1427,7 +1427,7 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
     .indexing-issue.info .indexing-issue-severity { color: #1d4f91; background: #dbeafe; }
     .indexing-issue-message { margin: 5px 0 0; color: #475569; font-size: 12px; line-height: 1.4; overflow-wrap: anywhere; }
     .indexing-issue-location { display: block; margin-top: 5px; color: #64748b; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10px; overflow-wrap: anywhere; }
-    .references-view { gap: 12px; }
+    .references-view, .request-reply-view { gap: 12px; }
     .references-header { padding: 2px 2px 5px; }
     .references-kicker { margin: 0 0 2px; color: #64748b; font-size: 10px; font-weight: 800; letter-spacing: .09em; text-transform: uppercase; }
     .references-title { margin: 0; color: #172033; font-size: 15px; }
@@ -1528,6 +1528,7 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
       <button id="graph-tab" class="toolbar-tab is-active" type="button" role="tab" aria-selected="true" aria-controls="graph-panel">Interactions</button>
       <button id="paths-tab" class="toolbar-tab" type="button" role="tab" aria-selected="false" aria-controls="paths-panel">Parcours</button>
       <button id="references-tab" class="toolbar-tab" type="button" role="tab" aria-selected="false" aria-controls="references-panel" title="Contrats OpenAPI et DTO Kafka">Contrats &amp; DTO</button>
+      <button id="request-reply-tab" class="toolbar-tab" type="button" role="tab" aria-selected="false" aria-controls="request-reply-panel" title="Patterns Kafka request/reply detectes par convention">Request/reply</button>
       <button id="dependencies-tab" class="toolbar-tab" type="button" role="tab" aria-selected="false" aria-controls="dependencies-panel" title="Dépendances Maven et Gradle entre modules">Dependency Tree</button>
       <button id="issues-tab" class="toolbar-tab" type="button" role="tab" aria-selected="false" aria-controls="issues-panel" title="Problemes d'indexation">Qualité</button>
     </div>
@@ -1605,6 +1606,15 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
       </div>
       <section class="references-section"><h3>Contrats OpenAPI</h3><ul id="openapi-references" class="references-list"></ul><p id="openapi-references-empty" class="references-empty">Aucun contrat OpenAPI détecté.</p></section>
       <section class="references-section"><h3>DTO Kafka</h3><ul id="dto-references" class="references-list"></ul><p id="dto-references-empty" class="references-empty">Aucun DTO Kafka détecté.</p></section>
+    </div>
+    <div id="request-reply-panel" class="toolbar-panel request-reply-view" role="tabpanel" aria-labelledby="request-reply-tab" hidden>
+      <div class="references-header">
+        <p class="references-kicker">Convention Strategy1</p>
+        <h2 id="request-reply-title" class="references-title">Patterns request/reply Kafka</h2>
+        <p class="references-description">Couples détectés par la convention <code>retour_&lt;topic-de-requête&gt;</code>. Cette vue est conventionnelle, pas une trace d’exécution.</p>
+      </div>
+      <ul id="request-reply-patterns" class="references-list" aria-label="Patterns Kafka request reply"></ul>
+      <p id="request-reply-empty" class="references-empty">Aucun couple request/reply détecté.</p>
     </div>
   </div>
   <details class="legend" aria-label="Legende du graphe">
@@ -2027,11 +2037,13 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
     const issuesTab = document.getElementById("issues-tab");
     const pathsTab = document.getElementById("paths-tab");
     const referencesTab = document.getElementById("references-tab");
+    const requestReplyTab = document.getElementById("request-reply-tab");
     const graphPanel = document.getElementById("graph-panel");
     const dependenciesPanel = document.getElementById("dependencies-panel");
     const issuesPanel = document.getElementById("issues-panel");
     const pathsPanel = document.getElementById("paths-panel");
     const referencesPanel = document.getElementById("references-panel");
+    const requestReplyPanel = document.getElementById("request-reply-panel");
     const graphCanvas = document.getElementById("graph");
     const dependencyCanvas = document.getElementById("dependency-graph");
     function ensureDependencyRenderer() {
@@ -2079,6 +2091,9 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
     const dtoReferencesList = document.getElementById("dto-references");
     const dtoReferencesEmpty = document.getElementById("dto-references-empty");
     const referencesTitle = document.getElementById("references-title");
+    const requestReplyPatternsList = document.getElementById("request-reply-patterns");
+    const requestReplyEmpty = document.getElementById("request-reply-empty");
+    const requestReplyTitle = document.getElementById("request-reply-title");
     const analyzedPathsList = document.getElementById("analyzed-paths");
     const analyzedPathsEmpty = document.getElementById("analyzed-paths-empty");
     const pathHistoryTitle = document.getElementById("path-history-title");
@@ -2208,6 +2223,7 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
       const showingIssues = tab === "issues";
       const showingPaths = tab === "paths";
       const showingReferences = tab === "references";
+      const showingRequestReply = tab === "request-reply";
       graphTab.classList.toggle("is-active", showingGraph);
       graphTab.setAttribute("aria-selected", String(showingGraph));
       dependenciesTab.classList.toggle("is-active", showingDependencies);
@@ -2218,11 +2234,14 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
       pathsTab.setAttribute("aria-selected", String(showingPaths));
       referencesTab.classList.toggle("is-active", showingReferences);
       referencesTab.setAttribute("aria-selected", String(showingReferences));
+      requestReplyTab.classList.toggle("is-active", showingRequestReply);
+      requestReplyTab.setAttribute("aria-selected", String(showingRequestReply));
       graphPanel.hidden = !showingGraph;
       dependenciesPanel.hidden = !showingDependencies;
       issuesPanel.hidden = !showingIssues;
       pathsPanel.hidden = !showingPaths;
       referencesPanel.hidden = !showingReferences;
+      requestReplyPanel.hidden = !showingRequestReply;
       graphCanvas.hidden = showingDependencies;
       dependencyCanvas.hidden = !showingDependencies;
       if (showingDependencies) {
@@ -2353,6 +2372,34 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
         ));
       });
       referencesTitle.textContent = `Contrats et messages (${contracts.length + dtos.length})`;
+    }
+    function renderRequestReplyPatterns() {
+      const patterns = graphData.links.filter(link => link.kind === "request_reply");
+      requestReplyPatternsList.replaceChildren();
+      requestReplyEmpty.hidden = patterns.length > 0;
+      patterns.forEach(pattern => {
+        const request = nodeDataById.get(pattern.source);
+        const reply = nodeDataById.get(pattern.target);
+        const requestProducers = graphData.links
+          .filter(link => link.target === pattern.source && link.kind === "kafka")
+          .map(link => nodeDataById.get(link.source)?.name).filter(Boolean);
+        const requestConsumers = graphData.links
+          .filter(link => link.source === pattern.source && link.kind === "kafka")
+          .map(link => nodeDataById.get(link.target)?.name).filter(Boolean);
+        const replyProducers = graphData.links
+          .filter(link => link.target === pattern.target && link.kind === "kafka")
+          .map(link => nodeDataById.get(link.source)?.name).filter(Boolean);
+        const replyConsumers = graphData.links
+          .filter(link => link.source === pattern.target && link.kind === "kafka")
+          .map(link => nodeDataById.get(link.target)?.name).filter(Boolean);
+        requestReplyPatternsList.append(referenceItem(
+          `${request?.name || pattern.source} → ${reply?.name || pattern.target}`,
+          `requête +${[...new Set(requestProducers)].join(", ") || "—"} / -${[...new Set(requestConsumers)].join(", ") || "—"} · réponse +${[...new Set(replyProducers)].join(", ") || "—"} / -${[...new Set(replyConsumers)].join(", ") || "—"}`,
+          "Voir dans le graphe",
+          () => { setToolbarTab("graph"); selectNode(pattern.source); },
+        ));
+      });
+      requestReplyTitle.textContent = `Patterns request/reply Kafka (${patterns.length})`;
     }
     function renderAnalyzedPaths() {
       pathHistoryTitle.textContent = `Chemins analyses (${analyzedPaths.length})`;
@@ -3229,6 +3276,7 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
     issuesTab.addEventListener("click", () => setToolbarTab("issues"));
     pathsTab.addEventListener("click", () => setToolbarTab("paths"));
     referencesTab.addEventListener("click", () => setToolbarTab("references"));
+    requestReplyTab.addEventListener("click", () => setToolbarTab("request-reply"));
     filterPresetButtons.forEach(button => button.addEventListener("click", () => applyRelationPreset(button.dataset.preset)));
     [
       relationHttp,
@@ -3250,6 +3298,7 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
     renderIndexingIssues();
     renderAnalyzedPaths();
     renderReferences();
+    renderRequestReplyPatterns();
     restoreState();
     applyLayout("forceatlas2-noverlap");
     search.addEventListener("input", event => {
