@@ -1884,7 +1884,7 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
     }
     const network = new graphology.MultiDirectedGraph();
     layoutNodes.forEach(node => network.addNode(node.id, {
-      label: node.name,
+      label: node.label,
       x: node.x,
       y: node.y,
       size: node.size,
