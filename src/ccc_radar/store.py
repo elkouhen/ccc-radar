@@ -5,6 +5,7 @@ from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
 from types import TracebackType
+from typing import Any
 
 import numpy as np
 import sqlite_vec
@@ -59,24 +60,24 @@ def _method_to_json(item: object) -> dict[str, object]:
     return data
 
 
-def _evidence_from_json(data: dict[str, object]) -> SourceEvidence | None:
+def _evidence_from_json(data: dict[str, Any]) -> SourceEvidence | None:
     evidence = data.pop("evidence", None)
     return SourceEvidence(**evidence) if evidence else None
 
 
-def _mongo_method_from_json(data: dict[str, object]) -> MongoMethod:
+def _mongo_method_from_json(data: dict[str, Any]) -> MongoMethod:
     data = dict(data)
     evidence = _evidence_from_json(data)
     return MongoMethod(**data, evidence=evidence)
 
 
-def _kafka_method_from_json(data: dict[str, object]) -> KafkaMethod:
+def _kafka_method_from_json(data: dict[str, Any]) -> KafkaMethod:
     data = dict(data)
     evidence = _evidence_from_json(data)
     return KafkaMethod(**data, evidence=evidence)
 
 
-def _blocking_point_from_json(data: dict[str, object]) -> BlockingPoint:
+def _blocking_point_from_json(data: dict[str, Any]) -> BlockingPoint:
     data = dict(data)
     evidence = _evidence_from_json(data)
     return BlockingPoint(**data, evidence=evidence)

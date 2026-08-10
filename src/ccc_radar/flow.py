@@ -18,16 +18,10 @@ détail) — voir `docs/SPEC-TECH.md`.
 """
 
 from dataclasses import dataclass
-from typing import Protocol
 
-import numpy as np
-
+from ccc_radar.embedder import EmbedderLike
 from ccc_radar.models import Finding, MessageEndpoint
 from ccc_radar.store import Store
-
-
-class EmbedderLike(Protocol):
-    def embed_query(self, text: str) -> np.ndarray: ...
 
 
 class FlowError(Exception):

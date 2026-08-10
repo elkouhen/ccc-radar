@@ -1069,3 +1069,36 @@ edge is static evidence of configuration, never a runtime reachability claim.
 An external name that collides with an indexed service retains the external
 annotation, because the explicit configuration convention is authoritative for
 that call site.
+
+---
+
+## ADR-36 — Static type checking with `mypy`
+
+**Status**: Accepted.
+
+**Context**: `src/ccc_radar/` had no static type-checking gate. Several
+functions and TypedDicts carried implicit or inconsistent typing, and at least
+two latent bugs existed that plain lint/tests never caught: an unconditional
+2-value unpack of a single string literal in `modules.py`'s blocking-point
+detection (`blocking_mechanism, detail = "thread-or-future-join"`, never
+exercised by any test), and two TypedDicts (`ModuleSummary`, `ModuleDetail` in
+`render.py`) missing fields (`starts_application`,
+`application_entrypoint`) that were nonetheless constructed and read
+elsewhere — invisible at runtime because Python TypedDicts do not enforce keys.
+
+**Decision**: add `mypy` as a dev dependency and a `[tool.mypy]` configuration
+in `pyproject.toml` covering `src/ccc_radar`. `python_version` is pinned to
+`"3.13"` in that config only to satisfy mypy's own stub parser (numpy's
+bundled stubs use PEP 695 `type` syntax requiring 3.12+ to parse) — it does not
+change the project's actual `requires-python = ">=3.10"` support target.
+`disallow_untyped_defs` is left off via a `ccc_radar.*` override so the
+codebase is not forced into full annotation coverage in one pass; all 85
+type errors were fixed properly (correct annotations, `TypedDict`/`Protocol`
+definitions, `cast()`/`assert` narrowing) rather than suppressed with blanket
+`# type: ignore` comments, and the two latent bugs above were fixed as part of
+this pass.
+
+**Consequences**: `uv run mypy src/ccc_radar` is now part of the documented
+development loop (README) and should be run alongside `ruff check .` and
+`pytest` before merging. No CI workflow enforces this yet (tracked as a
+separate improvement).

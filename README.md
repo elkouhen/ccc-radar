@@ -162,6 +162,8 @@ If an existing configuration contains `p/spring`, remove that entry from
 uv sync
 uv run cccr version
 uv run pytest
+uv run ruff check .
+uv run mypy src/ccc_radar
 ```
 
 ## MCP Server

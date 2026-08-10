@@ -20,6 +20,7 @@ cccr = "ccc_radar.cli:app"
 
 [dependency-groups]
 dev = [
+    "mypy>=2.3.0",
     "pytest>=8.0",
     "ruff>=0.6",
 ]
@@ -37,3 +38,16 @@ markers = [
     "integration: tests d'intégration exécutant réellement Semgrep",
     "slow: tests lents (téléchargement de modèle, etc.)",
 ]
+
+[tool.mypy]
+python_version = "3.13"
+files = ["src/ccc_radar"]
+warn_unused_ignores = true
+warn_redundant_casts = true
+warn_unused_configs = true
+check_untyped_defs = true
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "ccc_radar.*"
+disallow_untyped_defs = false

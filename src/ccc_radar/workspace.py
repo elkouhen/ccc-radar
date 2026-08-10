@@ -9,12 +9,15 @@ déjà indexés pour construire une vue fédérée
 
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import TypeVar
 
 from ccc_radar.inventory_freshness import endpoint_inventory_warning
 from ccc_radar.models import Finding, MessageEndpoint
 from ccc_radar.modules import DiscoveredModule, ModuleDependency, discover_modules
 from ccc_radar.paths import db_path
 from ccc_radar.store import Store, StoreError
+
+_ItemT = TypeVar("_ItemT", Finding, MessageEndpoint)
 
 
 @dataclass(frozen=True)
@@ -68,8 +71,8 @@ def dependency_federation_warning(
     )
 
 
-def _dedupe_by_id(items: list[Finding] | list[MessageEndpoint]) -> list[Finding] | list[MessageEndpoint]:
-    deduped: list[Finding] | list[MessageEndpoint] = []
+def _dedupe_by_id(items: list[_ItemT]) -> list[_ItemT]:
+    deduped: list[_ItemT] = []
     seen: set[str] = set()
     for item in items:
         if item.id in seen:

@@ -200,20 +200,15 @@ def _graph_nodes(services: list[str], edges: list[GraphEdge]) -> list[GraphNodeI
     external_services = external_microservice_names(edges)
     all_services = sorted(set(services) | external_services)
     kafka_topics = sorted({edge.from_endpoint.topic for edge in edges if edge.kind == "kafka"})
-    return [
-        GraphNodeInfo(
-            name=service,
-            kind="microservice",
-            **(
-                {"external": True, "shape": "triangle"}
-                if service in external_services
-                else {}
-            ),
-        )
-        for service in all_services
-    ] + [
-        GraphNodeInfo(name=topic, kind="kafka_topic") for topic in kafka_topics
-    ]
+    nodes: list[GraphNodeInfo] = []
+    for service in all_services:
+        node: GraphNodeInfo = {"name": service, "kind": "microservice"}
+        if service in external_services:
+            node["external"] = True
+            node["shape"] = "triangle"
+        nodes.append(node)
+    nodes.extend(GraphNodeInfo(name=topic, kind="kafka_topic") for topic in kafka_topics)
+    return nodes
 
 
 def _graph_edges(edges: list[GraphEdge]) -> list[GraphEdgeInfo]:
@@ -251,6 +246,7 @@ def _graph_edges(edges: list[GraphEdge]) -> list[GraphEdgeInfo]:
                 to_site=None,
             )
         )
+        assert edge.to_endpoint is not None, "a matched kafka edge always has a consumer endpoint"
         rendered_edges.append(
             GraphEdgeInfo(
                 kind="kafka_consume",
@@ -610,8 +606,8 @@ def _kafka_dto_views(
             definition["vscode_uri"] = _vscode_file_uri(source_file, vscode_wsl_distro)
         definitions[dto_name] = definition
 
-    root_definitions = []
-    nested_definitions = []
+    root_definitions: list[dict[str, object]] = []
+    nested_definitions: list[dict[str, object]] = []
     for dto_name, definition in sorted(definitions.items()):
         matches = [
             (service, endpoint)
@@ -675,7 +671,7 @@ def render_graph_html(
         module.path.resolve(): module
         for module in [*(build_modules or []), *module_details.values()]
     }.values())
-    nodes = []
+    nodes: list[dict[str, object]] = []
     for name in ordered_services:
         endpoints = endpoints_by_service.get(name, [])
         resources = _rest_resources_served(endpoints)
@@ -764,12 +760,12 @@ def render_graph_html(
         }
         for service, collection, identity in _mongodb_collection_nodes(collections_by_service)
     ]
-    links = []
+    links: list[dict[str, object]] = []
     for source_kind, source_name, target_kind, target_name, label, kind in _visual_graph_edges(edges):
         confidence, provenance = _visual_link_evidence(
             kind, source_kind, source_name, target_kind, target_name, edges
         )
-        link = {
+        link: dict[str, object] = {
             "source": f"{source_kind}:{source_name}",
             "target": f"{target_kind}:{target_name}",
             "kind": kind,
@@ -826,12 +822,12 @@ def render_graph_html(
             collections_by_service
         )
     ]
-    relation_counts = {node["id"]: 0 for node in nodes}
+    relation_counts: dict[str, int] = {str(node["id"]): 0 for node in nodes}
     for source, target in complexity_relations:
         relation_counts[source] += 1
         relation_counts[target] += 1
     microservice_counts = {
-        node["id"]: relation_counts[node["id"]]
+        str(node["id"]): relation_counts[str(node["id"])]
         for node in nodes
         if node["kind"] == "microservice"
     }
@@ -842,12 +838,13 @@ def render_graph_html(
             node["color"] = "#64748b"
             node["size"] = base_size
             continue
-        score = relation_counts[node["id"]]
-        level = complexity_levels[node["id"]]
+        node_id = str(node["id"])
+        score = relation_counts[node_id]
+        level = complexity_levels[node_id]
         node["complexity"] = {
             "score": score,
             "level": level,
-            "relations": relation_counts[node["id"]],
+            "relations": relation_counts[node_id],
         }
         node["color"] = {"low": "#2563eb", "medium": "#d97706", "high": "#dc2626"}[level]
         node["size"] = base_size + {"low": 0, "medium": 2, "high": 4}[level]
@@ -948,7 +945,7 @@ def render_request_reply_html(result: dict[str, object]) -> str:
         "<p class=\"empty\">No indexed topic pair matches the "
         "<code>retour_&lt;request-topic&gt;</code> convention.</p>"
     )
-    count = int(result["count"])
+    count = int(str(result["count"]))
     return f"""<!doctype html>
 <html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">
 <title>Kafka request/reply patterns</title><style>
@@ -1072,6 +1069,7 @@ def render_graph_likec4(
             continue
         topic_id = topic_ids[edge.from_endpoint.topic]
         produced_type = edge.from_endpoint.message_type
+        assert edge.to_endpoint is not None, "a matched kafka edge always has a consumer endpoint"
         consumed_type = edge.to_endpoint.message_type
         relations.add((
             "publishes", service_ids[edge.from_service], topic_id,
@@ -1195,7 +1193,7 @@ def render_graph_likec4(
     for service in services:
         color, description = complexities[service_ids[service]]
         service_endpoints = endpoints_by_service.get(service, [])
-        openapi_files = module_details.get(service).openapi_files if service in module_details else ()
+        openapi_files = module_details[service].openapi_files if service in module_details else ()
         published_resources = _rest_resources_served(service_endpoints)
         produced_messages = sorted({
             f"{endpoint.topic}{f' <{endpoint.message_type}>' if endpoint.message_type else ''}"
@@ -3815,6 +3813,7 @@ class ModuleSummary(TypedDict):
     build_system: str
     version: str | None
     kind: str
+    starts_application: bool
     mongo_collections: list[str]
     mongo_method_count: int
     kafka_method_count: int
@@ -3825,6 +3824,7 @@ class ModuleSummary(TypedDict):
 
 
 class ModuleDetail(ModuleSummary):
+    application_entrypoint: dict[str, object] | None
     configuration_example: str
     mongo_methods: list[dict[str, object]]
     kafka_methods: list[dict[str, object]]
@@ -4014,8 +4014,8 @@ def _module_dependency_layout(
     """
     names = sorted(module.name for module in modules)
     known = set(names)
-    outgoing = {name: [] for name in names}
-    incoming = {name: [] for name in names}
+    outgoing: dict[str, list[str]] = {name: [] for name in names}
+    incoming: dict[str, list[str]] = {name: [] for name in names}
     for dependency in dependencies:
         if dependency.source not in known or dependency.target not in known:
             continue

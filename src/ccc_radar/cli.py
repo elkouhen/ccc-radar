@@ -6,7 +6,7 @@ import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal, Optional
+from typing import Literal, Optional, cast
 
 import click
 import typer
@@ -44,6 +44,7 @@ from ccc_radar.inventory_freshness import endpoint_inventory_warning
 from ccc_radar.models import Finding, MessageEndpoint
 from ccc_radar.modules import DiscoveredModule, ModuleDependency, discover_modules
 from ccc_radar.render import (
+    GraphResult,
     render_endpoints_json,
     render_endpoints_text,
     render_graph_html,
@@ -226,6 +227,7 @@ def topics_cmd(
             typer.echo(f"`cccr topics {command}` requiert un topic.", err=True)
             raise typer.Exit(code=2)
         topic = arguments[1]
+        result: object
         if command == "show":
             result = show_architecture_object(catalog, "topic", topic)
         elif command == "neighbors":
@@ -275,6 +277,7 @@ def dtos_cmd(
             typer.echo(f"`cccr dtos {command}` requiert un DTO.", err=True)
             raise typer.Exit(code=2)
         dto = arguments[1]
+        result: object
         if command == "show":
             result = show_architecture_object(catalog, "dto", dto)
         elif command == "neighbors":
@@ -324,6 +327,7 @@ def apis_cmd(
             typer.echo(f"`cccr apis {command}` requiert une API HTTP.", err=True)
             raise typer.Exit(code=2)
         api = arguments[1]
+        result: object
         if command == "show":
             result = show_architecture_object(catalog, "api", api)
         elif command == "neighbors":
@@ -374,6 +378,7 @@ def mongodb_cmd(
         typer.echo("Usage : `cccr mongodb [list|show|neighbors|search] [collection]`.", err=True)
         raise typer.Exit(code=2)
     collection = arguments[1]
+    result: object
     if command == "show":
         result = show_architecture_object(catalog, "collection", collection)
     elif command == "neighbors":
@@ -1153,7 +1158,7 @@ class _MicroserviceGraphData:
     module_dependencies: list[ModuleDependency]
     source_roots: list[Path]
     warnings: list[str]
-    result: dict[str, object]
+    result: GraphResult
 
 
 def _is_exportable_microservice(name: str) -> bool:
@@ -1743,10 +1748,11 @@ def _render_microservice_mongodb(service: str, root: Path, json_output: bool) ->
     if summary is None:
         typer.echo(f"Microservice introuvable : {service}", err=True)
         raise typer.Exit(code=2)
+    databases = cast("dict[str, object]", summary["databases"])
     _emit_architecture(
         {
             "microservice": service,
-            "collections": summary["databases"]["mongodb_collections"],
+            "collections": databases["mongodb_collections"],
         },
         json_output,
     )
@@ -1845,8 +1851,8 @@ def modules_cmd(
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=2) from exc
     if module is None:
-        result = render_modules_list_json(modules)
-        typer.echo(json.dumps(result) if json_output else render_modules_list_text(result))
+        modules_result = render_modules_list_json(modules)
+        typer.echo(json.dumps(modules_result) if json_output else render_modules_list_text(modules_result))
         return
     matches = [item for item in modules if item.name == module]
     if not matches:
@@ -1857,8 +1863,8 @@ def modules_cmd(
         typer.echo(f"Module ambigu : {module} ({paths})", err=True)
         raise typer.Exit(code=2)
     selected = matches[0]
-    result = render_module_detail_json(selected)
-    typer.echo(json.dumps(result) if json_output else render_module_detail_text(result))
+    detail_result = render_module_detail_json(selected)
+    typer.echo(json.dumps(detail_result) if json_output else render_module_detail_text(detail_result))
 
 
 def _render_module_graph(

@@ -516,7 +516,7 @@ def _extract_java_architecture(
                 elif operation == "get" and any(token in receiver.lower() for token in ("future", "result", "promise")):
                     blocking_mechanism, detail = "future-get", "Future.get sans analyse de timeout"
                 elif operation == "join" and any(token in receiver.lower() for token in ("thread", "future", "task")):
-                    blocking_mechanism, detail = "thread-or-future-join"
+                    blocking_mechanism, detail = "thread-or-future-join", f"{receiver}.join"
                 elif operation in {"lock", "lockInterruptibly"}:
                     blocking_mechanism, detail = "jvm-lock", operation
                 elif operation in {"findAndModify", "findOneAndUpdate"} and "lock" in method_text.casefold():
@@ -666,7 +666,7 @@ def _enrich_module(
     )
 
     # Détecter les clients OpenAPI générés (Maven uniquement)
-    openapi_generated_clients = ()
+    openapi_generated_clients: tuple[str, ...] = ()
     if module.build_system == "maven":
         from ccc_radar.maven import detect_openapi_generated_clients
         pom_path = module.path / "pom.xml"

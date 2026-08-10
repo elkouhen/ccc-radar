@@ -7,6 +7,7 @@ L'accès à une implantation reste une opération explicite de la CLI.
 
 from collections import deque
 from dataclasses import dataclass
+from typing import cast
 
 from ccc_radar.graph import GraphEdge, build_graph, graph_edge_rest_resource
 from ccc_radar.models import ArchitectureRelation, MessageEndpoint
@@ -405,7 +406,9 @@ def find_microservice_paths(
     for entries in adjacency.values():
         entries.sort(key=lambda item: (item[0], item[1]["kind"], item[1]["label"]))
 
-    queue = deque([(source_node, [source_node], [])])
+    queue: deque[tuple[tuple[str, str], list[tuple[str, str]], list[dict[str, str]]]] = deque(
+        [(source_node, [source_node], [])]
+    )
     paths: list[dict[str, object]] = []
     shortest_depth: int | None = None
     truncated = False
@@ -462,7 +465,7 @@ def analyze(catalog: ArchitectureCatalog, query: str, target: str | None) -> dic
         ]
         return {"query": "external-apis", "items": items}
     if normalized in {"orphan-integrations", "orphan-endpoints", "orphans"}:
-        results = []
+        results: list[dict[str, object]] = []
         for topic in list_objects(catalog, "topic"):
             if not topic["producers"] or not topic["consumers"]:
                 results.append(topic)
@@ -472,9 +475,13 @@ def analyze(catalog: ArchitectureCatalog, query: str, target: str | None) -> dic
         return {"query": "orphan-integrations", "items": results}
     if normalized == "impact" and target:
         for kind in ("module", "topic", "api", "collection"):
-            items = neighbors(catalog, kind, target)
-            if items is not None:
-                return {"query": "impact", "object": {"kind": kind, "name": target}, "neighbors": items}
+            impact_neighbors = neighbors(catalog, kind, target)
+            if impact_neighbors is not None:
+                return {
+                    "query": "impact",
+                    "object": {"kind": kind, "name": target},
+                    "neighbors": impact_neighbors,
+                }
     return None
 
 
@@ -498,6 +505,7 @@ def trace_topic_flows(
     consumers_by_topic: dict[str, set[str]] = {}
     published_by_module: dict[str, set[str]] = {}
     for endpoint in kafka_endpoints:
+        assert endpoint.module is not None
         if endpoint.role == "consume":
             consumers_by_topic.setdefault(endpoint.topic, set()).add(endpoint.module)
         elif endpoint.role == "produce":
@@ -634,24 +642,25 @@ def render_text(result: object) -> str:
 def _render_item(item: dict[str, object]) -> str:
     kind = item.get("kind") or item.get("query", "result")
     if kind == "inventory_coverage":
-        integrations = item["integrations"]
-        relations = item["relations"]
-        unresolved = item["unresolved"]
+        integrations = cast("dict[str, object]", item["integrations"])
+        relations = cast("dict[str, object]", item["relations"])
+        unresolved = cast("dict[str, object]", item["unresolved"])
         lines = [
             "[couverture de l'inventaire]",
             f"  integrations={integrations['total']} kafka={integrations['kafka']} appels_http={integrations['http_calls']}",
             f"  relations={relations['total']} confiance={relations['by_confidence']}",
-            f"  topics_kafka_dynamiques={len(unresolved['dynamic_kafka_topics'])}",
-            f"  types_kafka_inconnus={len(unresolved['unknown_kafka_message_types'])}",
-            f"  appels_http_non_rapproches={len(unresolved['unmatched_http_calls'])}",
+            f"  topics_kafka_dynamiques={len(cast('list', unresolved['dynamic_kafka_topics']))}",
+            f"  types_kafka_inconnus={len(cast('list', unresolved['unknown_kafka_message_types']))}",
+            f"  appels_http_non_rapproches={len(cast('list', unresolved['unmatched_http_calls']))}",
         ]
         if unresolved["truncated"]:
             lines.append("  Details non resolus tronques a 20 elements par categorie.")
         return "\n".join(lines)
     if kind == "potential_topic_flows":
         lines = [f"[flux potentiels] {item['topic']}", str(item["caveat"])]
-        for flow in item["flows"]:
-            path = " -> ".join(node["name"] for node in flow["nodes"])
+        for flow in cast("list[dict[str, object]]", item["flows"]):
+            nodes = cast("list[dict[str, object]]", flow["nodes"])
+            path = " -> ".join(str(node["name"]) for node in nodes)
             cycle = " (cycle)" if flow.get("cycle_detected") else ""
             lines.append(f"  {path}{cycle}")
         if item["truncated"]:
@@ -661,38 +670,44 @@ def _render_item(item: dict[str, object]) -> str:
         lines = [f"[chemins] {item['source']} -> {item['target']}"]
         if not item["paths"]:
             lines.append("  Aucun chemin dirigé trouvé.")
-        for path in item["paths"]:
-            lines.append("  " + " -> ".join(node["name"] for node in path["nodes"]))
+        for route in cast("list[dict[str, object]]", item["paths"]):
+            nodes = cast("list[dict[str, object]]", route["nodes"])
+            lines.append("  " + " -> ".join(str(node["name"]) for node in nodes))
         if item["truncated"]:
             lines.append("  Résultats tronqués par la limite demandée.")
         return "\n".join(lines)
     if kind == "kafka_request_reply_patterns":
         lines = [f"[patterns Kafka request/reply] {item['count']} détecté(s)"]
-        for pattern in item["patterns"]:
+        for pattern in cast("list[dict[str, object]]", item["patterns"]):
             lines.append(f"  {pattern['request_topic']} -> {pattern['reply_topic']}")
+            request_producers = cast("list[str]", pattern["request_producers"])
+            request_consumers = cast("list[str]", pattern["request_consumers"])
+            reply_producers = cast("list[str]", pattern["reply_producers"])
+            reply_consumers = cast("list[str]", pattern["reply_consumers"])
             lines.append(
                 "    requête: producteurs="
-                f"{', '.join(pattern['request_producers']) or '-'} "
+                f"{', '.join(request_producers) or '-'} "
                 "consommateurs="
-                f"{', '.join(pattern['request_consumers']) or '-'}"
+                f"{', '.join(request_consumers) or '-'}"
             )
             lines.append(
                 "    réponse: producteurs="
-                f"{', '.join(pattern['reply_producers']) or '-'} "
+                f"{', '.join(reply_producers) or '-'} "
                 "consommateurs="
-                f"{', '.join(pattern['reply_consumers']) or '-'}"
+                f"{', '.join(reply_consumers) or '-'}"
             )
         if not item["patterns"]:
             lines.append("  Aucun couple correspondant à la convention retour_<request-topic>.")
         return "\n".join(lines)
     name = item.get("name") or item.get("topic") or item.get("module") or ""
     details = []
-    for key, value in item.items():
-        if key in {"kind", "name", "topic", "module", "query"} or value in (None, [], {}, False):
+    for key, raw_value in item.items():
+        if key in {"kind", "name", "topic", "module", "query"} or raw_value in (None, [], {}, False):
             continue
-        if isinstance(value, dict):
-            value = ", ".join(f"{entry}={content}" for entry, content in value.items() if content)
-        elif isinstance(value, list):
-            value = ", ".join(str(entry) for entry in value)
+        value: object = raw_value
+        if isinstance(raw_value, dict):
+            value = ", ".join(f"{entry}={content}" for entry, content in raw_value.items() if content)
+        elif isinstance(raw_value, list):
+            value = ", ".join(str(entry) for entry in raw_value)
         details.append(f"{key}={value}")
     return f"[{kind}] {name}" + ("\n  " + "\n  ".join(details) if details else "")

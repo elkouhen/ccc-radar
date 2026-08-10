@@ -5,12 +5,10 @@ import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Protocol
-
-import numpy as np
+from typing import Callable
 
 from ccc_radar.config import Config
-from ccc_radar.embedder import EmbeddingError, endpoint_to_text, finding_to_text
+from ccc_radar.embedder import EmbedderLike, EmbeddingError, endpoint_to_text, finding_to_text
 from ccc_radar.inventory_freshness import current_endpoint_inventory_signature
 from ccc_radar.models import Finding, MessageEndpoint
 from ccc_radar.modules import (
@@ -31,10 +29,6 @@ from ccc_radar.scanner import (
 )
 from ccc_radar.semgrep import invoke_semgrep_raw, parse_semgrep_endpoints, parse_semgrep_json
 from ccc_radar.store import CodeChunk, Store
-
-
-class EmbedderLike(Protocol):
-    def embed_texts(self, texts: list[str]) -> np.ndarray: ...
 
 
 ProgressCallback = Callable[[str], None]

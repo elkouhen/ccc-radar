@@ -1089,6 +1089,7 @@ def _infer_spring_data_rest_endpoints(repo_root: Path, rel_path: str) -> list[Me
             source,
         )
         if rest_path is not None:
+            assert annotation is not None
             base_path = _normalize_rest_path(rest_path)
             snippet = java_parser.node_text(source, annotation)
             decl_line = annotation.start_point.row + 1
@@ -1834,6 +1835,8 @@ def _kafka_topic_from_value(value_node, source: bytes, repo_root: Path, rel_path
     node_type = value_node.type
     if node_type == "string_literal":
         literal = java_parser.string_value(value_node, source)
+        if literal is None:
+            return "<dynamic>", True
         reference = spring_topic_reference(literal)
         if reference is not None:
             resolved = resolve_spring_property(repo_root, reference.property_key, rel_path)
@@ -2584,9 +2587,9 @@ def _resolve_value_annotated_variable(
 # convention, un `@Bean` délègue à un helper auquel est passé le domaine qui
 # publie l'API. On conserve ce domaine dans l'évidence de l'endpoint pour que
 # le graphe puisse restreindre la cible, sans prétendre résoudre une URL.
-def _is_rest_client_configuration(class_name: str) -> bool:
+def _is_rest_client_configuration(class_name: str | None) -> bool:
     """Whether a Java configuration name follows the ``Rest*Config*`` convention."""
-    return class_name.startswith("Rest") and "Config" in class_name
+    return class_name is not None and class_name.startswith("Rest") and "Config" in class_name
 
 
 def _is_uppercase_underscore_constant(name: str) -> bool:

@@ -5,6 +5,7 @@ import os
 import subprocess
 import tempfile
 from pathlib import Path
+from typing import Any
 
 from ccc_radar.config import Config
 from ccc_radar.models import Finding, MessageEndpoint, compute_endpoint_id, compute_finding_id
@@ -52,7 +53,7 @@ def _normalize_severity(raw_severity: str) -> str:
     return severity
 
 
-def _normalize_str_or_list(value: object) -> list[str]:
+def _normalize_str_or_list(value: Any) -> list[str]:
     if value is None:
         return []
     return [value] if isinstance(value, str) else list(value)

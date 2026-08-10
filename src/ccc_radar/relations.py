@@ -1,9 +1,20 @@
 """Build normalized architecture relations from the indexed inventories."""
 
 import re
+from typing import TypedDict
 
 from ccc_radar.models import ArchitectureRelation, MessageEndpoint, compute_architecture_relation_id
 from ccc_radar.modules import DiscoveredModule, ModuleDependency
+
+
+class _RelationEvidence(TypedDict):
+    origin: str
+    confidence: str
+    module: str | None
+    path: str | None
+    start_line: int | None
+    end_line: int | None
+    qualified_name: str | None
 
 
 _MONGO_WRITE_OPERATIONS = frozenset({
@@ -83,7 +94,7 @@ def build_architecture_relations(
             "call": "calls",
         }[endpoint.role]
         confidence = "medium" if endpoint.topic_dynamic else "high"
-        evidence = {
+        evidence: _RelationEvidence = {
             "origin": endpoint.source,
             "confidence": confidence,
             "module": endpoint.module,

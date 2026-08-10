@@ -2,11 +2,18 @@ import hashlib
 import os
 from functools import lru_cache
 from pathlib import Path
+from typing import Protocol
 
 import numpy as np
 
 from ccc_radar.config import DEFAULT_EMBEDDING_MODEL
 from ccc_radar.models import Finding, MessageEndpoint
+
+
+class EmbedderLike(Protocol):
+    def embed_texts(self, texts: list[str]) -> np.ndarray: ...
+
+    def embed_query(self, text: str) -> np.ndarray: ...
 
 
 class EmbeddingError(Exception):
@@ -86,7 +93,7 @@ class FakeEmbedder:
 
 
 @lru_cache(maxsize=None)
-def _make_embedder_cached(model_name: str, fake: bool) -> object:
+def _make_embedder_cached(model_name: str, fake: bool) -> EmbedderLike:
     if fake:
         return FakeEmbedder(model_name)
     return Embedder(model_name)
@@ -109,7 +116,7 @@ def resolve_embedding_model(model_name: str) -> tuple[str, str | None]:
     return model_name, None
 
 
-def make_embedder(model_name: str) -> object:
+def make_embedder(model_name: str) -> EmbedderLike:
     fake = os.environ.get("CCCR_FAKE_EMBEDDER") == "1"
     resolved_model, _ = resolve_embedding_model(model_name)
     return _make_embedder_cached(resolved_model, fake)

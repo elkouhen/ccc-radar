@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import cast
 
 from mcp.server.fastmcp import FastMCP
 
@@ -46,6 +47,7 @@ from ccc_radar.render import (
     FindingsSummary,
     FlowResultInfo,
     GraphResult,
+    ModuleSummary,
     WorkspaceResult,
     render_endpoints_json,
     render_flow_json,
@@ -109,7 +111,7 @@ def architecture_catalog(
     workspace_root: str | None = None,
     max_depth: int = 12,
     limit: int = 50,
-) -> dict[str, object]:
+) -> object:
     """Navigation MCP équivalente aux commandes CLI `microservices`, `topics`,
     `dtos`, `apis` et `mongodb`.
 
@@ -127,6 +129,7 @@ def architecture_catalog(
     action = action.casefold()
     if action == "list":
         return {"kind": normalized_kind, "items": list_objects(catalog, normalized_kind)}
+    result: object
     if action == "show":
         if name is None:
             raise ValueError("`name` est requis pour l'action show.")
@@ -360,7 +363,7 @@ def list_workspace_services(root: str) -> WorkspaceResult:
 
 
 @mcp.tool()
-def list_modules() -> list[dict[str, object]]:
+def list_modules() -> list[ModuleSummary]:
     """Liste tous les modules indexés avec leurs collections/opérations Mongo
     et leurs contrats OpenAPI déclarés. Utiliser pour établir le périmètre
     applicatif avant un audit de données ou d'API.
@@ -424,7 +427,11 @@ def trace_message_flow(query: str, workspace_root: str | None = None) -> FlowRes
 
     services = discover_maven_services(Path(workspace_root))
     federation = load_federation(services)
-    endpoints_by_service = dict(federation.endpoints_by_service)
-    findings_by_service = dict(federation.findings_by_service)
+    endpoints_by_service = cast(
+        "dict[str | None, list]", dict(federation.endpoints_by_service)
+    )
+    findings_by_service = cast(
+        "dict[str | None, list]", dict(federation.findings_by_service)
+    )
     result = trace_flow(query, endpoints_by_service, findings_by_service, federation.warnings)
     return render_flow_json(result)
