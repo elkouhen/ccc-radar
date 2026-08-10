@@ -490,6 +490,37 @@ def test_render_graph_html_renders_rest_and_kafka_relations() -> None:
     assert graph_data["links"][2]["consumed_message_types"] == ["OrderCreated"]
 
 
+def test_render_graph_html_exposes_strategy1_request_reply_patterns() -> None:
+    endpoints_by_service = {
+        "orders": [
+            make_endpoint("produce", "orders.request", "OrderProducer.java", system="kafka"),
+            make_endpoint("consume", "retour_orders.request", "OrderReplyListener.java", system="kafka"),
+        ],
+        "payments": [
+            make_endpoint("consume", "orders.request", "PaymentListener.java", system="kafka"),
+            make_endpoint("produce", "retour_orders.request", "PaymentProducer.java", system="kafka"),
+        ],
+    }
+    document = render_graph_html(
+        endpoints_by_service,
+        build_graph(endpoints_by_service),
+        request_reply_strategy1=True,
+    )
+    graph_data = json.loads(
+        re.search(r'<script id="graph-data" type="application/json">(.*)</script>', document).group(1)
+    )
+
+    assert {
+        (link["source"], link["target"], link["kind"], link["label"])
+        for link in graph_data["links"]
+        if link["kind"] == "request_reply"
+    } == {
+        ("kafka_topic:orders.request", "kafka_topic:retour_orders.request", "request_reply", "request/reply")
+    }
+    assert 'id="graph-summary"' in document
+    assert "Pattern request/reply Kafka" in document
+
+
 def test_render_graph_html_embeds_maven_gradle_dependency_tree() -> None:
     modules = [
         DiscoveredModule("orders-service", Path("orders"), "maven", None, "library", True, ""),
@@ -803,9 +834,9 @@ def test_render_graph_d2_encodes_rest_and_kafka_edges() -> None:
     rendered = render_graph_d2(endpoints_by_service, edges)
 
     assert "direction: down" in rendered
-    assert "  **service-a**" in rendered
-    assert "  **service-b**" in rendered
-    assert "  - `GET /orders`" in rendered
+    assert 'label: "service-a"' in rendered
+    assert 'label: "service-b"' in rendered
+    assert "GET /orders" in rendered
     assert 'label: "orders.created"' in rendered
     assert 'svc_0 -> svc_1: "service-b: GET /orders" {' in rendered
     assert 'svc_0 -> topic_0: "orders.created" {' in rendered

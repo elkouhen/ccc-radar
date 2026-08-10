@@ -128,7 +128,7 @@ def _is_excluded_module(name: str, module_dir: Path, root: Path) -> bool:
     test_or_mock = any(
         value.casefold() in {"test", "tests"} or "mock" in value.casefold()
         for value in path_parts
-    ) or "mock" in name.casefold()
+    ) or "mock" in name.casefold() or name.casefold().endswith("-test")
     # Maven archetypes are templates rather than runtime applications.  This
     # rule intentionally applies to the declared build name only: an ordinary
     # module may legitimately live under a directory containing this word.

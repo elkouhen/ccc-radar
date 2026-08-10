@@ -1308,6 +1308,8 @@ def export_microservices_cmd(
         typer.echo(json.dumps(graph_data.result))
         return
     if html is not None:
+        with Store(Path.cwd(), readonly=True) as store:
+            request_reply_strategy1 = store.get_meta("topic_strategy") == "strategy1"
         html.write_text(
             render_graph_html(
                 graph_data.services_by_name,
@@ -1320,6 +1322,7 @@ def export_microservices_cmd(
                 graph_data.source_roots,
                 graph_data.findings_by_service,
                 vscode_wsl_distro,
+                request_reply_strategy1,
             ),
             encoding="utf-8",
         )

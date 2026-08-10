@@ -76,3 +76,22 @@ def test_relations_materialize_kafka_http_mongo_and_module_dependency(tmp_path: 
     assert ("method", "orders:saveOrder", "writes", "collection", "orders") in facts
     assert ("class", "com.example.OrderIntegration", "uses_configuration", "property", "kafka.topics.orders.name") in facts
     assert ("microservice", "orders", "depends_on", "module", "shared") in facts
+
+
+def test_strategy1_links_a_reply_topic_to_its_request_topic(tmp_path: Path) -> None:
+    relations = build_architecture_relations(
+        [],
+        [
+            _endpoint("produce", "kafka", "orders.request"),
+            _endpoint("consume", "kafka", "retour_orders.request"),
+        ],
+        [],
+        kafka_reply_strategy1=True,
+    )
+
+    assert any(
+        relation.source_name == "orders.request"
+        and relation.relation == "request_reply"
+        and relation.target_name == "retour_orders.request"
+        for relation in relations
+    )

@@ -51,6 +51,8 @@ def build_architecture_relations(
     modules: list[DiscoveredModule],
     endpoints: list[MessageEndpoint],
     dependencies: list[ModuleDependency],
+    *,
+    kafka_reply_strategy1: bool = False,
 ) -> list[ArchitectureRelation]:
     """Materialize relations only when an indexed fact provides evidence."""
     module_kinds = {
@@ -113,6 +115,22 @@ def build_architecture_relations(
             add(_relation(
                 "topic", endpoint.topic, dto_relation, "dto", endpoint.message_type, **evidence
             ))
+
+    if kafka_reply_strategy1:
+        kafka_topics = {
+            endpoint.topic
+            for endpoint in endpoints
+            if endpoint.system == "kafka" and not endpoint.topic_dynamic
+        }
+        for reply_topic in sorted(kafka_topics):
+            if not reply_topic.casefold().startswith("retour_"):
+                continue
+            request_topic = reply_topic[len("retour_"):]
+            if request_topic and request_topic in kafka_topics:
+                add(_relation(
+                    "topic", request_topic, "request_reply", "topic", reply_topic,
+                    origin="derived", confidence="high",
+                ))
 
     for module in modules:
         source_kind = module_kinds[module.name]

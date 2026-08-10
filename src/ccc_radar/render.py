@@ -637,6 +637,7 @@ def render_graph_html(
     source_roots: list[Path] | None = None,
     findings_by_service: dict[str, list[Finding]] | None = None,
     vscode_wsl_distro: str | None = None,
+    request_reply_strategy1: bool = False,
 ) -> str:
     """Render an interactive Sigma.js graph as a self-contained HTML document.
 
@@ -685,27 +686,10 @@ def render_graph_html(
                 and endpoint.framework == "openapi"
             ):
                 contract_resources.setdefault(_openapi_contract_evidence_path(endpoint), set()).add(endpoint.topic)
-        event_apis = sorted(
-            {
-                f"Kafka · {endpoint.topic}{f' <{endpoint.message_type}>' if endpoint.message_type else ''}"
-                for endpoint in endpoints
-                if endpoint.system == "kafka" and endpoint.role == "produce"
-            }
-        )
         module = module_details.get(name)
         openapi_files = sorted(
             set(module.openapi_files if module else ()) | set(contract_resources)
         )
-        shown_apis = [*resources, *event_apis][:4]
-        api_count = len(resources) + len(event_apis)
-        if api_count > len(shown_apis):
-            shown_apis.append(f"+ {api_count - len(shown_apis)} API")
-        finding_count = len((findings_by_service or {}).get(name, []))
-        label_lines = [name, *(shown_apis or ["Aucune API publiee"])]
-        if finding_count:
-            label_lines.append(f"⚠ {finding_count} finding{'s' if finding_count > 1 else ''}")
-        if name in external_services:
-            label_lines.append("External")
         nodes.append(
             {
                 "id": f"microservice:{name}",
@@ -744,9 +728,9 @@ def render_graph_html(
                     if findings_by_service is not None
                     else {}
                 ),
-                "label": "\n".join(label_lines),
-                "width": 320,
-                "height": 76 + 18 * max(1, len(shown_apis)),
+                "label": name,
+                "width": 190,
+                "height": 42,
                 **(
                     {"external": True, "shape": "triangle"}
                     if name in external_services
@@ -809,6 +793,20 @@ def render_graph_html(
             collections_by_service
         )
     ]
+    if request_reply_strategy1:
+        known_topics = set(kafka_topics)
+        links += [
+            {
+                "source": f"kafka_topic:{request_topic}",
+                "target": f"kafka_topic:{reply_topic}",
+                "kind": "request_reply",
+                "direction": "reply",
+                "label": "request/reply",
+            }
+            for reply_topic in kafka_topics
+            if reply_topic.casefold().startswith("retour_")
+            if (request_topic := reply_topic[len("retour_"):]) in known_topics
+        ]
     complexity_relations = [
         (f"{source_kind}:{source_name}", f"{target_kind}:{target_name}")
         for source_kind, source_name, target_kind, target_name, _label, _kind in _visual_graph_edges(edges)
@@ -1204,7 +1202,7 @@ def render_graph_likec4(
         service = collection_services[identity]
         lines.extend(
             [
-                f"    {collection_ids[identity]} = mongodb_collection '{_likec4_string(collection)} ({_likec4_string(service)})' {{",
+                f"    {collection_ids[identity]} = mongodb_collection '{_likec4_string(collection)}' {{",
                 "      technology 'MongoDB'",
                 f"      description '{_likec4_string(description)}'",
                 *([f"      style {{ color {color} }}"] if color else []),
@@ -1444,6 +1442,9 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
     .legend-row { display: flex; align-items: center; gap: 6px; }
     .legend-mark { display: inline-block; width: 10px; height: 10px; border-radius: 50%; }
     .legend-line { width: 18px; height: 2px; }
+    .graph-summary { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 16px; border-bottom: 1px solid #e2e8f0; background: #f8fafc; }
+    .graph-summary-item { display: inline-flex; align-items: center; min-height: 22px; padding: 2px 8px; border: 1px solid #dbe4ee; border-radius: 999px; color: #475569; background: #fff; font-size: 11px; font-weight: 700; }
+    .graph-summary-item.is-warning { border-color: #fcd34d; color: #92400e; background: #fffbeb; }
     .inspector-modal[hidden] { display: none; }
     .inspector-modal { position: fixed; z-index: 10; inset: 0; display: grid; place-items: center; padding: 24px; background: rgba(15, 23, 42, .52); }
     .inspector-dialog { display: grid; grid-template-rows: auto minmax(0, 1fr); width: min(1120px, 100%); height: min(820px, 100%); overflow: hidden; border: 1px solid #cbd5e1; border-radius: 14px; background: #fff; box-shadow: 0 24px 80px rgba(15, 23, 42, .34); }
@@ -1477,6 +1478,7 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
         <button id="reset" type="button" aria-label="Reinitialiser la selection" title="Reinitialiser">x</button>
       </div>
     </div>
+    <div id="graph-summary" class="graph-summary" aria-label="Synthese de l'architecture"></div>
     <div class="toolbar-tabs" role="tablist" aria-label="Outils du graphe">
       <button id="graph-tab" class="toolbar-tab is-active" type="button" role="tab" aria-selected="true" aria-controls="graph-panel">Interactions</button>
       <button id="paths-tab" class="toolbar-tab" type="button" role="tab" aria-selected="false" aria-controls="paths-panel">Parcours</button>
@@ -1572,6 +1574,7 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
       <div class="legend-row"><span class="legend-line" style="background:#D55E00"></span>Appel HTTP</div>
       <div class="legend-row"><span class="legend-line" style="background:#009E73"></span>Publication Kafka</div>
       <div class="legend-row"><span class="legend-line" style="background:#0072B2"></span>Consommation Kafka</div>
+      <div class="legend-row"><span class="legend-line" style="background:#7C3AED"></span>Pattern request/reply Kafka</div>
       <div class="legend-row"><span class="legend-line" style="background:#CC79A7"></span>Acces MongoDB</div>
     </div>
   </details>
@@ -1588,6 +1591,31 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
   <script type="module">
     const graphData = JSON.parse(document.getElementById("graph-data").textContent);
     const nodeDataById = new Map(graphData.nodes.map(node => [node.id, node]));
+    const graphSummary = document.getElementById("graph-summary");
+    const summaryCounts = {
+      microservices: graphData.nodes.filter(node => node.kind === "microservice").length,
+      topics: graphData.nodes.filter(node => node.kind === "kafka_topic").length,
+      collections: graphData.nodes.filter(node => node.kind === "mongodb_collection").length,
+      requestReplies: graphData.links.filter(link => link.kind === "request_reply").length,
+    };
+    const summaryItems = [
+      `${summaryCounts.microservices} microservice${summaryCounts.microservices > 1 ? "s" : ""}`,
+      `${summaryCounts.topics} topic${summaryCounts.topics > 1 ? "s" : ""} Kafka`,
+      `${summaryCounts.collections} collection${summaryCounts.collections > 1 ? "s" : ""} MongoDB`,
+      `${graphData.links.length} relation${graphData.links.length > 1 ? "s" : ""}`,
+    ];
+    summaryItems.forEach(text => {
+      const item = document.createElement("span");
+      item.className = "graph-summary-item";
+      item.textContent = text;
+      graphSummary.append(item);
+    });
+    if (summaryCounts.requestReplies) {
+      const item = document.createElement("span");
+      item.className = "graph-summary-item is-warning";
+      item.textContent = `${summaryCounts.requestReplies} pattern${summaryCounts.requestReplies > 1 ? "s" : ""} request/reply`;
+      graphSummary.append(item);
+    }
     const layoutNodes = graphData.nodes.map((node, index) => {
       const angle = (Math.PI * 2 * index) / Math.max(1, graphData.nodes.length);
       return { ...node, x: Math.cos(angle), y: Math.sin(angle), vx: 0, vy: 0 };
@@ -1614,7 +1642,7 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
         if (!source || !target) return;
         const dx = target.x - source.x, dy = target.y - source.y;
         const distance = Math.hypot(dx, dy) || .001;
-        const desired = link.kind === "kafka" ? 1.05 : link.kind === "mongodb" ? .68 : .82;
+        const desired = ["kafka", "request_reply"].includes(link.kind) ? 1.05 : link.kind === "mongodb" ? .68 : .82;
         const pull = (distance - desired) * .035;
         const ux = dx / distance, uy = dy / distance;
         source.vx += ux * pull; source.vy += uy * pull;
@@ -1630,12 +1658,14 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
       http: "#D55E00",
       kafkaPublish: "#009E73",
       kafkaConsume: "#0072B2",
+      requestReply: "#7C3AED",
       mongodb: "#CC79A7",
       build: "#475569",
     });
     function relationColor(link) {
       if (link.kind === "rest") return RELATION_COLORS.http;
       if (link.kind === "build") return RELATION_COLORS.build;
+      if (link.kind === "request_reply") return RELATION_COLORS.requestReply;
       if (link.direction === "incoming") return RELATION_COLORS.kafkaConsume;
       if (link.direction === "data_access") return RELATION_COLORS.mongodb;
       return RELATION_COLORS.kafkaPublish;
@@ -1748,7 +1778,7 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
     const nodeMongodbCollection = document.getElementById("node-mongodb-collection");
     function isVisibleRelation(kind) {
       return (kind !== "rest" || relationHttp.checked)
-        && (kind !== "kafka" || relationKafka.checked)
+        && (!["kafka", "request_reply"].includes(kind) || relationKafka.checked)
         && (kind !== "mongodb" || relationMongodb.checked);
     }
     function isVisibleNode(node) {
@@ -2633,6 +2663,7 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
           : `HTTP · ${source.name} appelle ${target.name} (contrat non indexe)`;
       }
       if (link.kind === "mongodb") return `MongoDB · ${source.name} stocke dans ${target.name}`;
+      if (link.kind === "request_reply") return `Kafka request/reply · ${source.name} → ${target.name}`;
       if (source.kind === "microservice") {
         const types = link.published_message_types || [];
         return `Kafka · ${source.name} publie${types.length ? ` <${types.join(", ")}>` : ""} sur ${target.name}`;
@@ -3027,6 +3058,8 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
           link => nodeDataById.get(link.source).name, eventGroup);
         appendRelationList("Services consommateurs", edges.filter(link => link.kind === "kafka" && link.source === id), id,
           link => nodeDataById.get(link.target).name, eventGroup);
+        appendRelationList("Pattern request/reply", edges.filter(link => link.kind === "request_reply" && (link.source === id || link.target === id)), id,
+          link => nodeDataById.get(link.source === id ? link.target : link.source).name, eventGroup);
         const dtoNames = [...new Set([
           ...(node.published_message_types || []),
           ...(node.consumed_message_types || []),
@@ -3368,14 +3401,6 @@ def _mongodb_visual_graph_edges(
     ]
 
 
-def _d2_markdown_block(lines: list[str], indent: str = "  ") -> list[str]:
-    return (
-        [f"{indent}label: |md"]
-        + [f"{indent}  {line}" for line in lines]
-        + [f"{indent}|"]
-    )
-
-
 def _visual_graph_edges(
     edges: list[GraphEdge],
 ) -> list[tuple[str, str, str, str, str, str]]:
@@ -3441,19 +3466,15 @@ def render_graph_d2(
     ]
     for name in ordered_services:
         node_id = service_ids[name]
-        served_resources = _rest_resources_served(endpoints_by_service.get(name, []))
-        label_lines = [f"**{name}**", *(["_External_"] if name in external_services else [])]
-        if served_resources:
-            label_lines.extend([f"- `{resource}`" for resource in served_resources])
         lines.extend(
             [
                 f"{node_id}: {{",
+                f'  label: "{_d2_escape(name)}"',
                 f"  shape: {'triangle' if name in external_services else 'hexagon'}",
                 f'  style.fill: "{"#f3f4f6" if name in external_services else "#dae8fc"}"',
                 f'  style.stroke: "{"#6b7280" if name in external_services else "#6c8ebf"}"',
             ]
         )
-        lines.extend(_d2_markdown_block(label_lines))
         lines.extend(
             [
                 "}",

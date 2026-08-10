@@ -544,7 +544,10 @@ def index_repo(
         module_dependencies if "properties" not in disabled else store.all_module_dependencies()
     )
     relations = build_architecture_relations(
-        relation_modules, store.all_endpoints(), relation_dependencies
+        relation_modules,
+        store.all_endpoints(),
+        relation_dependencies,
+        kafka_reply_strategy1=topic_strategy == "strategy1",
     )
     store.replace_architecture_relations(relations)
     _report_progress(progress, f"→ Indexation : {len(relations)} relation(s) d'architecture matérialisée(s).")

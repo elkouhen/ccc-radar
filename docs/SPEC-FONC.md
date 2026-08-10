@@ -120,6 +120,8 @@ empty; it is never inferred from a topic name or serializer configuration.
 - `--topic-strategy strategy1` is an opt-in convention extractor for the
   manual engine. It maps `getTopics().getAbcDefGhiJkl()` and
   `${kafka.topics.abc_def_ghi_jkl.name}` to physical topic `ABC_DEF_GHI_JKL`.
+  It also materializes a high-confidence `request_reply` relation from a
+  request topic to an existing reply topic named `retour_<request-topic>`.
   It also activates configured HTTP-client dependencies: every uppercase
   constant containing an underscore found in a `Rest*Config*` class declares a
   dependency to its kebab-case form. In the same class,
