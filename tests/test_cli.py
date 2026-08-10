@@ -7,7 +7,7 @@ import pytest
 from typer.testing import CliRunner
 
 import ccc_radar.embedder as embedder_module
-from ccc_radar.cli import DEFAULT_REGISTRY_RULESETS, DEFAULT_RULE_PACKS, app
+from ccc_radar.cli import DEFAULT_REGISTRY_RULESETS, DEFAULT_RULE_PACKS, _is_exportable_microservice, app
 from ccc_radar.indexer import IndexReport
 from ccc_radar.models import ArchitectureRelation, Finding, MessageEndpoint, compute_endpoint_id
 from ccc_radar.modules import DiscoveredModule
@@ -19,6 +19,12 @@ ENDPOINT_INDEX_REPO = FIXTURES_DIR / "endpoint_index_repo"
 MAVEN_WORKSPACE = FIXTURES_DIR / "maven_workspace"
 
 runner = CliRunner()
+
+
+def test_microservice_export_filters_test_and_unresolved_placeholder_names() -> None:
+    assert _is_exportable_microservice("orders-service")
+    assert not _is_exportable_microservice("orders-test")
+    assert not _is_exportable_microservice("${artifactId}")
 
 
 def test_architecture_command_help_is_short_and_task_oriented() -> None:

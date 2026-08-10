@@ -891,6 +891,7 @@ def render_graph_html(
                 "id": f"microservice:{name}",
                 "kind": "microservice",
                 "name": name,
+                **({"vscode_uri": _vscode_file_uri(module.path, vscode_wsl_distro)} if module else {}),
                 "resources": resources,
                 "openapi_files": openapi_files,
                 "openapi_contracts": [
@@ -2557,8 +2558,8 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
         const item = document.createElement("li");
         const link = document.createElement("a");
         link.href = finding.vscode_uri;
-        link.textContent = `[${finding.severity}] ${finding.rule_id} · ${finding.path}:${finding.start_line}`;
-        link.title = "Ouvrir ce finding dans VS Code";
+        link.textContent = `[${finding.severity}] ${finding.rule_id} · Ouvrir le fichier`;
+        link.title = `${finding.path}:${finding.start_line} — Ouvrir ce finding dans VS Code`;
         const message = document.createElement("div");
         message.textContent = finding.message;
         item.append(link, message);
@@ -3100,6 +3101,14 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
       header.append(kicker, title, meta);
       details.append(header);
       if (node.kind === "microservice") {
+        if (node.vscode_uri) {
+          const folder = document.createElement("a");
+          folder.href = node.vscode_uri;
+          folder.className = "dto-summary";
+          folder.textContent = "Ouvrir le répertoire du microservice dans VS Code";
+          folder.title = "Ouvrir le répertoire source du microservice";
+          details.append(folder);
+        }
         const httpCalls = edges.filter(link => link.kind === "rest" && link.source === id);
         const httpClients = edges.filter(link => link.kind === "rest" && link.target === id);
         const kafkaPublications = edges.filter(link => link.kind === "kafka" && link.source === id);

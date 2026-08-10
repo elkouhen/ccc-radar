@@ -281,6 +281,8 @@ HTML file opened on Windows navigate to source files indexed inside WSL.
 The interactive HTML inspector exposes VS Code links for findings, OpenAPI
 contracts and discovered Kafka DTO source files. Microservice node labels also
 include their finding count.
+Microservices whose name contains `test`, or is an unresolved Maven-style
+placeholder such as `${artifactId}`, are excluded from microservice exports.
 *Java/Spring microservices extension — beta.*
 
 Inter-service graph built from indexed endpoints: microservices linked by

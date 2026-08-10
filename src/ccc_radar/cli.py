@@ -1177,6 +1177,14 @@ class _MicroserviceGraphData:
     result: dict[str, object]
 
 
+def _is_exportable_microservice(name: str) -> bool:
+    """Exclude test fixtures and unresolved Maven placeholder service names."""
+    normalized = name.casefold()
+    return "test" not in normalized and not (
+        name.startswith("${") and name.endswith("}")
+    )
+
+
 def _load_microservice_graph(
     repo_root: Path, workspace: Path | None, include_mongodb: bool
 ) -> _MicroserviceGraphData:
@@ -1185,9 +1193,26 @@ def _load_microservice_graph(
         workspace,
         include_runtime_services_without_endpoints=True,
     )
-    services_by_name = inventory.endpoints_by_service
-    edges = build_graph(services_by_name)
-    modules_by_service = inventory.modules_by_service if include_mongodb else {}
+    services_by_name = {
+        name: endpoints
+        for name, endpoints in inventory.endpoints_by_service.items()
+        if _is_exportable_microservice(name)
+    }
+    edges = [
+        edge
+        for edge in build_graph(services_by_name)
+        if _is_exportable_microservice(edge.from_service)
+        and _is_exportable_microservice(edge.to_service)
+    ]
+    modules_by_service = (
+        {
+            name: module
+            for name, module in inventory.modules_by_service.items()
+            if name in services_by_name
+        }
+        if include_mongodb
+        else {}
+    )
     collections_by_service = {
         service: list(module.mongo_collections)
         for service, module in modules_by_service.items()
@@ -1206,7 +1231,11 @@ def _load_microservice_graph(
         edges,
         collections_by_service,
         modules_by_service,
-        inventory.findings_by_service,
+        {
+            name: findings
+            for name, findings in inventory.findings_by_service.items()
+            if name in services_by_name
+        },
         inventory.modules,
         inventory.module_dependencies,
         inventory.source_roots,
