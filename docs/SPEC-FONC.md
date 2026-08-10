@@ -278,6 +278,9 @@ Same “index absent” rules as `findings` (same message, code 2).
 `--vscode-wsl-distro DISTRO` makes finding links in the HTML export use the
 Windows WSL UNC path (`vscode://file//wsl.localhost/DISTRO/...`). This lets an
 HTML file opened on Windows navigate to source files indexed inside WSL.
+The interactive HTML inspector exposes VS Code links for findings, OpenAPI
+contracts and discovered Kafka DTO source files. Microservice node labels also
+include their finding count.
 *Java/Spring microservices extension — beta.*
 
 Inter-service graph built from indexed endpoints: microservices linked by

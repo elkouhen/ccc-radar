@@ -740,6 +740,7 @@ def _java_project_dto_names(source: str) -> set[str]:
 def _kafka_dto_views(
     endpoints_by_service: dict[str, list[MessageEndpoint]],
     modules: list[DiscoveredModule],
+    vscode_wsl_distro: str | None = None,
 ) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
     """Build Kafka DTOs and recursively reachable project DTO definitions."""
     endpoint_types = {
@@ -749,7 +750,7 @@ def _kafka_dto_views(
         if endpoint.system == "kafka" and endpoint.message_type
     }
     root_names = {value.rsplit(".", 1)[-1] for value in endpoint_types}
-    candidates: dict[str, list[tuple[str, str]]] = {}
+    candidates: dict[str, list[tuple[str, str, Path]]] = {}
     for module in modules:
         source_root = module.path / "src" / "main" / "java"
         if not source_root.is_dir():
@@ -761,7 +762,7 @@ def _kafka_dto_views(
                 continue
             relative_path = str(java_path.relative_to(module.path))
             for dto_name in _java_project_dto_names(source):
-                candidates.setdefault(dto_name, []).append((relative_path, source))
+                candidates.setdefault(dto_name, []).append((relative_path, source, java_path))
 
     unique_candidates = {
         name: candidate[0]
@@ -776,7 +777,7 @@ def _kafka_dto_views(
             continue
         definition: dict[str, object] = {"name": dto_name, "fields": [], "source": None}
         if candidate := unique_candidates.get(dto_name):
-            source_path, source = candidate
+            source_path, source, source_file = candidate
             fields, references_by_field = _java_dto_fields(source, dto_name)
             for field, references in zip(fields, references_by_field, strict=True):
                 nested = sorted({reference for reference in references if reference in unique_candidates})
@@ -785,6 +786,7 @@ def _kafka_dto_views(
                     pending.extend(reference for reference in nested if reference != dto_name)
             definition["fields"] = fields
             definition["source"] = source_path
+            definition["vscode_uri"] = _vscode_file_uri(source_file, vscode_wsl_distro)
         definitions[dto_name] = definition
 
     root_definitions = []
@@ -878,7 +880,10 @@ def render_graph_html(
         api_count = len(resources) + len(event_apis)
         if api_count > len(shown_apis):
             shown_apis.append(f"+ {api_count - len(shown_apis)} API")
+        finding_count = len((findings_by_service or {}).get(name, []))
         label_lines = [name, *(shown_apis or ["Aucune API publiee"])]
+        if finding_count:
+            label_lines.append(f"⚠ {finding_count} finding{'s' if finding_count > 1 else ''}")
         if name in external_services:
             label_lines.append("External")
         nodes.append(
@@ -892,6 +897,7 @@ def render_graph_html(
                     {
                         "path": path,
                         "resources": sorted(contract_resources.get(path, set())),
+                        **({"vscode_uri": _vscode_file_uri(module.path / path, vscode_wsl_distro)} if module else {}),
                         **(
                             {"spec": spec}
                             if (spec := _openapi_contract_spec(path, all_modules, source_roots)) is not None
@@ -1016,7 +1022,9 @@ def render_graph_html(
         }
         node["color"] = {"low": "#2563eb", "medium": "#d97706", "high": "#dc2626"}[level]
         node["size"] = base_size + {"low": 0, "medium": 2, "high": 4}[level]
-    kafka_dtos, project_dto_definitions = _kafka_dto_views(endpoints_by_service, all_modules)
+    kafka_dtos, project_dto_definitions = _kafka_dto_views(
+        endpoints_by_service, all_modules, vscode_wsl_distro
+    )
     graph_data = json.dumps(
         {
             "nodes": nodes,
@@ -2608,6 +2616,13 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
     }
     function openOpenApiContract(contract) {
       openInspector(`OpenAPI · ${contract.path}`);
+      if (contract.vscode_uri) {
+        const link = document.createElement("a");
+        link.href = contract.vscode_uri;
+        link.textContent = "Ouvrir le fichier dans VS Code";
+        link.className = "dto-summary";
+        inspectorBody.append(link);
+      }
       if (!contract.spec || !window.SwaggerUIBundle) {
         const message = document.createElement("p");
         message.className = "dto-summary";
@@ -2680,6 +2695,13 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
         ? `Classe source : ${dto.source}`
         : "Classe Java non retrouvee dans les sources indexees ; les relations Kafka restent disponibles.";
       inspectorBody.append(summary);
+      if (dto.vscode_uri) {
+        const sourceLink = document.createElement("a");
+        sourceLink.href = dto.vscode_uri;
+        sourceLink.className = "dto-summary";
+        sourceLink.textContent = "Ouvrir la classe dans VS Code";
+        inspectorBody.append(sourceLink);
+      }
       const fields = dto.fields || [];
       if (fields.length) {
         const section = document.createElement("section");
@@ -3528,6 +3550,13 @@ def _vscode_uri(finding: Finding, module: DiscoveredModule | None, source_roots:
     if wsl_distro:
         return f"vscode://file//wsl.localhost/{quote(wsl_distro, safe='')}{quote(candidate.as_posix(), safe='/')}:{finding.start_line}"
     return f"vscode://file/{quote(candidate.as_posix(), safe='/')}:{finding.start_line}"
+
+
+def _vscode_file_uri(path: Path, wsl_distro: str | None = None) -> str:
+    resolved = path.resolve()
+    if wsl_distro:
+        return f"vscode://file//wsl.localhost/{quote(wsl_distro, safe='')}{quote(resolved.as_posix(), safe='/')}"
+    return f"vscode://file/{quote(resolved.as_posix(), safe='/')}"
 
 
 def _openapi_contract_evidence_path(endpoint: MessageEndpoint) -> str:

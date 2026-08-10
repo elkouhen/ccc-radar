@@ -659,9 +659,10 @@ def test_render_graph_html_embeds_openapi_and_kafka_dto_inspectors(tmp_path: Pat
             "fields": [
                 {"type": "String", "name": "id"},
                 {"type": "java.math.BigDecimal", "name": "amount"},
-            ],
-            "source": "src/main/java/com/example/OrderCreated.java",
-            "producers": ["orders-service"],
+                ],
+                "source": "src/main/java/com/example/OrderCreated.java",
+                "vscode_uri": f"vscode://file/{java_path}",
+                "producers": ["orders-service"],
             "consumers": [],
             "topics": ["orders.created"],
         }
@@ -807,9 +808,11 @@ def test_render_graph_html_keeps_complexity_architecture_only() -> None:
         "relations": 2,
     }
     assert service["openapi_files"] == ["src/main/resources/openapi.yaml"]
-    assert service["openapi_contracts"] == [
-        {"path": "src/main/resources/openapi.yaml", "resources": []}
-    ]
+    assert service["openapi_contracts"][0]["path"] == "src/main/resources/openapi.yaml"
+    assert service["openapi_contracts"][0]["resources"] == []
+    assert service["openapi_contracts"][0]["vscode_uri"].endswith(
+        "/service-a/src/main/resources/openapi.yaml"
+    )
     assert '"findings"' not in document
     assert "severity_counts" not in document
     assert service["color"] == "#2563eb"
