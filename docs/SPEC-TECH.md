@@ -541,6 +541,15 @@ source_path)` rather than treated as a literal topic name (ADR-28). Resolved →
 `topic_dynamic=False`, `topic` = resolved value; unresolved → placeholder kept
 as-is, `topic_dynamic=True`.
 
+**Spring listener completeness**: `@KafkaListener(topics = {"a", "b"})`
+emits one consumer endpoint per topic, and `topicPartitions =
+@TopicPartition(topic = "a", ...)` emits the same concrete dependency once.
+`topicPattern` remains a dynamic endpoint even when the pattern is literal: it
+is evidence of subscription, but must never be joined by exact topic equality.
+The imperative producer extractor also recognizes `StreamBridge.send(topic,
+payload)` as `spring-cloud-stream` when a `StreamBridge` marker is present in
+the source file.
+
 **Kafka Streams DSL (BACKLOG Q25)**: second Kafka integration style,
 distinct from the imperative `@KafkaListener`/`KafkaTemplate.send`
 idiom (`StreamsBuilder.stream(...)` = consume, `KStream.to(...)` = produce).

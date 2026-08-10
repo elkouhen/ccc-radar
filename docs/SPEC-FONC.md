@@ -102,6 +102,9 @@ Indexes the project (Semgrep findings **and** REST/Kafka endpoints). Kafka
 endpoints also retain a source-level Java payload type when it is explicit in a
 listener parameter or Kafka client generic signature. An unavailable type stays
 empty; it is never inferred from a topic name or serializer configuration.
+The local Kafka extractor records every topic in a Spring listener array and
+partition listener, treats `topicPattern` as a dynamic (non-exact) dependency,
+and recognizes Spring Cloud Stream `StreamBridge.send(...)` publications.
 
 - Default: incremental — only re-scans files added or modified since the last
   indexing (SHA-256 hash per file); files deleted from disk have their findings

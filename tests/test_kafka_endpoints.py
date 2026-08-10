@@ -5,6 +5,7 @@ import pytest
 from ccc_radar.config import Config
 from ccc_radar.scanner import (
     apply_kafka_topic_strategy1,
+    infer_kafka_endpoints,
     infer_kafka_topic_strategy1_endpoints,
     infer_json_kafka_flow_graph_endpoints,
     infer_markdown_topic_manifest_endpoints,
@@ -255,6 +256,43 @@ def test_kafka_topic_strategy1_replaces_standard_extraction_at_covered_sites(tmp
     endpoints = apply_kafka_topic_strategy1([standard], [strategy])
 
     assert endpoints == [strategy]
+
+
+def test_kafka_dependencies_cover_listener_arrays_partitions_patterns_and_stream_bridge(tmp_path: Path) -> None:
+    source = tmp_path / "src" / "main" / "java" / "EventAdapter.java"
+    source.parent.mkdir(parents=True)
+    source.write_text(
+        """import org.springframework.kafka.annotation.KafkaListener;
+import org.springframework.kafka.annotation.TopicPartition;
+import org.springframework.cloud.stream.function.StreamBridge;
+
+class EventAdapter {
+  private StreamBridge streamBridge;
+
+  @KafkaListener(topics = {"orders.created", "orders.cancelled"})
+  void consumeMany(String event) {}
+
+  @KafkaListener(topicPartitions = @TopicPartition(topic = "orders.partitioned", partitions = {"0", "1"}))
+  void consumePartition(String event) {}
+
+  @KafkaListener(topicPattern = "orders\\..*")
+  void consumePattern(String event) {}
+
+  void publish(OrderCreated event) {
+    streamBridge.send("orders.enriched", event);
+  }
+}
+"""
+    )
+
+    endpoints = infer_kafka_endpoints(tmp_path)
+    facts = {(endpoint.role, endpoint.topic, endpoint.topic_dynamic, endpoint.framework) for endpoint in endpoints}
+
+    assert ("consume", "orders.created", False, "spring-kafka") in facts
+    assert ("consume", "orders.cancelled", False, "spring-kafka") in facts
+    assert ("consume", "orders.partitioned", False, "spring-kafka") in facts
+    assert ("consume", "orders\\..*", True, "spring-kafka") in facts
+    assert ("produce", "orders.enriched", False, "spring-cloud-stream") in facts
 
 
 @pytest.mark.integration
