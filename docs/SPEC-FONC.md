@@ -59,6 +59,10 @@ WebClient, Spring Cloud Gateway, Spring Data REST, Spring Kafka and Spring
 Cloud Stream. Markdown and JSON Kafka manifests are supported as explicit
 sources and are labelled `source=manifest`.
 
+The HTML microservice export provides an inspector for each statically typed
+Kafka message. It shows the message topic, producer and consumer services, and
+allows navigation through recursively referenced project DTO fields.
+
 `--topic-strategy strategy1` adds opt-in convention extraction for selected
 `getTopics()` accessors, `${kafka.topics.*.name}` expressions and configured
 REST client constants. It may also derive a high-confidence request/reply pair
