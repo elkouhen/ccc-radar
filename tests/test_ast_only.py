@@ -51,7 +51,8 @@ def test_strategy1_recognizes_envoyer_message_kafka_as_a_producer(tmp_path: Path
     source.write_text(
         """package com.example;
 class Publisher {
-  void publish(OrderCreated event) {
+  void publish() {
+    OrderCreated event = new OrderCreated("42");
     kafkaService.envoyerMessageKafka(kafkaProperties.getTopics().getOrdersCreated(), event);
   }
 }

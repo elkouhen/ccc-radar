@@ -1983,15 +1983,74 @@ def _method_param_payload_type(source: bytes, method_node, var_name: str) -> str
     return None
 
 
+def _declared_identifier_payload_type(source: bytes, invocation, var_name: str) -> str | None:
+    """Resolve an identifier from its closest local declaration, then a field.
+
+    This remains deliberately local to the enclosing Java method/class: an
+    unrelated declaration in another method must never supply a Kafka DTO type.
+    """
+    method = java_parser.enclosing(invocation, "method_declaration")
+    if method is None:
+        return None
+    local_declarations = []
+    for declaration in java_parser.walk(method):
+        if declaration.type != "local_variable_declaration" or declaration.start_byte > invocation.start_byte:
+            continue
+        if not any(
+            java_parser.node_text(source, name) == var_name
+            for declarator in declaration.children
+            if declarator.type == "variable_declarator"
+            if (name := declarator.child_by_field_name("name")) is not None
+        ):
+            continue
+        local_declarations.append(declaration)
+    if local_declarations:
+        declaration = max(local_declarations, key=lambda item: item.start_byte)
+        type_node = declaration.child_by_field_name("type")
+        payload = _message_payload_type(java_parser.node_text(source, type_node)) if type_node else None
+        if payload is not None:
+            return payload
+        for declarator in declaration.children:
+            if declarator.type != "variable_declarator":
+                continue
+            name = declarator.child_by_field_name("name")
+            if name is None or java_parser.node_text(source, name) != var_name:
+                continue
+            value = declarator.child_by_field_name("value")
+            if value is not None and value.type == "object_creation_expression":
+                return _message_payload_type(_object_creation_type(source, value))
+
+    owner = java_parser.enclosing(method, "class_declaration") or java_parser.enclosing(method, "record_declaration")
+    if owner is None:
+        return None
+    for declaration in java_parser.walk(owner):
+        if declaration.type != "field_declaration":
+            continue
+        type_node = declaration.child_by_field_name("type")
+        if type_node is None:
+            continue
+        for declarator in declaration.children:
+            if declarator.type != "variable_declarator":
+                continue
+            name = declarator.child_by_field_name("name")
+            if name is not None and java_parser.node_text(source, name) == var_name:
+                return _message_payload_type(java_parser.node_text(source, type_node))
+    return None
+
+
 def _producer_send_payload_type(source: bytes, invocation) -> str | None:
     """Type de payload d'un ``send(topic, payload, ...)`` : 2e argument
-    résolu contre le paramètre de la méthode englobante."""
+    résolu contre une déclaration Java proche."""
     method = java_parser.enclosing(invocation, "method_declaration")
     if method is None:
         return None
     for arg in java_parser.argument_nodes(invocation)[1:]:
         if arg.type == "identifier":
-            payload = _method_param_payload_type(source, method, java_parser.node_text(source, arg))
+            variable_name = java_parser.node_text(source, arg)
+            payload = _method_param_payload_type(source, method, variable_name)
+            if payload is not None:
+                return payload
+            payload = _declared_identifier_payload_type(source, invocation, variable_name)
             if payload is not None:
                 return payload
         elif arg.type == "object_creation_expression":

@@ -71,7 +71,8 @@ With `--topic-strategy strategy1`, `envoyerMessageKafka(topic, payload)` is an
 additional producer convention. A first argument shaped as
 `kafkaProperties.getTopics().getXxx()` resolves to the normalized Strategy1
 topic name; other values use the conservative topic resolver. The second
-argument is used to derive the payload type.
+argument is used to derive the payload type from its method parameter, local
+variable declaration or enclosing class field.
 
 `render_graph_html` resolves the Java DTOs and enums rooted at those Kafka
 payload types from production source roots. It follows declared field types
