@@ -1731,7 +1731,8 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
     <details id="advanced-tools" class="advanced-tools">
       <summary>Outils avancés</summary>
       <div class="toolbar-tabs" role="tablist" aria-label="Outils avancés du graphe">
-        <button id="references-tab" class="toolbar-tab" type="button" role="tab" aria-selected="false" aria-controls="references-panel" title="Contrats OpenAPI et DTO Kafka">Contrats &amp; DTO</button>
+        <button id="openapi-tab" class="toolbar-tab" type="button" role="tab" aria-selected="false" aria-controls="openapi-panel">OpenAPI</button>
+        <button id="dto-tab" class="toolbar-tab" type="button" role="tab" aria-selected="false" aria-controls="dto-panel">DTO Kafka</button>
         <button id="request-reply-tab" class="toolbar-tab" type="button" role="tab" aria-selected="false" aria-controls="request-reply-panel" title="Patterns Kafka request/reply détectés par convention">Request/reply</button>
         <button id="dependencies-tab" class="toolbar-tab" type="button" role="tab" aria-selected="false" aria-controls="dependencies-panel" title="Dépendances Maven et Gradle entre modules">Dépendances build</button>
       </div>
@@ -1759,14 +1760,21 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
       <ul id="analyzed-paths" class="path-history-list" aria-label="Chemins analyses"></ul>
       <p id="analyzed-paths-empty" class="path-history-empty">Aucun chemin analyse pour le moment.</p>
     </div>
-    <div id="references-panel" class="toolbar-panel references-view" role="tabpanel" aria-labelledby="references-tab" hidden>
+    <div id="openapi-panel" class="toolbar-panel references-view" role="tabpanel" aria-labelledby="openapi-tab" hidden>
       <div class="references-header">
-        <p class="references-kicker">Documentation et événements</p>
-        <h2 id="references-title" class="references-title">Contrats et messages</h2>
-        <p class="references-description">Ouvrez une spécification dans Swagger UI ou inspectez les classes Java échangées via Kafka.</p>
+        <p class="references-kicker">Documentation d'API</p>
+        <h2 id="openapi-references-title" class="references-title">Contrats OpenAPI</h2>
+        <p class="references-description">Ouvrez une spécification locale dans Swagger UI.</p>
       </div>
-      <section class="references-section"><h3>Contrats OpenAPI</h3><ul id="openapi-references" class="references-list"></ul><p id="openapi-references-empty" class="references-empty">Aucun contrat OpenAPI détecté.</p></section>
-      <section class="references-section"><h3>DTO Kafka</h3><input id="dto-reference-filter" class="dto-reference-filter" type="search" placeholder="Filtrer les DTO par nom ou package" autocomplete="off" aria-label="Filtrer les DTO Kafka"><ul id="dto-references" class="references-list"></ul><p id="dto-references-empty" class="references-empty">Aucun DTO Kafka détecté.</p></section>
+      <section class="references-section"><ul id="openapi-references" class="references-list"></ul><p id="openapi-references-empty" class="references-empty">Aucun contrat OpenAPI détecté.</p></section>
+    </div>
+    <div id="dto-panel" class="toolbar-panel references-view" role="tabpanel" aria-labelledby="dto-tab" hidden>
+      <div class="references-header">
+        <p class="references-kicker">Événements Kafka</p>
+        <h2 id="dto-references-title" class="references-title">DTO Kafka</h2>
+        <p class="references-description">Inspectez les classes Java échangées via Kafka.</p>
+      </div>
+      <section class="references-section"><input id="dto-reference-filter" class="dto-reference-filter" type="search" placeholder="Filtrer les DTO par nom ou package" autocomplete="off" aria-label="Filtrer les DTO Kafka"><ul id="dto-references" class="references-list"></ul><p id="dto-references-empty" class="references-empty">Aucun DTO Kafka détecté.</p></section>
     </div>
     <div id="request-reply-panel" class="toolbar-panel request-reply-view" role="tabpanel" aria-labelledby="request-reply-tab" hidden>
       <div class="references-header">
@@ -2197,14 +2205,16 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
     const dependenciesTab = document.getElementById("dependencies-tab");
     const issuesTab = document.getElementById("issues-tab");
     const pathsTab = document.getElementById("paths-tab");
-    const referencesTab = document.getElementById("references-tab");
+    const openapiTab = document.getElementById("openapi-tab");
+    const dtoTab = document.getElementById("dto-tab");
     const requestReplyTab = document.getElementById("request-reply-tab");
     const graphLegend = document.getElementById("graph-legend");
     const graphPanel = document.getElementById("graph-panel");
     const dependenciesPanel = document.getElementById("dependencies-panel");
     const issuesPanel = document.getElementById("issues-panel");
     const pathsPanel = document.getElementById("paths-panel");
-    const referencesPanel = document.getElementById("references-panel");
+    const openapiPanel = document.getElementById("openapi-panel");
+    const dtoPanel = document.getElementById("dto-panel");
     const requestReplyPanel = document.getElementById("request-reply-panel");
     const advancedControls = document.getElementById("advanced-controls");
     const advancedTools = document.getElementById("advanced-tools");
@@ -2255,7 +2265,8 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
     const dtoReferencesList = document.getElementById("dto-references");
     const dtoReferencesEmpty = document.getElementById("dto-references-empty");
     const dtoReferencesFilter = document.getElementById("dto-reference-filter");
-    const referencesTitle = document.getElementById("references-title");
+    const openapiReferencesTitle = document.getElementById("openapi-references-title");
+    const dtoReferencesTitle = document.getElementById("dto-references-title");
     const requestReplyPatternsList = document.getElementById("request-reply-patterns");
     const requestReplyEmpty = document.getElementById("request-reply-empty");
     const requestReplyTitle = document.getElementById("request-reply-title");
@@ -2387,7 +2398,8 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
       const showingDependencies = tab === "dependencies";
       const showingIssues = tab === "issues";
       const showingPaths = tab === "paths";
-      const showingReferences = tab === "references";
+      const showingOpenApi = tab === "openapi";
+      const showingDtos = tab === "dtos";
       const showingRequestReply = tab === "request-reply";
       graphTab.classList.toggle("is-active", showingGraph);
       graphTab.setAttribute("aria-selected", String(showingGraph));
@@ -2397,15 +2409,18 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
       issuesTab.setAttribute("aria-selected", String(showingIssues));
       pathsTab.classList.toggle("is-active", showingPaths);
       pathsTab.setAttribute("aria-selected", String(showingPaths));
-      referencesTab.classList.toggle("is-active", showingReferences);
-      referencesTab.setAttribute("aria-selected", String(showingReferences));
+      openapiTab.classList.toggle("is-active", showingOpenApi);
+      openapiTab.setAttribute("aria-selected", String(showingOpenApi));
+      dtoTab.classList.toggle("is-active", showingDtos);
+      dtoTab.setAttribute("aria-selected", String(showingDtos));
       requestReplyTab.classList.toggle("is-active", showingRequestReply);
       requestReplyTab.setAttribute("aria-selected", String(showingRequestReply));
       graphPanel.hidden = !showingGraph;
       dependenciesPanel.hidden = !showingDependencies;
       issuesPanel.hidden = !showingIssues;
       pathsPanel.hidden = !showingPaths;
-      referencesPanel.hidden = !showingReferences;
+      openapiPanel.hidden = !showingOpenApi;
+      dtoPanel.hidden = !showingDtos;
       requestReplyPanel.hidden = !showingRequestReply;
       graphLegend.hidden = !showingGraph;
       graphCanvas.hidden = showingDependencies;
@@ -2548,7 +2563,8 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
           () => openDtoInspector(dto.id),
         ));
       });
-      referencesTitle.textContent = `Contrats et messages (${contracts.length + dtos.length})`;
+      openapiReferencesTitle.textContent = `Contrats OpenAPI (${contracts.length})`;
+      dtoReferencesTitle.textContent = `DTO Kafka (${visibleDtos.length}/${dtos.length})`;
     }
     function renderRequestReplyPatterns() {
       const patterns = graphData.links.filter(link => link.kind === "request_reply");
@@ -3494,14 +3510,15 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
     });
     document.getElementById("question-messages").addEventListener("click", () => {
       advancedTools.open = true;
-      setToolbarTab("references");
+      setToolbarTab("dtos");
     });
     layoutButtons.forEach((button, layout) => button.addEventListener("click", () => applyLayout(layout)));
     graphTab.addEventListener("click", () => setToolbarTab("graph"));
     dependenciesTab.addEventListener("click", () => setToolbarTab("dependencies"));
     issuesTab.addEventListener("click", () => setToolbarTab("issues"));
     pathsTab.addEventListener("click", () => setToolbarTab("paths"));
-    referencesTab.addEventListener("click", () => setToolbarTab("references"));
+    openapiTab.addEventListener("click", () => setToolbarTab("openapi"));
+    dtoTab.addEventListener("click", () => setToolbarTab("dtos"));
     requestReplyTab.addEventListener("click", () => setToolbarTab("request-reply"));
     filterPresetButtons.forEach(button => button.addEventListener("click", () => applyRelationPreset(button.dataset.preset)));
     [

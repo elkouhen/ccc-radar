@@ -67,8 +67,9 @@ dependencies, service-to-service path and Kafka messages). Relation/resource
 filters, graph layouts, specialized reference views and build dependencies are
 available as advanced controls.
 Indexing issues that have a source endpoint expose a VS Code link to the
-associated file and line. The contracts and DTO view supports filtering the
-complete Kafka DTO list by simple name or package.
+associated file and line. OpenAPI contracts and Kafka DTOs use separate
+advanced tabs; the DTO tab supports filtering the complete list by simple name
+or package.
 
 `--topic-strategy strategy1` adds opt-in convention extraction for selected
 `getTopics()` accessors, `${kafka.topics.*.name}` expressions and configured

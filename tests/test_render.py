@@ -109,6 +109,10 @@ enum PaymentStatus { AUTHORIZED, DECLINED }
     assert '>Ajuster</button>' in document
     assert '>Effacer</button>' in document
     assert 'id="dto-reference-filter"' in document
+    assert 'id="openapi-tab"' in document
+    assert 'id="dto-tab"' in document
+    assert 'id="openapi-panel"' in document
+    assert 'id="dto-panel"' in document
     assert 'id="graph-legend"' in document
     assert 'graphLegend.hidden = !showingGraph' in document
     assert 'issue.vscode_uri ? "a" : "code"' in document
