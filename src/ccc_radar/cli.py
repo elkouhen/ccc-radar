@@ -15,6 +15,7 @@ from ccc_radar.architecture import (
     build_catalog,
     endpoint_implementation,
     find_microservice_paths,
+    indexing_issues,
     inventory_coverage,
     list_objects as list_architecture_objects,
     neighbors as architecture_neighbors,
@@ -715,6 +716,19 @@ def analyze_coverage(
     _render_inventory_coverage(_option_root(root), _option_json(json_output))
 
 
+@analyze_app.command("indexing-issues")
+def analyze_indexing_issues(
+    root: Path | None = typer.Option(None, "--root", help="Répertoire indexé à analyser."),
+    json_output: bool = typer.Option(False, "--json", help="Inclure les preuves source structurées."),
+) -> None:
+    """Lister les faits non résolus avec leurs preuves source.
+
+    Utilisez `--json` pour fournir la sortie à une IA qui doit proposer une
+    heuristique de résolution conservatrice.
+    """
+    _render_indexing_issues(_option_root(root), _option_json(json_output))
+
+
 @analyze_app.command("request-reply")
 def analyze_request_reply(
     root: Path | None = typer.Option(None, "--root", help="Répertoire indexé à analyser."),
@@ -1180,6 +1194,24 @@ def _render_inventory_coverage(repo_root: Path, json_output: bool) -> None:
         catalog = build_catalog(store.all_modules(), store.all_endpoints())
         result = inventory_coverage(catalog, store.all_architecture_relations())
     _emit_architecture(result, json_output)
+
+
+def _render_indexing_issues(repo_root: Path, json_output: bool) -> None:
+    _require_index(repo_root)
+    with Store(repo_root, readonly=True) as store:
+        catalog = build_catalog(store.all_modules(), store.all_endpoints())
+        warning = _current_repo_endpoint_warning(store)
+    result = indexing_issues(catalog, [warning] if warning else [])
+    if json_output:
+        typer.echo(json.dumps(result))
+        return
+    typer.echo(f"Problemes d'indexation : {result['count']}")
+    for issue in cast(list[dict[str, object]], result["issues"]):
+        source = cast(dict[str, object] | None, issue["source"])
+        location = (
+            f" ({source['path']}:{source['start_line']})" if source is not None else ""
+        )
+        typer.echo(f"- [{issue['severity']}] {issue['code']} : {issue['message']}{location}")
 
 
 def _render_request_reply_patterns(repo_root: Path, json_output: bool) -> None:

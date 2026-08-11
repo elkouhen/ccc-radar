@@ -93,6 +93,12 @@ The manifest extractors add explicitly declared Kafka facts from Markdown and
 JSON. Strategy1 is separate and opt-in because it embeds repository-specific
 naming conventions.
 
+`cccr analyze indexing-issues --json` exposes unresolved facts as a structured
+remediation review payload. Each endpoint-backed issue has a stable code,
+severity, service, framework, topic/API, extracted message type and its source
+path, line range and snippet. The command does not infer or apply a heuristic;
+its evidence is intended for a human or an AI to assess a conservative rule.
+
 ## Persistence and compatibility
 
 SQLite schema migration is additive where possible. `files` stores hash state,

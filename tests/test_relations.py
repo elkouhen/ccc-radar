@@ -1,5 +1,7 @@
+from dataclasses import replace
 from pathlib import Path
 
+from ccc_radar.architecture import build_catalog, indexing_issues
 from ccc_radar.models import MessageEndpoint, compute_endpoint_id
 from ccc_radar.modules import DiscoveredModule, ModuleDependency, MongoMethod
 from ccc_radar.relations import build_architecture_relations
@@ -95,3 +97,29 @@ def test_strategy1_links_a_reply_topic_to_its_request_topic(tmp_path: Path) -> N
         and relation.target_name == "retour_orders.request"
         for relation in relations
     )
+
+
+def test_indexing_issues_exposes_source_evidence_for_heuristic_review() -> None:
+    dynamic_topic = replace(
+        _endpoint("produce", "kafka", "kafkaProperties.getTopics().getOrders()", snippet="send(topic, payload)"),
+        topic_dynamic=True,
+    )
+    unmatched_call = _endpoint("call", "rest", "GET /payments", snippet="client.get()")
+
+    result = indexing_issues(build_catalog([], [dynamic_topic, unmatched_call]))
+
+    assert result["count"] == 3
+    assert result["by_code"] == {
+        "dynamic_kafka_topic": 1,
+        "unknown_kafka_message_type": 1,
+        "unmatched_http_call": 1,
+    }
+    dynamic = next(issue for issue in result["issues"] if issue["code"] == "dynamic_kafka_topic")
+    assert dynamic["service"] == "orders"
+    assert dynamic["framework"] == "spring"
+    assert dynamic["source"] == {
+        "path": "src/main/java/OrderIntegration.java",
+        "start_line": 12,
+        "end_line": 12,
+        "snippet": "send(topic, payload)",
+    }

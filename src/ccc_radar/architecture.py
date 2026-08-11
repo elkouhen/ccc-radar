@@ -629,6 +629,86 @@ def inventory_coverage(
     }
 
 
+def indexing_issues(
+    catalog: ArchitectureCatalog, warnings: list[str] | tuple[str, ...] = ()
+) -> dict[str, object]:
+    """Return unresolved facts with source evidence for remediation analysis.
+
+    Unlike :func:`inventory_coverage`, this view is intentionally itemized and
+    includes the original extracted expression so an external reviewer or AI
+    can assess a proposed heuristic without guessing from a summary.
+    """
+    issues: list[dict[str, object]] = []
+
+    def endpoint_issue(
+        code: str, severity: str, message: str, endpoint: MessageEndpoint
+    ) -> None:
+        issues.append(
+            {
+                "code": code,
+                "severity": severity,
+                "message": message,
+                "service": endpoint.module,
+                "system": endpoint.system,
+                "role": endpoint.role,
+                "topic_or_api": endpoint.topic,
+                "topic_dynamic": endpoint.topic_dynamic,
+                "message_type": endpoint.message_type,
+                "framework": endpoint.framework,
+                "source": {
+                    "path": endpoint.path,
+                    "start_line": endpoint.start_line,
+                    "end_line": endpoint.end_line,
+                    "snippet": endpoint.snippet,
+                },
+            }
+        )
+
+    for warning in dict.fromkeys(warnings):
+        issues.append(
+            {
+                "code": "inventory_warning",
+                "severity": "warning",
+                "message": warning,
+                "service": None,
+                "source": None,
+            }
+        )
+
+    matched_http_call_ids = {edge.from_endpoint.id for edge in catalog.edges if edge.kind == "rest"}
+    for endpoint in sorted(catalog.endpoints, key=lambda item: (item.path, item.start_line, item.id)):
+        service = endpoint.module or "service inconnu"
+        if endpoint.system == "kafka" and endpoint.topic_dynamic:
+            endpoint_issue(
+                "dynamic_kafka_topic",
+                "warning",
+                f"{service} : le topic {endpoint.topic!r} ne peut pas etre resolu statiquement.",
+                endpoint,
+            )
+        if endpoint.system == "kafka" and not endpoint.message_type:
+            endpoint_issue(
+                "unknown_kafka_message_type",
+                "info",
+                f"{service} : le type Java du message sur {endpoint.topic!r} n'a pas ete deduit.",
+                endpoint,
+            )
+        if endpoint.system == "rest" and endpoint.role == "call" and endpoint.id not in matched_http_call_ids:
+            endpoint_issue(
+                "unmatched_http_call",
+                "warning" if endpoint.topic_dynamic else "info",
+                f"{service} : aucun microservice fournisseur n'a ete identifie pour {endpoint.topic!r}.",
+                endpoint,
+            )
+
+    severity_rank = {"warning": 0, "info": 1}
+    issues.sort(key=lambda issue: (severity_rank[str(issue["severity"])], str(issue["code"]), str(issue["message"])))
+    by_code: dict[str, int] = {}
+    for issue in issues:
+        code = str(issue["code"])
+        by_code[code] = by_code.get(code, 0) + 1
+    return {"kind": "indexing_issues", "count": len(issues), "by_code": by_code, "issues": issues}
+
+
 def render_text(result: object) -> str:
     if isinstance(result, list):
         if not result:

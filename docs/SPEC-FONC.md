@@ -28,6 +28,7 @@ but does not alter AST endpoint extraction.
 | `cccr index [--full] [--topic-strategy default\|strategy1] [--manifest FILE]...` | Incrementally extracts and persists architecture facts. |
 | `cccr microservices`, `topics`, `apis`, `dtos`, `mongodb`, `modules` | Browse the indexed catalog; each supports the documented list/show/neighbors actions and JSON output where applicable. |
 | `cccr analyze audit` | Reports static architecture risks. |
+| `cccr analyze indexing-issues [--json]` | Lists unresolved indexing facts. JSON includes source evidence suitable for reviewing proposed heuristics. |
 | `cccr analyze microservices impact NAME` | Lists direct and transitive impact paths. |
 | `cccr analyze microservices path FROM TO` | Lists bounded paths between services. |
 | `cccr analyze request-reply` | Lists Strategy1 Kafka request/reply candidates. |

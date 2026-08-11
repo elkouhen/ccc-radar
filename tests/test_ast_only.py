@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import shutil
+import json
 from dataclasses import replace
 from pathlib import Path
 
@@ -95,6 +96,21 @@ def test_cli_index_does_not_require_an_embedding_model(tmp_path: Path, monkeypat
     assert result.exit_code == 0
     assert "+integrations=2" in result.output
     assert "cccr export microservices --html architecture.html" in result.output
+
+
+def test_cli_indexing_issues_emits_ai_ready_json(tmp_path: Path, monkeypatch) -> None:
+    repo = tmp_path / "repo"
+    shutil.copytree(FIXTURES / "endpoint_index_repo", repo)
+    monkeypatch.chdir(repo)
+    assert RUNNER.invoke(app, ["init"]).exit_code == 0
+    assert RUNNER.invoke(app, ["index"]).exit_code == 0
+
+    result = RUNNER.invoke(app, ["analyze", "indexing-issues", "--json"])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["kind"] == "indexing_issues"
+    assert isinstance(payload["issues"], list)
 
 
 def test_indexed_kafka_facts_build_a_traceable_service_edge(tmp_path: Path) -> None:
