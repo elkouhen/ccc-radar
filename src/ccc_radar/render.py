@@ -1492,7 +1492,7 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
     body { margin: 0; overflow: hidden; }
     #graph, #dependency-graph { width: 100vw; height: 100vh; background: #f8fafc; touch-action: none; }
     #dependency-graph[hidden] { display: none; }
-    .toolbar { position: fixed; z-index: 2; top: 16px; left: 16px; display: grid; gap: 10px; width: min(390px, calc(100vw - 32px)); padding: 12px; border: 1px solid #d7dee9; border-radius: 10px; background: rgba(255, 255, 255, .96); box-shadow: 0 4px 20px rgba(15, 23, 42, .12); }
+    .toolbar { position: fixed; z-index: 2; top: 16px; left: 16px; display: grid; gap: 10px; width: min(390px, calc(100vw - 32px)); max-height: calc(100vh - 32px); padding: 12px; overflow-y: auto; border: 1px solid #d7dee9; border-radius: 10px; background: rgba(255, 255, 255, .96); box-shadow: 0 4px 20px rgba(15, 23, 42, .12); }
     .toolbar-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
     .toolbar strong { color: #172033; font-size: 15px; white-space: nowrap; }
     .toolbar input:not([type="checkbox"]) { height: 34px; padding: 0 10px; border: 1px solid #b9c5d6; border-radius: 6px; color: #172033; background: #fff; font: inherit; font-size: 13px; }
@@ -1576,8 +1576,12 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
     .references-description, .references-empty { margin: 5px 0 0; color: #64748b; font-size: 12px; line-height: 1.4; }
     .references-section { display: grid; gap: 7px; }
     .references-section h3 { margin: 0; color: #59708d; font-size: 10px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
-    .references-list { display: grid; gap: 7px; max-height: min(50vh, 460px); margin: 0; padding: 0; overflow: auto; list-style: none; }
+    .references-list { display: grid; gap: 7px; max-height: min(50vh, 460px); margin: 0; padding: 0 3px 8px 0; overflow: auto; scroll-padding-bottom: 8px; list-style: none; }
     .reference-filter-input { width: 100%; }
+    .resource-analyses { border-top: 1px solid #e2e8f0; padding-top: 10px; }
+    .resource-analyses summary { color: #315f9b; font-size: 12px; font-weight: 700; cursor: pointer; }
+    .resource-analysis-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; margin-top: 8px; }
+    .resource-analysis-actions button { width: auto; height: auto; min-height: 38px; padding: 7px; font-size: 11px; font-weight: 700; line-height: 1.2; }
     .reference-item { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 8px; border: 1px solid #e2e8f0; border-radius: 7px; background: #f8fafc; }
     .reference-title { color: #334155; font-size: 12px; font-weight: 700; overflow-wrap: anywhere; }
     .reference-meta { margin-top: 2px; color: #64748b; font-size: 10px; overflow-wrap: anywhere; }
@@ -1667,9 +1671,10 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
       </div>
     </div>
     <div id="graph-summary" class="graph-summary" aria-label="Synthese de l'architecture"></div>
-    <div class="toolbar-tabs" role="tablist" aria-label="Outils du graphe">
+    <div class="toolbar-tabs" role="tablist" aria-label="Vues de l'architecture">
       <button id="graph-tab" class="toolbar-tab is-active" type="button" role="tab" aria-selected="true" aria-controls="graph-panel">Explorer</button>
       <button id="paths-tab" class="toolbar-tab" type="button" role="tab" aria-selected="false" aria-controls="paths-panel">Parcours</button>
+      <button id="resources-tab" class="toolbar-tab" type="button" role="tab" aria-selected="false" aria-controls="resources-panel">Ressources</button>
       <button id="issues-tab" class="toolbar-tab" type="button" role="tab" aria-selected="false" aria-controls="issues-panel" title="Problemes d'indexation">Qualité</button>
     </div>
     <div id="graph-panel" class="toolbar-panel" role="tabpanel" aria-labelledby="graph-tab">
@@ -1728,16 +1733,7 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
       </details>
       </details>
     </div>
-    <details id="advanced-tools" class="advanced-tools">
-      <summary>Outils avancés</summary>
-      <div class="toolbar-tabs" role="tablist" aria-label="Outils avancés du graphe">
-        <button id="openapi-tab" class="toolbar-tab" type="button" role="tab" aria-selected="false" aria-controls="openapi-panel">OpenAPI</button>
-        <button id="dto-tab" class="toolbar-tab" type="button" role="tab" aria-selected="false" aria-controls="dto-panel">DTO Kafka</button>
-        <button id="request-reply-tab" class="toolbar-tab" type="button" role="tab" aria-selected="false" aria-controls="request-reply-panel" title="Patterns Kafka request/reply détectés par convention">Request/reply</button>
-        <button id="dependencies-tab" class="toolbar-tab" type="button" role="tab" aria-selected="false" aria-controls="dependencies-panel" title="Dépendances Maven et Gradle entre modules">Dépendances build</button>
-      </div>
-    </details>
-    <div id="dependencies-panel" class="toolbar-panel dependency-view" role="tabpanel" aria-labelledby="dependencies-tab" hidden>
+    <div id="dependencies-panel" class="toolbar-panel dependency-view" role="tabpanel" aria-label="Dépendances de build" hidden>
       <p class="dependency-view-kicker">Structure de build</p>
       <h2>Arbre des dépendances</h2>
       <p>Disposition Sugiyama : les modules sont rangés par niveaux de dépendance. Un lien part du module dépendant, à gauche, vers le module requis, à droite. Les interactions HTTP, Kafka et MongoDB restent dans la vue Interactions.</p>
@@ -1760,23 +1756,28 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
       <ul id="analyzed-paths" class="path-history-list" aria-label="Chemins analyses"></ul>
       <p id="analyzed-paths-empty" class="path-history-empty">Aucun chemin analyse pour le moment.</p>
     </div>
-    <div id="openapi-panel" class="toolbar-panel references-view" role="tabpanel" aria-labelledby="openapi-tab" hidden>
+    <div id="resources-panel" class="toolbar-panel references-view" role="tabpanel" aria-labelledby="resources-tab" hidden>
       <div class="references-header">
         <p class="references-kicker">Documentation d'API</p>
         <h2 id="openapi-references-title" class="references-title">Contrats OpenAPI</h2>
         <p class="references-description">Ouvrez une spécification locale dans Swagger UI.</p>
       </div>
       <section class="references-section"><input id="openapi-reference-filter" class="reference-filter-input" type="search" placeholder="Filtrer les contrats par chemin ou service" autocomplete="off" aria-label="Filtrer les contrats OpenAPI"><ul id="openapi-references" class="references-list"></ul><p id="openapi-references-empty" class="references-empty">Aucun contrat OpenAPI détecté.</p></section>
-    </div>
-    <div id="dto-panel" class="toolbar-panel references-view" role="tabpanel" aria-labelledby="dto-tab" hidden>
       <div class="references-header">
         <p class="references-kicker">Événements Kafka</p>
         <h2 id="dto-references-title" class="references-title">DTO Kafka</h2>
         <p class="references-description">Inspectez les classes Java échangées via Kafka.</p>
       </div>
       <section class="references-section"><input id="dto-reference-filter" class="reference-filter-input" type="search" placeholder="Filtrer les DTO par nom ou package" autocomplete="off" aria-label="Filtrer les DTO Kafka"><ul id="dto-references" class="references-list"></ul><p id="dto-references-empty" class="references-empty">Aucun DTO Kafka détecté.</p></section>
+      <details class="resource-analyses">
+        <summary>Analyses complémentaires</summary>
+        <div class="resource-analysis-actions">
+          <button id="show-request-reply" type="button">Request/reply Kafka</button>
+          <button id="show-dependencies" type="button">Dépendances build</button>
+        </div>
+      </details>
     </div>
-    <div id="request-reply-panel" class="toolbar-panel request-reply-view" role="tabpanel" aria-labelledby="request-reply-tab" hidden>
+    <div id="request-reply-panel" class="toolbar-panel request-reply-view" role="tabpanel" aria-label="Patterns request/reply Kafka" hidden>
       <div class="references-header">
         <p class="references-kicker">Convention Strategy1</p>
         <h2 id="request-reply-title" class="references-title">Patterns request/reply Kafka</h2>
@@ -2202,22 +2203,17 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
     const pathQuery = document.getElementById("path-query");
     const pathLock = document.getElementById("path-lock");
     const graphTab = document.getElementById("graph-tab");
-    const dependenciesTab = document.getElementById("dependencies-tab");
+    const resourcesTab = document.getElementById("resources-tab");
     const issuesTab = document.getElementById("issues-tab");
     const pathsTab = document.getElementById("paths-tab");
-    const openapiTab = document.getElementById("openapi-tab");
-    const dtoTab = document.getElementById("dto-tab");
-    const requestReplyTab = document.getElementById("request-reply-tab");
     const graphLegend = document.getElementById("graph-legend");
     const graphPanel = document.getElementById("graph-panel");
     const dependenciesPanel = document.getElementById("dependencies-panel");
     const issuesPanel = document.getElementById("issues-panel");
     const pathsPanel = document.getElementById("paths-panel");
-    const openapiPanel = document.getElementById("openapi-panel");
-    const dtoPanel = document.getElementById("dto-panel");
+    const resourcesPanel = document.getElementById("resources-panel");
     const requestReplyPanel = document.getElementById("request-reply-panel");
     const advancedControls = document.getElementById("advanced-controls");
-    const advancedTools = document.getElementById("advanced-tools");
     const graphCanvas = document.getElementById("graph");
     const dependencyCanvas = document.getElementById("dependency-graph");
     function ensureDependencyRenderer() {
@@ -2399,29 +2395,22 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
       const showingDependencies = tab === "dependencies";
       const showingIssues = tab === "issues";
       const showingPaths = tab === "paths";
-      const showingOpenApi = tab === "openapi";
-      const showingDtos = tab === "dtos";
       const showingRequestReply = tab === "request-reply";
+      const showingResources = ["resources", "dependencies", "request-reply"].includes(tab);
+      const showingResourceContent = tab === "resources";
       graphTab.classList.toggle("is-active", showingGraph);
       graphTab.setAttribute("aria-selected", String(showingGraph));
-      dependenciesTab.classList.toggle("is-active", showingDependencies);
-      dependenciesTab.setAttribute("aria-selected", String(showingDependencies));
+      resourcesTab.classList.toggle("is-active", showingResources);
+      resourcesTab.setAttribute("aria-selected", String(showingResources));
       issuesTab.classList.toggle("is-active", showingIssues);
       issuesTab.setAttribute("aria-selected", String(showingIssues));
       pathsTab.classList.toggle("is-active", showingPaths);
       pathsTab.setAttribute("aria-selected", String(showingPaths));
-      openapiTab.classList.toggle("is-active", showingOpenApi);
-      openapiTab.setAttribute("aria-selected", String(showingOpenApi));
-      dtoTab.classList.toggle("is-active", showingDtos);
-      dtoTab.setAttribute("aria-selected", String(showingDtos));
-      requestReplyTab.classList.toggle("is-active", showingRequestReply);
-      requestReplyTab.setAttribute("aria-selected", String(showingRequestReply));
       graphPanel.hidden = !showingGraph;
       dependenciesPanel.hidden = !showingDependencies;
       issuesPanel.hidden = !showingIssues;
       pathsPanel.hidden = !showingPaths;
-      openapiPanel.hidden = !showingOpenApi;
-      dtoPanel.hidden = !showingDtos;
+      resourcesPanel.hidden = !showingResourceContent;
       requestReplyPanel.hidden = !showingRequestReply;
       graphLegend.hidden = !showingGraph;
       graphCanvas.hidden = showingDependencies;
@@ -3519,17 +3508,16 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
       pathQuery.focus();
     });
     document.getElementById("question-messages").addEventListener("click", () => {
-      advancedTools.open = true;
-      setToolbarTab("dtos");
+      setToolbarTab("resources");
+      dtoReferencesFilter.focus();
     });
     layoutButtons.forEach((button, layout) => button.addEventListener("click", () => applyLayout(layout)));
     graphTab.addEventListener("click", () => setToolbarTab("graph"));
-    dependenciesTab.addEventListener("click", () => setToolbarTab("dependencies"));
+    resourcesTab.addEventListener("click", () => setToolbarTab("resources"));
     issuesTab.addEventListener("click", () => setToolbarTab("issues"));
     pathsTab.addEventListener("click", () => setToolbarTab("paths"));
-    openapiTab.addEventListener("click", () => setToolbarTab("openapi"));
-    dtoTab.addEventListener("click", () => setToolbarTab("dtos"));
-    requestReplyTab.addEventListener("click", () => setToolbarTab("request-reply"));
+    document.getElementById("show-request-reply").addEventListener("click", () => setToolbarTab("request-reply"));
+    document.getElementById("show-dependencies").addEventListener("click", () => setToolbarTab("dependencies"));
     filterPresetButtons.forEach(button => button.addEventListener("click", () => applyRelationPreset(button.dataset.preset)));
     [
       relationHttp,

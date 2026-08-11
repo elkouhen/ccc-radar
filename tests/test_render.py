@@ -105,18 +105,20 @@ enum PaymentStatus { AUTHORIZED, DECLINED }
     assert "Que voulez-vous comprendre ?" in document
     assert "Qui produit ou consomme un topic Kafka ?" in document
     assert 'id="advanced-controls"' in document
-    assert 'id="advanced-tools"' in document
+    assert 'id="resources-tab"' in document
     assert '>Ajuster</button>' in document
     assert '>Effacer</button>' in document
     assert 'id="dto-reference-filter"' in document
     assert 'id="openapi-reference-filter"' in document
-    assert 'id="openapi-tab"' in document
-    assert 'id="dto-tab"' in document
-    assert 'id="openapi-panel"' in document
-    assert 'id="dto-panel"' in document
+    assert 'id="resources-tab"' in document
+    assert 'id="resources-panel"' in document
+    assert 'id="show-request-reply"' in document
+    assert 'id="show-dependencies"' in document
     assert 'id="graph-legend"' in document
     assert 'graphLegend.hidden = !showingGraph' in document
     assert 'issue.vscode_uri ? "a" : "code"' in document
+    assert "max-height: calc(100vh - 32px)" in document
+    assert "scroll-padding-bottom: 8px" in document
 
 
 def test_graph_html_distinguishes_dtos_with_the_same_simple_name_by_package(tmp_path: Path) -> None:

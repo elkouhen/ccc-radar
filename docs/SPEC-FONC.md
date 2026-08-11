@@ -67,9 +67,10 @@ dependencies, service-to-service path and Kafka messages). Relation/resource
 filters, graph layouts, specialized reference views and build dependencies are
 available as advanced controls.
 Indexing issues that have a source endpoint expose a VS Code link to the
-associated file and line. OpenAPI contracts and Kafka DTOs use separate
-advanced tabs; both tabs support filtering their complete list (OpenAPI by
-path or service, DTOs by simple name or package).
+associated file and line. The `Resources` view groups distinct OpenAPI and
+Kafka DTO sections; both support filtering their complete list (OpenAPI by
+path or service, DTOs by simple name or package). Request/reply and build
+dependencies remain available as complementary analyses from that view.
 
 `--topic-strategy strategy1` adds opt-in convention extraction for selected
 `getTopics()` accessors, `envoyerMessageKafka(kafkaProperties.getTopics().getXxx(), payload)` calls,
