@@ -9,7 +9,6 @@ from ccc_radar.config import Config
 from ccc_radar.indexer import _is_test_source, _list_repo_files, index_repo
 from ccc_radar.modules import discover_excluded_module_paths
 from ccc_radar.inventory_freshness import current_endpoint_inventory_signature
-from ccc_radar.coco_indexer import index_repo_with_cocoindex
 from ccc_radar.store import Store
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
@@ -570,86 +569,6 @@ def test_changing_embedding_model_reembeds_everything(repo_copy: Path) -> None:
     assert calls_after_first_run == 4
     # changement de modèle -> tous les findings sont ré-embeddés, pas seulement les nouveaux
     assert embedder.calls == calls_after_first_run + len(findings)
-
-
-@pytest.mark.integration
-def test_cocoindex_prototype_indexes_findings_and_code_chunks(repo_copy: Path) -> None:
-    config = make_config()
-
-    with Store(repo_copy) as store:
-        report = index_repo_with_cocoindex(repo_copy, config, store, FakeEmbedder())
-        findings = store.all_findings()
-        chunks = store.all_code_chunks()
-
-    assert report.scanned > 0
-    assert len(findings) == 4
-    assert {chunk.path for chunk in chunks} >= {
-        "app/db.py",
-        "app/shell.py",
-        "app/yaml_loader.py",
-        "app/weak_random.py",
-    }
-
-
-@pytest.mark.integration
-def test_cocoindex_prototype_removes_deleted_file_chunks(repo_copy: Path) -> None:
-    config = make_config()
-
-    with Store(repo_copy) as store:
-        index_repo_with_cocoindex(repo_copy, config, store, FakeEmbedder())
-        (repo_copy / "app" / "shell.py").unlink()
-
-        report = index_repo_with_cocoindex(repo_copy, config, store, FakeEmbedder())
-        chunks = store.all_code_chunks()
-        findings = store.all_findings()
-
-    assert report.deleted_files == 1
-    assert "app/shell.py" not in {chunk.path for chunk in chunks}
-    assert "app/shell.py" not in {finding.path for finding in findings}
-
-
-@pytest.mark.integration
-def test_cocoindex_reembeds_all_chunks_when_embedding_model_changes_at_same_dimension(
-    repo_copy: Path,
-) -> None:
-    """BACKLOG-16 P5 : `_ensure_code_vec_table` ne recrée `vec_code_chunks`
-    qu'au changement de *dimension* — un changement de modèle à dimension
-    égale (même `FakeEmbedder(dim=8)`, signature différente via
-    `config.embedding_model`) laissait silencieusement les anciens
-    vecteurs en place puisque aucun fichier n'a changé entre les deux
-    indexations (`chunk_paths` vide, l'ancien code sautait tout
-    ré-embedding). `code_embedding_signature` doit forcer un ré-embedding
-    complet de `store.all_code_chunks()` dans ce cas."""
-    config_a = make_config(embedding_model="model-a")
-    config_b = make_config(embedding_model="model-b")
-    embedder = FakeEmbedder(dim=8)
-
-    with Store(repo_copy) as store:
-        index_repo_with_cocoindex(repo_copy, config_a, store, embedder)
-        num_findings = len(store.all_findings())
-        num_endpoints = len(store.all_endpoints())
-        num_chunks = len(store.all_code_chunks())
-
-        embedder.calls = 0
-        index_repo_with_cocoindex(repo_copy, config_b, store, embedder)
-
-    # Aucun fichier n'a changé : les seuls appels d'embedding possibles
-    # viennent du ré-embedding complet déclenché par le changement de
-    # signature (findings + endpoints + chunks).
-    assert embedder.calls == num_findings + num_endpoints + num_chunks
-
-
-@pytest.mark.integration
-def test_cocoindex_prototype_backfills_chunks_after_manual_index(repo_copy: Path) -> None:
-    config = make_config()
-
-    with Store(repo_copy) as store:
-        index_repo(repo_copy, config, store, FakeEmbedder())
-        report = index_repo_with_cocoindex(repo_copy, config, store, FakeEmbedder())
-        chunks = store.all_code_chunks()
-
-    assert report.scanned == 0
-    assert {chunk.path for chunk in chunks} >= {"app/db.py", "app/shell.py"}
 
 
 # -- BACKLOG-11 A1 : endpoints indexés dans le même passage que les findings --

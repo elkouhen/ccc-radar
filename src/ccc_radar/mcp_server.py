@@ -3,7 +3,6 @@ from typing import cast
 
 from mcp.server.fastmcp import FastMCP
 
-from ccc_radar.coco_indexer import ENGINE_META_VALUE, index_repo_with_cocoindex
 from ccc_radar.config import ConfigError, load_config
 from ccc_radar.architecture_inventory import load_architecture_inventory
 from ccc_radar.architecture import (
@@ -211,7 +210,7 @@ def search_findings(
     limit: int = 5,
     include_context: bool = False,
 ) -> list[FindingHit]:
-    """Recherche en langage naturel dans les findings Semgrep indexés du repo.
+    """Recherche en langage naturel dans les findings historiques du repo.
     Utiliser AVANT de modifier du code pour connaître les problèmes connus,
     et pour localiser des vulnérabilités par description.
     """
@@ -254,12 +253,6 @@ def reindex_findings() -> IndexReport:
     config = load_config(repo_root)
     embedder = make_embedder(config.embedding_model)
     with Store(repo_root) as store:
-        # BACKLOG-16 P3 : même dispatch que `cccr index` (cli.py) — un repo
-        # indexé avec `--engine cocoindex` doit continuer de rafraîchir ses
-        # chunks de code ici, sinon `search` (MCP) sert des chunks périmés
-        # après un `reindex_findings` qui les a silencieusement ignorés.
-        if store.get_meta("index_engine") == ENGINE_META_VALUE:
-            return index_repo_with_cocoindex(repo_root, config, store, embedder)
         report = index_repo(repo_root, config, store, embedder)
         store.set_meta("index_engine", "manual")
         return report
@@ -379,7 +372,7 @@ def trace_message_flow(query: str, workspace_root: str | None = None) -> FlowRes
     """Résout `query` en topic Kafka ou route REST (nom exact, sinon
     sous-chaîne non ambiguë parmi les endpoints indexés, BACKLOG-10 K5) et
     liste tous ses sites (producteurs/consommateurs Kafka, ou
-    serveurs/appelants REST) avec les findings Semgrep qui les recouvrent.
+    serveurs/appelants REST) avec les findings historiques qui les recouvrent.
     Utiliser pour comprendre qui produit/consomme un topic donné, ou qui
     appelle une route donnée, avant de plonger dans le code. Sans
     `workspace_root`, ne cherche que dans le projet courant — chaque site

@@ -35,7 +35,7 @@ packages = ["src/ccc_radar"]
 [tool.pytest.ini_options]
 addopts = "-m 'not slow'"
 markers = [
-    "integration: tests d'intégration exécutant réellement Semgrep",
+    "integration: tests d'intégration avec des dépendances externes",
     "slow: tests lents (téléchargement de modèle, etc.)",
 ]
 

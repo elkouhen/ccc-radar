@@ -255,8 +255,7 @@ class Store:
     def _migrate_legacy_embeddings(self) -> None:
         """Schema v1 stored embeddings as a BLOB column on `findings` (brute-force
         cosine in Python). v2 moves them to a `vec0` virtual table (sqlite-vec,
-        SIMD-accelerated KNN) — same store ccc/cocoindex-code already uses for its
-        own index. Dropping the old column forces a transparent full re-embed on
+        SIMD-accelerated KNN). Dropping the old column forces a transparent full re-embed on
         the next `cccr index`, since embedding_signature no longer matches.
         """
         cols = {row["name"] for row in self.conn.execute("PRAGMA table_info(findings)")}
@@ -478,6 +477,21 @@ class Store:
     def count_findings_for_paths(self, paths: list[str]) -> int:
         return self._count_rows_for_paths("findings", paths)
 
+    def clear_findings_once(self, migration_key: str) -> int:
+        """Remove results from a retired analyzer exactly once per index.
+
+        AST-only indexing must not present stale external-analyzer results,
+        even when their source files are unchanged.
+        """
+        if self.get_meta(migration_key) == "1":
+            return 0
+        rows = self.conn.execute("SELECT id FROM findings").fetchall()
+        finding_ids = [row["id"] for row in rows]
+        self.conn.execute("DELETE FROM findings")
+        self._delete_embeddings(finding_ids)
+        self.set_meta(migration_key, "1")
+        return len(finding_ids)
+
     def replace_findings_for_files(self, paths: list[str], findings: list[Finding]) -> None:
         if paths:
             removed_ids = self._finding_ids_for_paths(paths)
@@ -521,7 +535,7 @@ class Store:
                 ),
             )
 
-    # -- indexed code chunks (experimental CocoIndex-style target state) --
+    # -- indexed code chunks --
 
     def _code_chunk_ids_for_paths(self, paths: list[str]) -> list[str]:
         return self._ids_for_paths("code_chunks", "id", paths)
@@ -686,8 +700,7 @@ class Store:
 
     # -- embeddings --
     #
-    # Vectors live in `vec_findings`, a sqlite-vec `vec0` virtual table (same
-    # extension ccc/cocoindex-code uses for its own `.cocoindex_code/target_sqlite.db`).
+    # Vectors live in `vec_findings`, a sqlite-vec `vec0` virtual table.
     # `embedding_dim` (in `meta`) doubles as "does the table exist, and at what
     # dimension" — vec0 tables can't ALTER, so a dimension change drops and
     # recreates it; that only happens on a full re-embed (model change), which

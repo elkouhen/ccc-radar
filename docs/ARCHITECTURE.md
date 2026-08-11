@@ -10,7 +10,7 @@ boundary, then read the relevant specification before changing behaviour.
 CLI / MCP adapters (`cli.py`, `mcp_server.py`)
                 |
 application queries and indexing (`architecture.py`, `architecture_inventory.py`,
-`search.py`, `flow.py`, `dependency_analysis.py`, `indexer.py`, `workspace.py`)
+`flow.py`, `dependency_analysis.py`, `indexer.py`, `workspace.py`)
                 |
 facts and discovery (`scanner.py`, `modules.py`, `maven.py`, `gradle.py`,
 `java_parser.py`, `relations.py`)
@@ -33,13 +33,13 @@ SQLite database.
 ```mermaid
 flowchart TD
     CLI["CLI: index_cmd"] --> Config["load_config + make_embedder"]
-    MCP["MCP: reindex_findings"] --> Config
+    MCP["MCP: incremental reindex"] --> Config
     Config --> Store["Store"]
     Store --> Indexer["indexer.index_repo"]
     Indexer --> ModuleDiscovery["modules.discover_modules"]
     Indexer --> FileInventory["file hashes / incremental delta"]
-    FileInventory --> Scanner["scanner: Semgrep + local inference"]
-    Scanner --> Facts["Finding + MessageEndpoint"]
+    FileInventory --> Scanner["scanner: Tree-sitter AST extraction"]
+    Scanner --> Facts["MessageEndpoint"]
     ModuleDiscovery --> ModuleFacts["DiscoveredModule + dependencies"]
     Facts --> Persist["Store replaces facts"]
     ModuleFacts --> Persist
@@ -52,20 +52,6 @@ flowchart TD
 `indexer.index_repo` is the orchestration root once input has crossed an
 adapter. Scanner and module discovery are siblings: neither should orchestrate
 the other.
-
-### Findings and code search
-
-```mermaid
-flowchart TD
-    CLI["CLI: findings / summary"] --> Query
-    MCP["MCP: search_findings / findings_summary"] --> Query
-    Query --> Findings["search.search_findings or search.summary"]
-    Findings --> Store["Store (read-only)"]
-    Findings --> Render["render"]
-    Render --> Output["terminal JSON or MCP result"]
-```
-
-`search.py` owns local findings query semantics. Rendering only serializes its results.
 
 ### Architecture exploration
 
@@ -108,7 +94,7 @@ they are not cross-module entry points.
 | CLI parsing, option validation, exit code | `cli.py` |
 | MCP tool signature or transport concern | `mcp_server.py` |
 | A user query over the architecture inventory | `architecture.py`, `flow.py`, or `dependency_analysis.py` |
-| Semgrep invocation or endpoint extraction | `scanner.py` |
+| Java AST endpoint extraction | `scanner.py` |
 | Maven/Gradle module facts or Java source inventory | `modules.py`, `maven.py`, `gradle.py` |
 | SQLite schema or queries | `store.py` |
 | JSON, terminal, HTML, D2, or LikeC4 presentation | `render.py` |
@@ -126,19 +112,8 @@ they are not cross-module entry points.
 5. Keep new output formats in `render.py` (or a future dedicated renderer),
    not in query or discovery code.
 
-## Refactoring plan
+## Maintenance focus
 
-The code has three intentionally identified hotspots. Split them only along
-these responsibility boundaries, preserving their current public imports until
-callers have migrated:
-
-1. `scanner.py`: Semgrep execution, Semgrep JSON conversion, REST extraction,
-   Kafka extraction, and manifest import.
-2. `render.py`: findings output, graph JSON/text, graph HTML/D2, LikeC4,
-   and module output.
-3. `cli.py`: setup/index/search commands, architecture navigation commands,
-   export commands, and shared option/context helpers.
-
-This order avoids a cosmetic file move: each extracted unit first receives a
-named public contract and direct tests, then its callers move. Behavioural CLI
-and MCP specifications remain the compatibility gate.
+`scanner.py`, `render.py`, and `cli.py` are the largest modules. Refactor them
+only behind named public contracts and focused tests. Behavioural CLI and MCP
+specifications remain the compatibility gate.

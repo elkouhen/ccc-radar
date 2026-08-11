@@ -86,30 +86,6 @@ def test_reindex_findings_tool_returns_report(indexed_repo: Path) -> None:
     assert result.findings_added == 0
 
 
-@pytest.mark.integration
-def test_reindex_findings_tool_refreshes_code_chunks_on_cocoindex_engine(
-    indexed_repo: Path,
-) -> None:
-    """BACKLOG-16 P3 : un repo indexé avec `--engine cocoindex` doit voir
-    ses chunks de code rafraîchis par `reindex_findings` (MCP), pas
-    seulement ses findings — sinon `search` (MCP) sert un contenu de chunk
-    périmé après modification d'un fichier."""
-    reindex_result = runner.invoke(app, ["index", "--engine", "cocoindex"])
-    assert reindex_result.exit_code == 0
-
-    db_path = indexed_repo / "app" / "db.py"
-    db_path.write_text(db_path.read_text() + "\n\ndef new_marker(): pass\n")
-
-    result = reindex_findings()
-    assert result.scanned == 1
-
-    with Store(indexed_repo) as store:
-        chunk_contents = "\n".join(
-            chunk.content for chunk in store.all_code_chunks() if chunk.path == "app/db.py"
-        )
-    assert "new_marker" in chunk_contents
-
-
 def test_search_findings_tool_on_unindexed_repo_raises(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

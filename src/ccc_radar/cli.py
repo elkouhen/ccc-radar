@@ -1,7 +1,5 @@
 import json
 import os
-import shutil
-import hashlib
 import sys
 import time
 from dataclasses import dataclass
@@ -29,7 +27,6 @@ from ccc_radar.architecture_inventory import load_architecture_inventory
 from ccc_radar.audit import assess_architecture, render_audit_json, render_audit_text
 from ccc_radar.config import ConfigError, init_config, load_config
 from ccc_radar.embedder import EmbeddingError, make_embedder, resolve_embedding_model
-from ccc_radar.coco_indexer import index_repo_with_cocoindex
 from ccc_radar.flow import (
     resolve_topic,
     resolve_topic_by_similarity,
@@ -65,10 +62,9 @@ from ccc_radar.render import (
     render_workspace_json,
     render_workspace_text,
 )
-from ccc_radar.semgrep import SemgrepError
 from ccc_radar.search import SearchError, search_findings
 from ccc_radar.search import summary as compute_summary
-from ccc_radar.paths import config_path, db_path, state_dir
+from ccc_radar.paths import config_path, db_path
 from ccc_radar.store import Store, StoreError
 from ccc_radar.workspace import (
     discover_maven_services,
@@ -124,18 +120,6 @@ app.add_typer(modules_app, name="modules")
 app.add_typer(analyze_app, name="analyze")
 analyze_app.add_typer(analyze_microservices_app, name="microservices")
 
-_SEMGREP_CONFIG_CANDIDATES = [".semgrep.yml", "semgrep.yml", ".semgrep"]
-DEFAULT_REGISTRY_RULESETS = (
-    "p/security-audit",
-    "p/java",
-    "p/owasp-top-ten",
-    "p/secrets",
-)
-DEFAULT_RULE_PACKS = ("default", "liveness", "rest", "kafka", "kafka-security")
-_SKILL_RULES_ROOT_CANDIDATES = (
-    ("ccc-radar-skill", "skills", "cccr", "rules"),
-    ("cocoindex-ext-skill", "skills", "cccr", "rules"),
-)
 
 
 def _current_repo_endpoint_warning(store: Store) -> str | None:
@@ -184,7 +168,7 @@ def _manifest_rel_paths(repo_root: Path, paths: list[Path]) -> list[str]:
 
 @app.callback()
 def main() -> None:
-    """ccc-radar: indexe findings, code associé et signaux d'architecture."""
+    """ccc-radar: indexe les signaux d'architecture extraits par AST."""
 
 
 def _emit_architecture(result: object, json_output: bool) -> None:
@@ -823,134 +807,24 @@ def doctor_cmd(json_output: bool = typer.Option(False, "--json")) -> None:
         raise typer.Exit(code=2)
 
 
-def _detect_semgrep_config(repo_root: Path) -> str | None:
-    for candidate in _SEMGREP_CONFIG_CANDIDATES:
-        if (repo_root / candidate).exists():
-            return candidate
-    return None
-
-
-def _find_skill_rules_root() -> Path | None:
-    configured = os.environ.get("CCCR_RULES_ROOT")
-    if configured:
-        candidate = Path(configured).expanduser()
-        if candidate.is_dir():
-            return candidate
-    home = Path.home()
-    for parts in _SKILL_RULES_ROOT_CANDIDATES:
-        candidate = home.joinpath(*parts)
-        if candidate.is_dir():
-            return candidate
-    # Common skill installation roots. `CCCR_RULES_ROOT` remains the
-    # deterministic escape hatch for other clients/installers.
-    for candidate in (
-        home / ".codex" / "skills" / "cccr" / "rules",
-        home / ".agents" / "skills" / "cccr" / "rules",
-        home / ".claude" / "skills" / "cccr" / "rules",
-    ):
-        if candidate.is_dir():
-            return candidate
-    return None
-
-
-def _install_default_rule_packs(repo_root: Path, rules_root: Path) -> list[str]:
-    missing = [pack for pack in DEFAULT_RULE_PACKS if not (rules_root / pack).is_dir()]
-    if missing:
-        raise ConfigError(
-            "Packs de règles introuvables dans "
-            f"{rules_root} : {', '.join(missing)}."
-        )
-
-    destination_root = state_dir(repo_root) / "rules"
-    destination_root.mkdir(parents=True, exist_ok=True)
-    installed_paths: list[str] = []
-    for pack in DEFAULT_RULE_PACKS:
-        source_dir = rules_root / pack
-        target_dir = destination_root / pack
-        shutil.copytree(source_dir, target_dir, dirs_exist_ok=True)
-        installed_paths.append(f".cccr/rules/{pack}")
-    manifest = {
-        "source": str(rules_root),
-        "packs": {
-            pack: {
-                path.relative_to(rules_root).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest()
-                for path in sorted((rules_root / pack).rglob("*"))
-                if path.is_file()
-            }
-            for pack in DEFAULT_RULE_PACKS
-        },
-    }
-    (destination_root / "manifest.json").write_text(
-        json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
-    )
-    return installed_paths
-
-
 @app.command()
-def init(
-    rules: Optional[list[str]] = typer.Option(  # noqa: UP007 (Typer nécessite Optional)
-        None, "--rules", help="Chemin ou pack de règles Semgrep (répétable)."
-    ),
-    rules_root: Optional[Path] = typer.Option(
-        None, "--rules-root", help="Répertoire contenant les packs cccr (default/, rest/, kafka/, ...)."
-    ),
-) -> None:
+def init() -> None:
     """Initialise la configuration .cccr/config.yml du projet.
 
-    Sans `--rules`, active les packs CCCR disponibles et les règles Semgrep
-    Java, OWASP et secrets. `p/spring` n'est pas un ruleset de registre
-    Semgrep valide et n'est donc pas activé.
-
-    Exemples : `cccr init`, `cccr init --rules rules/java.yml`.
+    L'analyse des sources Java/Spring est entièrement locale et fondée sur AST.
     """
     repo_root = Path.cwd()
     if config_path(repo_root).exists():
         typer.echo(f"Une configuration existe déjà : {config_path(repo_root)}.", err=True)
         raise typer.Exit(code=1)
 
-    rules_paths = list(rules) if rules else None
-    if not rules_paths:
-        detected = _detect_semgrep_config(repo_root)
-        if detected is not None:
-            rules_paths = [detected]
-        else:
-            rules_root = rules_root or _find_skill_rules_root()
-            if rules_root is not None:
-                try:
-                    rules_paths = _install_default_rule_packs(repo_root, rules_root)
-                except ConfigError:
-                    rules_paths = list(DEFAULT_REGISTRY_RULESETS)
-                    typer.echo(
-                        "Aucune config Semgrep détectée et les packs d'architecture sont "
-                        f"incomplets sous {rules_root}. Utilisation des packs par défaut "
-                        "Java/OWASP/secrets : `cccr doctor` signalera que le graphe REST/Kafka n'est pas prêt."
-                    )
-                else:
-                    rules_paths.extend(DEFAULT_REGISTRY_RULESETS)
-                    typer.echo(
-                        "Aucune config Semgrep détectée. Packs CCCR copiés dans "
-                        f".cccr/rules/ : {', '.join(DEFAULT_RULE_PACKS)} ; packs registre : "
-                        f"{', '.join(DEFAULT_REGISTRY_RULESETS)}."
-                    )
-            else:
-                rules_paths = list(DEFAULT_REGISTRY_RULESETS)
-                typer.echo(
-                    "Aucune config Semgrep détectée et packs du skill introuvables. "
-                    "Utilisation des packs registre Java/OWASP/secrets "
-                    "(pour un audit architecture, définissez CCCR_RULES_ROOT ou passez --rules-root)."
-                )
-
     try:
-        path = init_config(repo_root, rules_paths)
+        path = init_config(repo_root)
     except ConfigError as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=1) from exc
 
     typer.echo(f"Configuration créée : {path}")
-    typer.echo(
-        "Note : `cccr index` exécute les règles Semgrep d'inventaire des intégrations. "
-        "Passez `--semgrep` pour peupler aussi les findings de sécurité."
-    )
 
 
 @app.command(name="index")
@@ -962,11 +836,6 @@ def index_cmd(
     manifests: Optional[list[Path]] = typer.Option(  # noqa: UP007
         None, "--manifest", help="Manifeste Kafka Markdown ou JSON (répétable)."
     ),
-    engine: Literal["manual", "cocoindex"] = typer.Option(
-        "manual",
-        "--engine",
-        help="Moteur d'indexation : manual (défaut) ou cocoindex (expérimental).",
-    ),
     topic_strategy: Literal["default", "strategy1"] = typer.Option(
         "default",
         "--topic-strategy",
@@ -976,38 +845,25 @@ def index_cmd(
         None,
         "--disable",
         help=(
-            "Type à désactiver : semgrep, properties, module-architecture "
+            "Type à désactiver : properties, module-architecture "
             "ou module-tree-sitter. Répétable."
         ),
     ),
-    semgrep: bool = typer.Option(
-        False,
-        "--semgrep/--no-semgrep",
-        help=(
-            "Indexe les findings de sécurité issus de Semgrep. Les règles Semgrep "
-            "d'inventaire des intégrations sont exécutées indépendamment."
-        ),
-    ),
 ) -> None:
-    """Indexe le code et les findings du projet (incrémental par défaut).
+    """Indexe le code avec les extracteurs AST (incrémental par défaut).
 
-    `cccr index` exécute les règles Semgrep d'inventaire des intégrations,
-    ainsi que les détections locales. Ajoutez `--semgrep` pour indexer aussi
-    les findings de sécurité. Utilisez `--disable semgrep` pour désactiver
-    complètement l'exécution Semgrep.
-
-    Exemples : `cccr index`, `cccr index --semgrep`, `cccr index --full`,
+    Exemples : `cccr index`, `cccr index --full`,
     `cccr index --topic-strategy strategy1`,
     `cccr index --manifest TOPICS.md`,
     `cccr index --manifest kafka-flow-graph-anonymous.json`.
     """
     repo_root = Path.cwd()
     _trace_index(
-        "cli.index.begin", root=repo_root, full=full, engine=engine, topic_strategy=topic_strategy
+        "cli.index.begin", root=repo_root, full=full, topic_strategy=topic_strategy
     )
     explicit_manifests = _manifest_rel_paths(repo_root, list(manifest_args or []) + list(manifests or []))
     disabled = frozenset(disable or [])
-    known_disabled = {"semgrep", "properties", "module-architecture", "module-tree-sitter"}
+    known_disabled = {"properties", "module-architecture", "module-tree-sitter"}
     unknown = disabled - known_disabled
     if unknown:
         typer.echo(
@@ -1016,11 +872,6 @@ def index_cmd(
             err=True,
         )
         raise typer.Exit(code=2)
-    # `--semgrep` pilote uniquement les findings ; il l'emporte toutefois sur
-    # `--disable semgrep`, car Semgrep doit alors être exécuté pour les calculer.
-    if semgrep:
-        disabled = disabled - {"semgrep"}
-
     try:
         config = load_config(repo_root)
     except ConfigError as exc:
@@ -1038,33 +889,14 @@ def index_cmd(
         _trace_index("store.open.begin")
         with Store(repo_root) as store:
             _trace_index("store.open.end")
-            if engine == "cocoindex":
-                if explicit_manifests:
-                    typer.echo(
-                        "--manifest n'est pas supporté avec --engine cocoindex ; utilisez --engine manual.",
-                        err=True,
-                    )
-                    raise typer.Exit(code=2)
-                if topic_strategy != "default":
-                    typer.echo(
-                        "--topic-strategy n'est pas supporté avec --engine cocoindex ; utilisez --engine manual.",
-                        err=True,
-                    )
-                    raise typer.Exit(code=2)
-                report = index_repo_with_cocoindex(
-                    repo_root, config, store, embedder, full=full,
-                    progress=_echo_index_progress, disabled=disabled,
-                    include_semgrep_findings=semgrep,
-                )
-            else:
-                report = index_repo(
-                    repo_root, config, store, embedder, full=full, progress=_echo_index_progress,
-                    disabled=disabled, extra_files=explicit_manifests,
-                    topic_strategy=topic_strategy, include_semgrep_findings=semgrep,
-                )
-                store.set_meta("index_engine", "manual")
+            report = index_repo(
+                repo_root, config, store, embedder, full=full, progress=_echo_index_progress,
+                disabled=disabled, extra_files=explicit_manifests,
+                topic_strategy=topic_strategy,
+            )
+            store.set_meta("index_engine", "manual")
             _trace_index("store.close.begin")
-    except (SemgrepError, EmbeddingError) as exc:
+    except EmbeddingError as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=2) from exc
 

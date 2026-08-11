@@ -292,7 +292,7 @@ def _module_for_path(repo_root: Path, rel_path: str) -> str | None:
 # endpoint-inventory`) — le rôle/système/méthode HTTP viennent des métadonnées
 # de la règle (fixes par construction, une règle = une méthode), le
 # topic/chemin vient d'une extraction best-effort sur le snippet
-# (métavariables Semgrep indisponibles sans compte connecté, voir ADR-26).
+# (l'analyse ne dépend d'aucun moteur de règles externe, voir ADR-26).
 _QUOTED_STRING_RE = re.compile(r"f?([\"'])(.*?)\1")
 _PROPERTY_PLACEHOLDER_RE = re.compile(r"^\$\{([^}]+)\}$")
 _MULTI_SLASH_RE = re.compile(r"/{2,}")
@@ -337,7 +337,7 @@ def _find_first_literal(snippet: str) -> tuple[str | None, bool]:
     ou appel), en parcourant ses lignes dans l'ordre — une chaîne fluent
     `WebClient` peut répartir `.get()` et `.uri(...)` sur deux lignes
     (BACKLOG-10 K13) ; le snippet est de toute façon borné exactement par
-    `start_line`/`end_line` du match Semgrep, jamais de code hors de
+    `start_line`/`end_line` du nœud AST, jamais de code hors de
     l'appel. Renvoie (littéral, concaténé) ; concaténé=True si
     immédiatement suivi de `+` sur la même ligne (avant la virgule/
     parenthèse fermante), ou si aucun littéral n'est trouvé."""
@@ -350,7 +350,7 @@ def _find_first_literal(snippet: str) -> tuple[str | None, bool]:
     return None, True
 
 
-# BACKLOG Q24 : une règle Semgrep `endpoint-inventory` est bornée à la
+# BACKLOG Q24 : l'inventaire d'endpoints est borné à la
 # méthode annotée (`pattern: @GetMapping(...) $RET $METHOD(...) { ... }`) —
 # elle ne voit jamais le `@RequestMapping` porté par la classe englobante,
 # alors que Spring MVC le préfixe silencieusement au chemin de la méthode.
@@ -358,7 +358,7 @@ def _find_first_literal(snippet: str) -> tuple[str | None, bool]:
 # microservices-kafka-mq) : soit le chemin sort sous-qualifié (méthode avec
 # valeur explicite, préfixe de classe ignoré), soit il sort `<dynamic>`
 # (méthode sans valeur explicite : `@GetMapping` seul hérite du chemin de
-# classe côté Spring, mais Semgrep n'a aucun littéral à extraire) — dans les
+# classe côté Spring, mais aucun littéral n'est disponible) — dans les
 # deux cas, la corrélation caller/callee de `graph.paths_match` échoue sur
 # des appels réels. Best-effort ligne par ligne (ADR-26, pas d'AST) : la
 # classe/interface la plus proche au-dessus de la méthode, avec ses lignes
@@ -1448,7 +1448,7 @@ def _infer_resttemplate_exchange_endpoints(
     """Infer RestTemplate calls from ``method_invocation`` AST nodes.
 
     This covers the regular convenience methods as well as ``exchange``. The
-    former used to depend entirely on a Semgrep match; taking their first
+    former used to depend on a rule-engine match; taking their first
     argument from the invocation node means nested calls and line wrapping no
     longer affect which expression is considered the URL.
     """
@@ -2920,7 +2920,7 @@ def discover_rest_api_client_configurations(repo_root: Path) -> None:
     """Parcourt proactivement les configurations clients de chaque module.
 
     Cette phase précède l'analyse des appels : les interfaces d'API générées
-    ne donnent pas toujours un résultat Semgrep REST exploitable, mais leur
+    ne donnent pas toujours un résultat REST exploitable, mais leur
     toute configuration `Rest*Config*` doit tout de même être cherchée dans chaque
     microservice Maven du workspace.
     """
