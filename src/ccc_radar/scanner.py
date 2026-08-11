@@ -2269,9 +2269,10 @@ def infer_kafka_topic_strategy1_endpoints(
 ) -> list[MessageEndpoint]:
     """Infer logical Kafka topics from project conventions selected by strategy1.
 
-    Producers use `getTopics().getXxx()` and listeners use a Spring key shaped
-    as `kafka.topics.xxx.<property>`. Both conventions are normalized to the
-    physical Kafka name in `SCREAMING_SNAKE_CASE`.
+    Producers use `getTopics().getXxx()` or `envoyerMessageKafka(topic, payload)`
+    and listeners use a Spring key shaped as `kafka.topics.xxx.<property>`.
+    Accessor and property conventions are normalized to the physical Kafka
+    name in `SCREAMING_SNAKE_CASE`.
     """
     if files is None:
         candidate_files = [
@@ -2284,9 +2285,11 @@ def infer_kafka_topic_strategy1_endpoints(
 
     endpoints: dict[str, MessageEndpoint] = {}
     for rel_path in candidate_files:
-        source = _java_source(str(repo_root), rel_path)
-        if not source:
+        parsed = java_parser.parse_java(str(repo_root), rel_path)
+        if parsed is None:
             continue
+        source_bytes, root = parsed
+        source = source_bytes.decode("utf-8", errors="replace")
         lines = source.splitlines()
         for match in _STRATEGY1_PRODUCER_RE.finditer(source):
             line_no = source.count("\n", 0, match.start()) + 1
@@ -2317,6 +2320,25 @@ def infer_kafka_topic_strategy1_endpoints(
                     annotation,
                 )
                 endpoints[endpoint.id] = endpoint
+        for node in java_parser.walk(root):
+            if node.type != "method_invocation":
+                continue
+            _object_node, method_name, args = java_parser.invocation_parts(node, source_bytes)
+            if method_name != "envoyerMessageKafka" or len(args) < 2:
+                continue
+            topic, dynamic = _kafka_topic_from_value(args[0], source_bytes, repo_root, rel_path)
+            endpoint = _kafka_endpoint(
+                repo_root,
+                rel_path,
+                source_bytes,
+                node,
+                "produce",
+                "kafka-topic-strategy1",
+                topic,
+                dynamic,
+                _producer_send_payload_type(source_bytes, node),
+            )
+            endpoints[endpoint.id] = endpoint
     return list(endpoints.values())
 
 

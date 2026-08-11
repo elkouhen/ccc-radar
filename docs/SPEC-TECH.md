@@ -67,6 +67,10 @@ KafkaTemplate/ProducerRecord usage and Spring Cloud Stream StreamBridge calls.
 It preserves dynamic topic expressions and derives a payload type only from an
 explicit listener parameter or client generic signature.
 
+With `--topic-strategy strategy1`, `envoyerMessageKafka(topic, payload)` is an
+additional producer convention. Its first argument uses the same conservative
+topic resolver and its second argument is used to derive the payload type.
+
 `render_graph_html` resolves the Java DTOs and enums rooted at those Kafka
 payload types from production source roots. It follows declared field types
 recursively only when a project type name resolves unambiguously, and embeds

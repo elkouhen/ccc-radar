@@ -11,7 +11,11 @@ from ccc_radar.config import Config
 from ccc_radar.flow import group_endpoints_by_module_for_flow, trace_flow
 from ccc_radar.graph import build_graph
 from ccc_radar.indexer import index_repo
-from ccc_radar.scanner import infer_framework_endpoints, infer_kafka_endpoints
+from ccc_radar.scanner import (
+    infer_framework_endpoints,
+    infer_kafka_endpoints,
+    infer_kafka_topic_strategy1_endpoints,
+)
 from ccc_radar.store import Store
 
 
@@ -39,6 +43,30 @@ def test_ast_extractors_find_rest_and_kafka_facts() -> None:
     assert any(endpoint.role == "call" and endpoint.framework == "feign" for endpoint in rest)
     assert any(endpoint.role == "produce" and endpoint.system == "kafka" for endpoint in kafka)
     assert any(endpoint.role == "consume" and endpoint.message_type for endpoint in kafka)
+
+
+def test_strategy1_recognizes_envoyer_message_kafka_as_a_producer(tmp_path: Path) -> None:
+    source = tmp_path / "src" / "main" / "java" / "com" / "example" / "Publisher.java"
+    source.parent.mkdir(parents=True)
+    source.write_text(
+        """package com.example;
+class Publisher {
+  void publish(OrderCreated event) {
+    kafkaService.envoyerMessageKafka("orders.created", event);
+  }
+}
+record OrderCreated(String orderId) {}
+""",
+        encoding="utf-8",
+    )
+
+    endpoints = infer_kafka_topic_strategy1_endpoints(
+        tmp_path, ["src/main/java/com/example/Publisher.java"]
+    )
+
+    assert [(endpoint.role, endpoint.topic, endpoint.message_type, endpoint.framework) for endpoint in endpoints] == [
+        ("produce", "orders.created", "OrderCreated", "kafka-topic-strategy1")
+    ]
 
 
 def test_index_is_incremental_without_embeddings(tmp_path: Path) -> None:
