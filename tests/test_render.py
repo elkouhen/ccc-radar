@@ -119,6 +119,12 @@ enum PaymentStatus { AUTHORIZED, DECLINED }
     assert 'issue.vscode_uri ? "a" : "code"' in document
     assert "max-height: calc(100vh - 32px)" in document
     assert "scroll-padding-bottom: 8px" in document
+    assert 'placeholder="orders ou orders -> payments"' in document
+    assert "function resolveExactNodeName(name)" in document
+    assert "function runExploreSearch()" in document
+    assert "Aucun chemin oriente ne passe par les noeuds demandes dans cet ordre." in document
+    assert "Flux de donnees" in document
+    assert "Sources Kafka" in document
 
 
 def test_graph_html_distinguishes_dtos_with_the_same_simple_name_by_package(tmp_path: Path) -> None:

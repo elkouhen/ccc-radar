@@ -819,6 +819,17 @@ def render_graph_html(
                 "id": f"microservice:{name}",
                 "kind": "microservice",
                 "name": name,
+                "kafka_endpoints": [
+                    {
+                        "role": endpoint.role,
+                        "topic": endpoint.topic,
+                        "message_type": endpoint.message_type,
+                        "location": f"{endpoint.path}:{endpoint.start_line}",
+                        "vscode_uri": _endpoint_vscode_uri(endpoint, all_modules, source_roots, vscode_wsl_distro),
+                    }
+                    for endpoint in endpoints
+                    if endpoint.system == "kafka"
+                ],
                 **({"vscode_uri": _vscode_file_uri(module.path, vscode_wsl_distro)} if module else {}),
                 "resources": resources,
                 "openapi_files": openapi_files,
@@ -1537,6 +1548,9 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
     .path-actions { display: flex; align-items: center; gap: 6px; grid-column: 1 / -1; }
     .path-lock { display: inline-flex; align-items: center; gap: 5px; height: 30px; padding: 0 8px; border: 1px solid #cdd7e5; border-radius: 6px; color: #315f9b; background: #fff; font-size: 12px; white-space: nowrap; cursor: pointer; }
     #show-path, #show-simple-paths { width: auto; padding: 0 10px; font-size: 12px; font-weight: 600; }
+    .explore-search-label { color: #315f9b; font-size: 12px; font-weight: 700; }
+    .explore-search-help, .explore-search-status { margin: -5px 0 0; color: #64748b; font-size: 11px; line-height: 1.35; }
+    .explore-search-status { min-height: 15px; color: #a53f3f; font-weight: 600; }
     #show-simple-paths { height: 30px; color: #1d4f91; border-color: #c7d8f3; background: #f8fbff; }
     .simple-paths { display: grid; gap: 7px; }
     .simple-paths-summary { margin: 0; color: #52616b; font-size: 12px; line-height: 1.4; }
@@ -1624,6 +1638,17 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
     .path-overview-item:first-child::before { color: #2563eb; content: "●"; font-size: 9px; }
     .path-overview-item:last-child::before { color: #16a34a; content: "●"; font-size: 9px; }
     .path-overview-item.is-topic { border-style: dashed; color: #475569; background: #f8fafc !important; }
+    .path-overview-item.is-service { border-left: 3px solid #2563eb; }
+    .path-overview-item.is-external { border-left: 3px solid #9333ea; }
+    .path-overview-item.is-collection { border-left: 3px solid #16a34a; }
+    .path-overview-stop { width: 100%; padding: 0; border: 0; color: inherit; background: transparent; font: inherit; text-align: left; cursor: pointer; }
+    .path-overview-stop:hover, .path-overview-stop:focus-visible { color: #1d4f91; text-decoration: underline; outline: none; }
+    .path-flow { display: grid; gap: 9px; }
+    .path-flow-step { padding: 9px; border: 1px solid #e2e8f0; border-radius: 7px; background: #f8fafc; }
+    .path-flow-step h3 { margin: 0; color: #334155; font-size: 12px; }
+    .path-flow-step p { margin: 5px 0 0; color: #52616b; font-size: 12px; }
+    .path-flow-types { display: grid; gap: 4px; margin: 7px 0 0; padding: 0; list-style: none; }
+    .path-flow-types li { padding: 4px 6px; border-radius: 4px; background: #fff; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; }
     .dependency-view { display: grid; gap: 8px; padding: 2px 0; }
     .dependency-view-kicker { margin: 0; color: #1d4f91; font-size: 10px; font-weight: 800; letter-spacing: .09em; text-transform: uppercase; }
     .dependency-view h2 { margin: 0; color: #172033; font-size: 16px; }
@@ -1688,7 +1713,10 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
           <button id="question-messages" class="question-action" type="button">Quel DTO circule via Kafka ?</button>
         </div>
       </section>
-      <input id="search" type="search" placeholder="Rechercher un service, un topic ou une collection" autocomplete="off" aria-label="Rechercher un service, un topic ou une collection">
+      <label class="explore-search-label" for="search">Rechercher une ressource ou un itinéraire</label>
+      <input id="search" type="search" placeholder="orders ou orders -> payments" autocomplete="off" aria-describedby="search-help search-status" aria-label="Rechercher une ressource ou un itinéraire">
+      <p id="search-help" class="explore-search-help">Nom exact d'un noeud, ou itinéraire avec <code>-></code>. Appuyez sur Entrée pour afficher l'itinéraire le plus court.</p>
+      <p id="search-status" class="explore-search-status" role="status"></p>
       <div class="filter-presets" role="group" aria-label="Vues de relations">
         <button class="filter-preset is-active" type="button" data-preset="all">Toutes</button>
         <button class="filter-preset" type="button" data-preset="http">REST</button>
@@ -1721,7 +1749,7 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
         <p id="layout-status" class="layout-status" role="status">Chargement de la vue équilibrée…</p>
       </fieldset>
       <details class="path-controls">
-        <summary>Explorer un chemin</summary>
+        <summary>Outils d'itinéraire avancés</summary>
         <div class="path-row">
           <input id="path-query" type="text" placeholder="service-a -> topic-1 -> service-b" autocomplete="off" aria-label="Chemin avec des noms de services ou topics">
           <button id="show-path" type="button" aria-label="Afficher le plus court chemin" title="Afficher le plus court chemin">Afficher</button>
@@ -2200,6 +2228,7 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
     let dependencyRenderer = null;
     const details = document.getElementById("details");
     const search = document.getElementById("search");
+    const searchStatus = document.getElementById("search-status");
     const pathQuery = document.getElementById("path-query");
     const pathLock = document.getElementById("path-lock");
     const graphTab = document.getElementById("graph-tab");
@@ -2367,12 +2396,7 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
 
     function isValidPathStops(stops) {
       if (!Array.isArray(stops) || stops.length < 2 || new Set(stops).size !== stops.length) return false;
-      if (!stops.every(id => nodeDataById.has(id))) return false;
-      const source = nodeDataById.get(stops[0]);
-      const target = nodeDataById.get(stops[stops.length - 1]);
-      return source.kind === "microservice"
-        && target.kind === "microservice"
-        && stops.slice(1, -1).every(id => ["microservice", "kafka_topic"].includes(nodeDataById.get(id).kind));
+      return stops.every(id => nodeDataById.has(id));
     }
     function loadAnalyzedPaths() {
       try {
@@ -2990,7 +3014,6 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
     function shortestPath(sourceId, targetId) {
       const outgoing = new Map();
       graphData.links.forEach((link, index) => {
-        if (!isVisibleRelation(link.kind)) return;
         if (!outgoing.has(link.source)) outgoing.set(link.source, []);
         outgoing.get(link.source).push({ target: link.target, edge: `edge-${index}`, link });
       });
@@ -3072,31 +3095,32 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
         limited: paths.length >= maxPaths,
       };
     }
-    function parsePathQuery() {
-      const names = pathQuery.value.split("->").map(name => name.trim()).filter(Boolean);
-      if (names.length < 2) return { error: "Saisissez au moins un service source et un service cible separes par ->." };
+    function resolveExactNodeName(name) {
+      const candidates = nodesByNormalizedName.get(normalizeNodeName(name)) || [];
+      if (!candidates.length) return { error: `Noeud introuvable : ${name}. Saisissez son nom exact.` };
+      if (candidates.length > 1) return { error: `Nom ambigu : ${name}. Precisez un nom de noeud unique.` };
+      return { id: candidates[0].id };
+    }
+    function parsePathQuery(query = pathQuery.value) {
+      const names = query.split("->").map(name => name.trim());
+      if (names.length < 2) return { error: "Saisissez au moins deux noeuds separes par ->." };
+      if (names.some(name => !name)) return { error: "Chaque etape de l'itineraire doit avoir un nom : retirez le -> en trop ou renseignez le noeud manquant." };
       const stops = [];
       for (const name of names) {
-        const candidates = nodesByNormalizedName.get(normalizeNodeName(name)) || [];
-        if (!candidates.length) return { error: `Noeud introuvable : ${name}.` };
-        if (candidates.length > 1) return { error: `Nom ambigu : ${name}.` };
-        stops.push(candidates[0].id);
-      }
-      const source = nodeDataById.get(stops[0]);
-      const target = nodeDataById.get(stops[stops.length - 1]);
-      if (source.kind !== "microservice" || target.kind !== "microservice") {
-        return { error: "Le premier et le dernier noeud doivent etre des microservices." };
-      }
-      if (stops.slice(1, -1).some(id => !["microservice", "kafka_topic"].includes(nodeDataById.get(id).kind))) {
-        return { error: "Les noeuds intermediaires doivent etre des microservices ou des topics Kafka." };
+        const resolved = resolveExactNodeName(name);
+        if (resolved.error) return resolved;
+        stops.push(resolved.id);
       }
       if (new Set(stops).size !== stops.length) {
-        return { error: "Les noeuds du chemin doivent etre distincts." };
+        return { error: "Un itineraire ne peut pas repeter le meme noeud." };
       }
       return { stops };
     }
     function renderPathQuery() {
-      pathQuery.value = pathStops.map(id => nodeDataById.get(id).name).join(" -> ");
+      const query = pathStops.map(id => nodeDataById.get(id).name).join(" -> ");
+      pathQuery.value = query;
+      search.value = query;
+      searchStatus.textContent = "";
     }
     function setPathMicroserviceOrder(path) {
       pathMicroserviceOrder = new Map();
@@ -3109,15 +3133,15 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
     }
     function renderPathDetails(path) {
       details.replaceChildren();
-      const pathNodeLabel = (id, index) => {
+      const nodeKindLabel = node => {
+        if (node.kind === "kafka_topic") return "Topic Kafka";
+        if (node.kind === "mongodb_collection") return "Collection MongoDB";
+        return node.external ? "Service externe" : "Microservice";
+      };
+      const pathNodeLabel = id => {
         const node = nodeDataById.get(id);
         const order = pathMicroserviceOrder.get(id);
-        if (order) return `${order}. ${node.name}`;
-        if (node.kind !== "kafka_topic") return node.name;
-        const precedingLink = path.edges[index - 1]?.link;
-        const publishedTypes = precedingLink?.published_message_types || node.published_message_types || [];
-        const types = publishedTypes.length ? publishedTypes : node.consumed_message_types || [];
-        return types.length ? `${node.name} (${types.join(", ")})` : `${node.name} (type Java non indexe)`;
+        return `${order ? `${order}. ` : ""}${node.name} · ${nodeKindLabel(node)}`;
       };
       const header = document.createElement("header");
       header.className = "path-details-header";
@@ -3130,7 +3154,8 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
       const summary = document.createElement("p");
       summary.className = "path-details-summary";
       const serviceCount = path.nodes.filter(id => nodeDataById.get(id).kind === "microservice").length;
-      summary.textContent = `${serviceCount} microservice${serviceCount > 1 ? "s" : ""}`;
+      const topicCount = path.nodes.filter(id => nodeDataById.get(id).kind === "kafka_topic").length;
+      summary.textContent = `${serviceCount} microservice${serviceCount > 1 ? "s" : ""} · ${topicCount} topic${topicCount > 1 ? "s" : ""} Kafka`;
       header.append(kicker, title, summary);
       details.append(header);
       const overview = document.createElement("section");
@@ -3139,15 +3164,66 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
       overviewTitle.textContent = "Parcours";
       const overviewList = document.createElement("ol");
       overviewList.className = "path-overview";
-      path.nodes.forEach((id, index) => {
+      path.nodes.forEach(id => {
         const item = document.createElement("li");
         item.className = "path-overview-item";
-        if (nodeDataById.get(id).kind === "kafka_topic") item.classList.add("is-topic");
-        item.textContent = pathNodeLabel(id, index);
+        const node = nodeDataById.get(id);
+        item.classList.add(node.kind === "kafka_topic" ? "is-topic" : node.kind === "mongodb_collection" ? "is-collection" : node.external ? "is-external" : "is-service");
+        const stop = document.createElement("button");
+        stop.type = "button";
+        stop.className = "path-overview-stop";
+        stop.textContent = pathNodeLabel(id);
+        stop.title = `Afficher les details et les preuves de ${node.name}`;
+        stop.addEventListener("click", () => selectNode(id, true));
+        item.append(stop);
         overviewList.append(item);
       });
       overview.append(overviewTitle, overviewList);
       details.append(overview);
+      const flow = document.createElement("section");
+      flow.className = "details-section";
+      const flowTitle = document.createElement("h2");
+      flowTitle.textContent = "Flux de donnees";
+      const flowList = document.createElement("div");
+      flowList.className = "path-flow";
+      path.nodes.forEach((id, index) => {
+        const node = nodeDataById.get(id);
+        if (node.kind !== "kafka_topic") return;
+        const previous = path.edges[index - 1]?.link;
+        const next = path.edges[index]?.link;
+        const published = previous?.published_message_types || [];
+        const consumed = next?.consumed_message_types || [];
+        const card = document.createElement("article");
+        card.className = "path-flow-step";
+        const cardTitle = document.createElement("h3");
+        cardTitle.textContent = `${node.name} · topic Kafka`;
+        const publishedText = document.createElement("p");
+        publishedText.textContent = published.length ? `Publie par ${nodeDataById.get(previous.source).name}` : "Type publie non indexe pour cette etape.";
+        card.append(cardTitle, publishedText);
+        const types = document.createElement("ul");
+        types.className = "path-flow-types";
+        (published.length ? published : ["Type Java non indexe"]).forEach(type => {
+          const item = document.createElement("li"); item.textContent = type; types.append(item);
+        });
+        card.append(types);
+        const consumedText = document.createElement("p");
+        consumedText.textContent = next?.target && nodeDataById.get(next.target)?.kind === "microservice"
+          ? (consumed.length ? `Consomme par ${nodeDataById.get(next.target).name}` : `Type declare par ${nodeDataById.get(next.target).name} non indexe.`)
+          : "Aucun consommateur de ce topic ne fait partie de cet itineraire.";
+        card.append(consumedText);
+        if (consumed.length) {
+          const consumerTypes = document.createElement("ul"); consumerTypes.className = "path-flow-types";
+          consumed.forEach(type => { const item = document.createElement("li"); item.textContent = type; consumerTypes.append(item); });
+          card.append(consumerTypes);
+        }
+        const allProducers = graphData.links.filter(link => link.kind === "kafka" && link.target === id).map(link => link.source);
+        const allConsumers = graphData.links.filter(link => link.kind === "kafka" && link.source === id).map(link => link.target);
+        const pathParticipants = new Set([previous?.source, next?.target]);
+        const extraCount = [...allProducers, ...allConsumers].filter(participant => !pathParticipants.has(participant)).length;
+        if (extraCount) { const extra = document.createElement("p"); extra.textContent = `${extraCount} participant${extraCount > 1 ? "s" : ""} hors de cet itineraire non affiche${extraCount > 1 ? "s" : ""}.`; card.append(extra); }
+        flowList.append(card);
+      });
+      if (flowList.childElementCount) { flow.append(flowTitle, flowList); details.append(flow); }
     }
     function showPath(path, stops = path.nodes) {
       pathStops.splice(0, pathStops.length, ...stops);
@@ -3186,9 +3262,10 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
       section.append(title, summary, list);
       details.append(section);
     }
-    function showShortestPath() {
-      const parsed = parsePathQuery();
+    function showShortestPath(query = pathQuery.value, preserveGraphOnError = false) {
+      const parsed = parsePathQuery(query);
       if (parsed.error) {
+        if (preserveGraphOnError) { searchStatus.textContent = parsed.error; return false; }
         selectedId = null; relatedNodes = null; relatedEdges = null; pathMicroserviceOrder = new Map();
         renderer.refresh();
         setDetailsEmpty(parsed.error);
@@ -3199,13 +3276,16 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
       const stops = parsed.stops;
       const path = shortestPathThrough(stops);
       if (path === null) {
+        const message = "Aucun chemin oriente ne passe par les noeuds demandes dans cet ordre.";
+        if (preserveGraphOnError) { searchStatus.textContent = message; return false; }
         selectedId = null; relatedNodes = null; relatedEdges = null; pathMicroserviceOrder = new Map();
         renderer.refresh();
-        setDetailsEmpty("Aucun chemin oriente entre les deux microservices.");
+        setDetailsEmpty(message);
         persistState();
-        return;
+        return false;
       }
       showPath(path, stops);
+      return true;
     }
     function showSimplePaths() {
       const parsed = parsePathQuery();
@@ -3374,6 +3454,11 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
         appendRelationList("Collections MongoDB utilisees", mongoCollections, id, link => (
           nodeDataById.get(link.target).name
         ), dataGroup);
+        appendActionList("Sources Kafka", (node.kafka_endpoints || []).map(endpoint => ({
+          label: `${endpoint.role === "produce" ? "Publication" : "Consommation"} · ${endpoint.topic}${endpoint.message_type ? ` · ${endpoint.message_type}` : ""} · ${endpoint.location}`,
+          title: `Ouvrir ${endpoint.location} dans VS Code`,
+          action: () => { if (endpoint.vscode_uri) window.location.href = endpoint.vscode_uri; },
+        })), dataGroup);
         discardEmptyDetailsGroup(dataGroup);
       }
       if (node.kind === "kafka_topic") {
@@ -3393,6 +3478,15 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
           label: dtoLabel(dto),
           title: "Afficher les champs et les relations Kafka de ce DTO",
           action: () => openDtoInspector(dto.id),
+        })), eventGroup);
+        const endpointSources = graphData.nodes
+          .filter(candidate => candidate.kind === "microservice")
+          .flatMap(candidate => (candidate.kafka_endpoints || []).map(endpoint => ({ service: candidate.name, ...endpoint })))
+          .filter(endpoint => endpoint.topic === node.name);
+        appendActionList("Sources producteurs et consommateurs", endpointSources.map(endpoint => ({
+          label: `${endpoint.service} · ${endpoint.role === "produce" ? "publication" : "consommation"} · ${endpoint.location}`,
+          title: `Ouvrir ${endpoint.location} dans VS Code`,
+          action: () => { if (endpoint.vscode_uri) window.location.href = endpoint.vscode_uri; },
         })), eventGroup);
         discardEmptyDetailsGroup(eventGroup);
       }
@@ -3426,8 +3520,8 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
         link.kind === "rest" && targetId === id && restResourceLabel(link, target) === resource
       ));
     }
-    function selectNode(id) {
-      if (!pathLock.checked) clearPathControls();
+    function selectNode(id, preservePath = false) {
+      if (!preservePath && !pathLock.checked) clearPathControls();
       pathMicroserviceOrder = new Map();
       selectedId = id;
       relatedNodes = new Set([id]);
@@ -3464,9 +3558,7 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
       if (
         sourceId
         && targetId
-        && nodeDataById.get(sourceId)?.kind === "microservice"
-        && nodeDataById.get(targetId)?.kind === "microservice"
-        && restoredStops.every(id => nodeDataById.has(id))
+        && isValidPathStops(restoredStops)
       ) {
         pathStops.push(...restoredStops);
         renderPathQuery();
@@ -3493,19 +3585,18 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
     document.getElementById("question-topic").addEventListener("click", () => {
       setToolbarTab("graph");
       applyRelationPreset("kafka");
-      search.placeholder = "Rechercher un topic Kafka";
+      search.placeholder = "orders.created ou orders -> orders.created";
       search.focus();
     });
     document.getElementById("question-service").addEventListener("click", () => {
       setToolbarTab("graph");
       applyRelationPreset("all");
-      search.placeholder = "Rechercher un microservice";
+      search.placeholder = "orders ou orders -> payments";
       search.focus();
     });
     document.getElementById("question-path").addEventListener("click", () => {
       setToolbarTab("graph");
-      advancedControls.open = true;
-      pathQuery.focus();
+      search.focus();
     });
     document.getElementById("question-messages").addEventListener("click", () => {
       setToolbarTab("resources");
@@ -3544,12 +3635,28 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
     renderRequestReplyPatterns();
     restoreState();
     applyLayout("forceatlas2-noverlap");
-    search.addEventListener("input", event => {
-      const query = event.target.value.trim().toLocaleLowerCase();
-      const node = graphData.nodes.find(
-        item => item.name.toLocaleLowerCase().includes(query)
-      );
-      if (node) selectNode(node.id); else if (!query) reset();
+    function runExploreSearch() {
+      const query = search.value.trim();
+      searchStatus.textContent = "";
+      if (!query) { reset(); return; }
+      if (query.includes("->")) {
+        showShortestPath(query, true);
+        return;
+      }
+      const resolved = resolveExactNodeName(query);
+      if (resolved.error) { searchStatus.textContent = resolved.error; return; }
+      selectNode(resolved.id);
+    }
+    search.addEventListener("input", () => {
+      const query = search.value.trim();
+      searchStatus.textContent = "";
+      if (!query) { reset(); return; }
+      if (query.includes("->")) return;
+      const resolved = resolveExactNodeName(query);
+      if (resolved.id) selectNode(resolved.id);
+    });
+    search.addEventListener("keydown", event => {
+      if (event.key === "Enter") { event.preventDefault(); runExploreSearch(); }
     });
     window.addEventListener("resize", () => {
       renderer.refresh();

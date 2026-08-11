@@ -81,6 +81,14 @@ the resulting definitions and enum constants in the self-contained HTML
 payload. DTO navigation is therefore a read-only export concern and does not
 add facts to the SQLite index.
 
+The graph export keeps an exact-name index of its visual nodes. Its client-side
+itinerary algorithm performs directed breadth-first searches for each pair of
+user-supplied stops and concatenates those shortest segments. This uses all
+indexed graph relations, independently of temporary display filters. Kafka
+links carry relation-specific published or consumed Java message types; the
+selected-path detail uses only these adjacent links and explicitly reports
+missing type information.
+
 The manifest extractors add explicitly declared Kafka facts from Markdown and
 JSON. Strategy1 is separate and opt-in because it embeds repository-specific
 naming conventions.

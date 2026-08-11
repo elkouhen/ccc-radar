@@ -110,6 +110,14 @@ they are not cross-module entry points.
 5. Keep new output formats in `render.py` (or a future dedicated renderer),
    not in query or discovery code.
 
+Browser integration tests live in `tests/test_browser_export.py` and are
+marked `integration`, so they do not run in the default unit-test suite. Run
+them with `uv run playwright install chromium` once per environment, then:
+
+```bash
+uv run pytest -m integration tests/test_browser_export.py
+```
+
 ## Maintenance focus
 
 `scanner.py`, `render.py`, and `cli.py` are the largest modules. Refactor them

@@ -66,6 +66,14 @@ Its initial view foregrounds task-oriented entry points (Kafka topic, service
 dependencies, service-to-service path and Kafka messages). Relation/resource
 filters, graph layouts, specialized reference views and build dependencies are
 available as advanced controls.
+The Explore search accepts either one exact, unambiguous graph-node name or an
+itinerary written with `->`. An itinerary accepts every indexed node type and
+highlights the shortest directed path through the supplied stops in order.
+Invalid, ambiguous, repeated, or unreachable stops leave the current graph
+unchanged and produce an actionable message. The itinerary detail lists the
+ordered node types and, for every Kafka topic on the selected path, the
+published and path-consumed DTO types. Selecting a path stop reveals its
+ordinary detail view, including the indexed Kafka source links where present.
 Indexing issues that have a source endpoint expose a VS Code link to the
 associated file and line. The `Resources` view groups distinct OpenAPI and
 Kafka DTO sections; both support filtering their complete list (OpenAPI by

@@ -1,0 +1,115 @@
+from __future__ import annotations
+
+import os
+from pathlib import Path
+
+import pytest
+from playwright.sync_api import sync_playwright
+
+from ccc_radar.models import MessageEndpoint, compute_endpoint_id
+from ccc_radar.graph import GraphEdge
+from ccc_radar.modules import DiscoveredModule
+from ccc_radar.render import render_graph_html
+
+
+pytestmark = pytest.mark.integration
+
+
+def _chrome_executable() -> str | None:
+    configured = os.environ.get("CCCR_CHROME_BIN")
+    candidates = [
+        Path(configured) if configured else None,
+        Path("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"),
+    ]
+    return next((str(candidate) for candidate in candidates if candidate and candidate.is_file()), None)
+
+
+def _producer(message_type: str) -> MessageEndpoint:
+    return MessageEndpoint(
+        id=compute_endpoint_id("produce", "orders.created", "Publisher.java", 4),
+        role="produce",
+        system="kafka",
+        topic="orders.created",
+        topic_dynamic=False,
+        source="code",
+        framework="spring-kafka",
+        path="Publisher.java",
+        start_line=4,
+        end_line=4,
+        snippet="",
+        message_type=message_type,
+    )
+
+
+@pytest.mark.slow
+def test_html_export_resources_are_usable_in_a_constrained_browser_viewport(tmp_path: Path) -> None:
+    chrome = _chrome_executable()
+    if chrome is None:
+        pytest.skip("Chromium is unavailable; install it with `playwright install chromium`.")
+
+    source_root = tmp_path / "orders" / "src" / "main" / "java" / "com" / "example"
+    source_root.mkdir(parents=True)
+    (source_root / "OrderCreated.java").write_text(
+        "package com.example; public record OrderCreated(String orderId) {}",
+        encoding="utf-8",
+    )
+    module = DiscoveredModule(
+        name="orders",
+        path=tmp_path / "orders",
+        build_system="maven",
+        version=None,
+        kind="application",
+        starts_application=True,
+        configuration_example="",
+    )
+    consumer = MessageEndpoint(
+        id=compute_endpoint_id("consume", "orders.created", "Consumer.java", 8),
+        role="consume", system="kafka", topic="orders.created", topic_dynamic=False,
+        source="code", framework="spring-kafka", path="Consumer.java", start_line=8,
+        end_line=8, snippet="", message_type="com.example.OrderCreated",
+    )
+    document = render_graph_html(
+        {"orders": [_producer("com.example.OrderCreated")], "payments": [consumer]},
+        [GraphEdge("kafka", "orders", "payments", _producer("com.example.OrderCreated"), consumer)],
+        build_modules=[module],
+    )
+
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=True, executable_path=chrome)
+        page = browser.new_page(viewport={"width": 800, "height": 450})
+        errors: list[str] = []
+        page.on("pageerror", lambda error: errors.append(str(error)))
+        page.set_content(document, wait_until="load")
+
+        page.get_by_role("tab", name="Ressources").click()
+        page.locator("#resources-panel").wait_for(state="visible")
+        dto_filter = page.locator("#dto-reference-filter")
+        dto_filter.fill("OrderCreated")
+        dto = page.locator("#dto-references li")
+        dto.wait_for(state="visible")
+        assert dto.count() == 1
+
+        dto_filter.fill("absent")
+        page.locator("#dto-references-empty").wait_for(state="visible")
+        assert page.locator("#dto-references-empty").inner_text() == "Aucun DTO ne correspond à ce filtre."
+
+        dto_filter.fill("")
+        dto.scroll_into_view_if_needed()
+        toolbar = page.locator(".toolbar").bounding_box()
+        dto_box = dto.bounding_box()
+        assert toolbar is not None and toolbar["y"] + toolbar["height"] <= 450
+        assert dto_box is not None and dto_box["y"] + dto_box["height"] <= 450
+
+        page.get_by_role("tab", name="Explorer").click()
+        search = page.locator("#search")
+        search.fill("orders -> orders.created -> payments")
+        search.press("Enter")
+        page.get_by_text("Flux de donnees").wait_for(state="visible")
+        assert page.get_by_text("Publie par orders").is_visible()
+        assert page.get_by_text("Consomme par payments").is_visible()
+
+        search.fill("does-not-exist")
+        search.press("Enter")
+        assert "Noeud introuvable" in page.locator("#search-status").inner_text()
+        assert not errors
+        browser.close()

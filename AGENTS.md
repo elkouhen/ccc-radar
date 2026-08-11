@@ -31,6 +31,26 @@ authoritative detail.
 6. If a change in `ccc-radar` affects the companion skill, update
    `../ccc-radar-skill/` in the same pass.
 
+## Cross-functional review
+
+Before delivering a non-trivial change, examine it from the relevant points of
+view and state any material trade-off or unverified risk:
+
+1. **Product:** does it serve a concrete user task and preserve the intended
+   scope and terminology?
+2. **UX and accessibility:** is the primary path discoverable, progressively
+   disclosed, usable at constrained viewport sizes, and operable by keyboard?
+3. **Development and QA:** are public contracts preserved, edge cases covered,
+   and behavior verified beyond string-level output when interaction is
+   involved?
+4. **Architecture and data quality:** are static facts, confidence levels,
+   ambiguity handling, and compatibility with existing indexes explicit?
+5. **Operations and security:** are offline/network dependencies, performance,
+   local-path disclosure, and deployment consequences understood?
+
+Apply only the perspectives relevant to the change. Do not use this checklist
+as a substitute for proportionate implementation and tests.
+
 ## Hugging Face model downloads
 
 When a model must be downloaded with `hf`, **disable `SSL_CERT_FILE` first** in
