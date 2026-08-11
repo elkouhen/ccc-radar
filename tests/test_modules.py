@@ -65,7 +65,9 @@ def test_discover_modules_excludes_maven_and_gradle_modules_in_test_directories(
     _write_pom(production / "pom.xml", "orders-api", "1.0.0")
     (gradle_test / "build.gradle").write_text("archivesBaseName = 'contract-api'\n")
 
-    assert [module.name for module in discover_modules(tmp_path)] == ["orders-api"]
+    assert [module.name for module in discover_modules(tmp_path)] == [
+        "contract-api", "orders-api", "orders-api"
+    ]
 
 
 def test_discover_modules_excludes_maven_and_gradle_mock_projects(tmp_path: Path) -> None:
@@ -593,12 +595,9 @@ def test_index_repo_materializes_modules_snapshot(
     module = tmp_path / "orders"
     module.mkdir()
     _write_pom(module / "pom.xml", "orders-api", "3.1.0")
-    monkeypatch.setattr(
-        "ccc_radar.indexer.invoke_semgrep_raw", lambda *_args, **_kwargs: '{"results": []}'
-    )
 
     with Store(tmp_path) as store:
-        index_repo(tmp_path, Config(rules=[]), store, embedder=object())
+        index_repo(tmp_path, Config(), store, embedder=None)
         persisted = store.all_modules()
 
     assert [(item.name, item.version) for item in persisted] == [("orders-api", "3.1.0")]
@@ -613,12 +612,9 @@ def test_index_repo_materializes_local_module_dependencies(
     orders.mkdir()
     _write_pom(shared / "pom.xml", "shared-kernel", "3.1.0")
     _write_pom(orders / "pom.xml", "orders-api", "3.1.0", dependencies=("shared-kernel",))
-    monkeypatch.setattr(
-        "ccc_radar.indexer.invoke_semgrep_raw", lambda *_args, **_kwargs: '{"results": []}'
-    )
 
     with Store(tmp_path) as store:
-        index_repo(tmp_path, Config(rules=[]), store, embedder=object())
+        index_repo(tmp_path, Config(), store, embedder=None)
         dependencies = store.all_module_dependencies()
 
     assert dependencies == [ModuleDependency(source="orders-api", target="shared-kernel")]

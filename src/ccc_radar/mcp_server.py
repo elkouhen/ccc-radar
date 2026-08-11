@@ -24,11 +24,10 @@ from ccc_radar.dependency_analysis import (
     audit_dependency_graph as run_dependency_audit,
     build_dependency_graph,
 )
-from ccc_radar.embedder import EmbeddingError, make_embedder
+from ccc_radar.embedder import EmbeddingError, make_embedder, resolve_embedding_model
 from ccc_radar.flow import (
     FlowError,
     group_endpoints_by_module_for_flow,
-    group_findings_by_module_for_flow,
     resolve_topic_by_similarity,
     trace_flow,
 )
@@ -42,8 +41,6 @@ from ccc_radar.modules import DiscoveredModule
 from ccc_radar.paths import db_path
 from ccc_radar.render import (
     EndpointHit,
-    FindingHit,
-    FindingsSummary,
     FlowResultInfo,
     GraphResult,
     ModuleSummary,
@@ -52,12 +49,8 @@ from ccc_radar.render import (
     render_flow_json,
     render_graph_json,
     render_modules_list_json,
-    render_search_json,
-    render_summary_json,
     render_workspace_json,
 )
-from ccc_radar.search import search_findings as run_search_findings
-from ccc_radar.search import summary as compute_summary
 from ccc_radar.store import Store
 from ccc_radar.workspace import (
     discover_maven_services,
@@ -202,56 +195,12 @@ def list_request_reply_patterns() -> dict[str, object]:
 
 
 @mcp.tool()
-def search_findings(
-    query: str,
-    severity: str | None = None,
-    rule: str | None = None,
-    path_glob: str | None = None,
-    limit: int = 5,
-    include_context: bool = False,
-) -> list[FindingHit]:
-    """Recherche en langage naturel dans les findings historiques du repo.
-    Utiliser AVANT de modifier du code pour connaître les problèmes connus,
-    et pour localiser des vulnérabilités par description.
-    """
-    repo_root = _repo_root()
-    _require_index(repo_root)
-    config = load_config(repo_root)
-    embedder = make_embedder(config.embedding_model)
-
-    with Store(repo_root) as store:
-        hits = run_search_findings(
-            store,
-            embedder,
-            query,
-            severity=severity,
-            rule=rule,
-            path_glob=path_glob,
-            limit=limit,
-        )
-        return render_search_json(hits, repo_root, include_context)
-
-
-@mcp.tool()
-def findings_summary() -> FindingsSummary:
-    """Vue agrégée des findings (sévérités, top règles).
-    Utiliser pour une vue d'ensemble à faible coût.
-    """
-    repo_root = _repo_root()
-    _require_index(repo_root)
-    with Store(repo_root) as store:
-        result = compute_summary(store)
-    return render_summary_json(result)
-
-
-@mcp.tool()
-def reindex_findings() -> IndexReport:
-    """Met à jour l'index des findings après modification de fichiers.
-    Appeler après un patch pour vérifier la disparition d'un finding.
-    """
+def reindex_architecture() -> IndexReport:
+    """Met à jour l'index AST après modification de fichiers."""
     repo_root = _repo_root()
     config = load_config(repo_root)
-    embedder = make_embedder(config.embedding_model)
+    resolved_model, _ = resolve_embedding_model(config.embedding_model)
+    embedder = make_embedder(resolved_model) if Path(resolved_model).exists() else None
     with Store(repo_root) as store:
         report = index_repo(repo_root, config, store, embedder)
         store.set_meta("index_engine", "manual")
@@ -372,7 +321,7 @@ def trace_message_flow(query: str, workspace_root: str | None = None) -> FlowRes
     """Résout `query` en topic Kafka ou route REST (nom exact, sinon
     sous-chaîne non ambiguë parmi les endpoints indexés, BACKLOG-10 K5) et
     liste tous ses sites (producteurs/consommateurs Kafka, ou
-    serveurs/appelants REST) avec les findings historiques qui les recouvrent.
+    serveurs/appelants REST) avec leurs preuves de source.
     Utiliser pour comprendre qui produit/consomme un topic donné, ou qui
     appelle une route donnée, avant de plonger dans le code. Sans
     `workspace_root`, ne cherche que dans le projet courant — chaque site
@@ -392,15 +341,12 @@ def trace_message_flow(query: str, workspace_root: str | None = None) -> FlowRes
             endpoints_by_service: dict[str | None, list] = group_endpoints_by_module_for_flow(
                 endpoints
             )
-            findings_by_service: dict[str | None, list] = group_findings_by_module_for_flow(
-                store.all_findings()
-            )
             warnings = []
             repo_warning = _current_repo_endpoint_warning(store)
             if repo_warning is not None:
                 warnings.append(repo_warning)
             try:
-                result = trace_flow(query, endpoints_by_service, findings_by_service, warnings)
+                result = trace_flow(query, endpoints_by_service, warnings)
             except FlowError as exc:
                 fallback_topic = None
                 try:
@@ -414,7 +360,7 @@ def trace_message_flow(query: str, workspace_root: str | None = None) -> FlowRes
                 if fallback_topic is None:
                     raise exc
                 result = trace_flow(
-                    fallback_topic, endpoints_by_service, findings_by_service, warnings
+                    fallback_topic, endpoints_by_service, warnings
                 )
         return render_flow_json(result)
 
@@ -423,8 +369,5 @@ def trace_message_flow(query: str, workspace_root: str | None = None) -> FlowRes
     endpoints_by_service = cast(
         "dict[str | None, list]", dict(federation.endpoints_by_service)
     )
-    findings_by_service = cast(
-        "dict[str | None, list]", dict(federation.findings_by_service)
-    )
-    result = trace_flow(query, endpoints_by_service, findings_by_service, federation.warnings)
+    result = trace_flow(query, endpoints_by_service, federation.warnings)
     return render_flow_json(result)

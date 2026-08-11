@@ -2,8 +2,6 @@
 endpoints indexés (BACKLOG-10 K5). Résout une requête (nom de topic/route
 exact, sinon correspondance approximative sur le texte du topic) vers tous
 ses sites — producteurs/consommateurs Kafka, ou serveurs/appelants REST —
-avec les findings historiques qui recouvrent chaque site (même jointure
-fichier + lignes que le reste du projet, esprit ADR-19).
 
 Résolution textuelle d'abord (égalité exacte, puis sous-chaîne insensible
 à la casse si le résultat est non ambigu) ; `resolve_topic_by_similarity`
@@ -20,7 +18,7 @@ détail) — voir `docs/SPEC-TECH.md`.
 from dataclasses import dataclass
 
 from ccc_radar.embedder import EmbedderLike
-from ccc_radar.models import Finding, MessageEndpoint
+from ccc_radar.models import MessageEndpoint
 from ccc_radar.store import Store
 
 
@@ -33,7 +31,6 @@ class FlowError(Exception):
 class FlowSite:
     service: str | None  # None hors fédération (projet courant seul)
     endpoint: MessageEndpoint
-    findings: list[Finding]
 
 
 @dataclass(frozen=True)
@@ -42,14 +39,6 @@ class FlowResult:
     resolved_topic: str
     sites: list[FlowSite]
     warnings: list[str]
-
-
-def _overlaps(finding: Finding, endpoint: MessageEndpoint) -> bool:
-    return (
-        finding.path == endpoint.path
-        and finding.start_line <= endpoint.end_line
-        and finding.end_line >= endpoint.start_line
-    )
 
 
 _DEFAULT_SIMILARITY_THRESHOLD = 0.35
@@ -69,16 +58,6 @@ def group_endpoints_by_module_for_flow(
     grouped: dict[str | None, list[MessageEndpoint]] = {}
     for endpoint in endpoints:
         grouped.setdefault(endpoint.module, []).append(endpoint)
-    return grouped
-
-
-def group_findings_by_module_for_flow(findings: list[Finding]) -> dict[str | None, list[Finding]]:
-    """Même principe que `group_endpoints_by_module_for_flow`, pour les
-    findings recouvrant chaque site (jointure fichier + lignes, esprit
-    ADR-19)."""
-    grouped: dict[str | None, list[Finding]] = {}
-    for finding in findings:
-        grouped.setdefault(finding.module, []).append(finding)
     return grouped
 
 
@@ -124,7 +103,6 @@ def resolve_topic(query: str, all_topics: set[str]) -> str | None:
 def trace_flow(
     query: str,
     endpoints_by_service: dict[str | None, list[MessageEndpoint]],
-    findings_by_service: dict[str | None, list[Finding]],
     warnings: list[str] | None = None,
 ) -> FlowResult:
     """`warnings` : avertissements de fédération (service non indexé/
@@ -149,10 +127,7 @@ def trace_flow(
             if key in seen_sites:
                 continue
             seen_sites.add(key)
-            findings = [
-                f for f in findings_by_service.get(service, []) if _overlaps(f, endpoint)
-            ]
-            sites.append(FlowSite(service=service, endpoint=endpoint, findings=findings))
+            sites.append(FlowSite(service=service, endpoint=endpoint))
 
     return FlowResult(
         query=query, resolved_topic=resolved, sites=sites, warnings=list(warnings or [])

@@ -15,8 +15,8 @@ env -u SSL_CERT_FILE uvx --from huggingface_hub hf download \
   --local-dir ~/models/jina-code-embeddings-1.5b
 ```
 
-The embedding model is optional for AST extraction, but needed for the
-experimental code-chunk index.
+The embedding model is optional. Without it, `cccr index` still extracts and
+persists architecture facts; endpoint vectors are simply not refreshed.
 
 ## Quick start
 

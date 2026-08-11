@@ -8,9 +8,9 @@ from pathlib import Path
 from typing import Callable
 
 from ccc_radar.config import Config
-from ccc_radar.embedder import EmbedderLike, EmbeddingError, endpoint_to_text, finding_to_text
+from ccc_radar.embedder import EmbedderLike, endpoint_to_text
 from ccc_radar.inventory_freshness import current_endpoint_inventory_signature
-from ccc_radar.models import Finding, MessageEndpoint
+from ccc_radar.models import MessageEndpoint
 from ccc_radar.modules import (
     discover_module_dependencies,
     discover_modules,
@@ -195,24 +195,6 @@ def _embedder_signature(embedder: EmbedderLike, config: Config) -> str:
     return str(getattr(embedder, "signature", config.embedding_model))
 
 
-def _embed_findings(
-    embedder: EmbedderLike, store: Store, findings: list[Finding]
-) -> int | None:
-    if not findings:
-        return None
-    vectors = embedder.embed_texts([finding_to_text(f) for f in findings])
-    dim = int(vectors.shape[1]) if vectors.ndim == 2 else int(vectors.shape[0])
-    stored_dim = store.get_embedding_dim()
-    if stored_dim is not None and stored_dim != dim:
-        raise EmbeddingError(
-            f"Dimension d'embedding incompatible : index={stored_dim}, nouveau={dim}. "
-            "Relancez un ré-embedding complet."
-        )
-    for finding, vector in zip(findings, vectors, strict=True):
-        store.set_embedding(finding.id, vector)
-    return dim
-
-
 def _embed_endpoints(
     embedder: EmbedderLike, store: Store, endpoints: list[MessageEndpoint]
 ) -> int | None:
@@ -315,7 +297,7 @@ def index_repo(
     repo_root: Path,
     config: Config,
     store: Store,
-    embedder: EmbedderLike,
+    embedder: EmbedderLike | None,
     full: bool = False,
     index_code_chunks: bool = False,
     disabled: frozenset[str] = frozenset(),
@@ -418,15 +400,12 @@ def index_repo(
     )
 
     # Les fichiers supprimés quittent toujours l'inventaire.
-    findings_removed = store.count_findings_for_paths(deleted)
     endpoints_removed = store.count_endpoints_for_paths(deleted)
     store.remove_files(deleted)  # purge aussi les endpoints (K1)
 
     # Clear retired external-analyzer results once, including for files which
     # did not otherwise need a rescan.
-    findings_removed = store.clear_findings_once("ast_only_analysis_v1")
-    findings_added = 0
-    findings: list[Finding] = []
+    legacy_findings_removed = store.clear_findings_once("ast_only_analysis_v1")
     endpoints_added = 0
     endpoints: list[MessageEndpoint] = []
     if changed:
@@ -495,7 +474,7 @@ def index_repo(
     store.replace_architecture_relations(relations)
     _report_progress(progress, f"→ Indexation : {len(relations)} relation(s) d'architecture matérialisée(s).")
 
-    if index_code_chunks:
+    if index_code_chunks and embedder is not None:
         chunk_paths = changed
         if not chunk_paths and store.code_chunk_embedding_count() == 0:
             chunk_paths = sorted(current_paths)
@@ -526,59 +505,25 @@ def index_repo(
             _report_progress(progress, f"→ Indexation : embedding de {len(chunks)} chunk(s) de code...")
             _embed_code_chunks(embedder, store, chunks)
 
-    signature = _embedder_signature(embedder, config)
-    if store.get_meta("embedding_signature") != signature:
-        store.set_meta("embedding_signature", signature)
-        store.set_meta("embedding_model", str(getattr(embedder, "model_name", config.embedding_model)))
-        store.set_meta("embedding_dim", "")
-        _report_progress(progress, "→ Indexation : embedding complet des findings...")
-        _trace("embedding.findings.full.begin")
-        dim = _embed_findings(embedder, store, store.all_findings())
-        _trace("embedding.findings.full.end", dimension=dim)
-        if dim is not None:
-            store.set_meta("embedding_dim", str(dim))
-        _report_progress(progress, "→ Indexation : embedding complet des endpoints...")
-        _trace("embedding.endpoints.full.begin")
-        endpoint_dim = _embed_endpoints(embedder, store, store.all_endpoints())
-        _trace("embedding.endpoints.full.end", dimension=endpoint_dim)
+    if embedder is not None:
+        signature = _embedder_signature(embedder, config)
+        if store.get_meta("endpoint_embedding_signature") != signature:
+            store.set_meta("endpoint_embedding_signature", signature)
+            _report_progress(progress, "→ Indexation : embedding complet des endpoints...")
+            endpoint_dim = _embed_endpoints(embedder, store, store.all_endpoints())
+        else:
+            embedded_endpoint_ids = {endpoint_id for endpoint_id, _ in store.iter_endpoint_embeddings()}
+            new_endpoints = [e for e in endpoints if e.id not in embedded_endpoint_ids]
+            endpoint_dim = _embed_endpoints(embedder, store, new_endpoints)
         if endpoint_dim is not None:
-            store.set_meta("endpoint_embedding_dim", str(endpoint_dim))
-    else:
-        embedded_ids = {finding_id for finding_id, _ in store.iter_embeddings()}
-        new_findings = [f for f in findings if f.id not in embedded_ids]
-        if new_findings:
-            _report_progress(progress, f"→ Indexation : embedding de {len(new_findings)} finding(s) nouveau(x)...")
-        dim = _embed_findings(
-            embedder, store, new_findings
-        )
-        _trace("embedding.findings.delta.end", count=len(new_findings), dimension=dim)
-        if dim is not None and store.get_meta("embedding_dim") != str(dim):
-            store.set_meta("embedding_dim", str(dim))
-
-        embedded_endpoint_ids = {
-            endpoint_id for endpoint_id, _ in store.iter_endpoint_embeddings()
-        }
-        new_endpoints = [e for e in endpoints if e.id not in embedded_endpoint_ids]
-        if new_endpoints:
-            _report_progress(
-                progress,
-                f"→ Indexation : embedding de {len(new_endpoints)} endpoint(s) nouveau(x)...",
-            )
-        endpoint_dim = _embed_endpoints(
-            embedder, store, new_endpoints
-        )
-        _trace("embedding.endpoints.delta.end", count=len(new_endpoints), dimension=endpoint_dim)
-        if endpoint_dim is not None and store.get_meta("endpoint_embedding_dim") != str(
-            endpoint_dim
-        ):
             store.set_meta("endpoint_embedding_dim", str(endpoint_dim))
 
     _trace("index_repo.end", scanned=len(changed), skipped=len(unchanged))
     return IndexReport(
         scanned=len(changed),
         skipped=len(unchanged),
-        findings_added=findings_added,
-        findings_removed=findings_removed,
+        findings_added=0,
+        findings_removed=legacy_findings_removed,
         deleted_files=len(deleted),
         endpoints_added=endpoints_added,
         endpoints_removed=endpoints_removed,

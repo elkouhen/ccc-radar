@@ -26,7 +26,7 @@ from ccc_radar.architecture import (
 from ccc_radar.architecture_inventory import load_architecture_inventory
 from ccc_radar.audit import assess_architecture, render_audit_json, render_audit_text
 from ccc_radar.config import ConfigError, init_config, load_config
-from ccc_radar.embedder import EmbeddingError, make_embedder, resolve_embedding_model
+from ccc_radar.embedder import EmbedderLike, EmbeddingError, make_embedder, resolve_embedding_model
 from ccc_radar.flow import (
     resolve_topic,
     resolve_topic_by_similarity,
@@ -38,7 +38,7 @@ from ccc_radar.graph import (
 )
 from ccc_radar.indexer import index_repo
 from ccc_radar.inventory_freshness import endpoint_inventory_warning
-from ccc_radar.models import Finding, MessageEndpoint
+from ccc_radar.models import MessageEndpoint
 from ccc_radar.modules import DiscoveredModule, ModuleDependency, discover_modules
 from ccc_radar.render import (
     GraphResult,
@@ -55,15 +55,9 @@ from ccc_radar.render import (
     render_module_graph_text,
     render_modules_list_json,
     render_modules_list_text,
-    render_search_json,
-    render_search_text,
-    render_summary_json,
-    render_summary_text,
     render_workspace_json,
     render_workspace_text,
 )
-from ccc_radar.search import SearchError, search_findings
-from ccc_radar.search import summary as compute_summary
 from ccc_radar.paths import config_path, db_path
 from ccc_radar.store import Store, StoreError
 from ccc_radar.workspace import (
@@ -74,7 +68,7 @@ from ccc_radar.doctor import has_errors, run_doctor
 
 app = typer.Typer(
     help=(
-        "Explorer l'architecture et les constats d'un projet indexé.\n\n"
+        "Explorer l'architecture d'un projet indexé.\n\n"
         "Exemples : `cccr microservices`, `cccr analyze audit`, "
         "`cccr export microservices --html graph.html`."
     )
@@ -881,9 +875,13 @@ def index_cmd(
     resolved_model, model_warning = resolve_embedding_model(config.embedding_model)
     if model_warning is not None:
         typer.echo(f"⚠ {model_warning}")
-    _trace_index("embedder.begin", model=resolved_model)
-    embedder = make_embedder(resolved_model)
-    _trace_index("embedder.end")
+    embedder: EmbedderLike | None = None
+    if Path(resolved_model).exists() or os.environ.get("CCCR_FAKE_EMBEDDER") == "1":
+        _trace_index("embedder.begin", model=resolved_model)
+        embedder = make_embedder(resolved_model)
+        _trace_index("embedder.end")
+    else:
+        typer.echo("⚠ Modèle d'embeddings absent : indexation AST sans vecteurs.")
 
     try:
         _trace_index("store.open.begin")
@@ -902,7 +900,6 @@ def index_cmd(
 
     typer.echo(
         f"scanned={report.scanned} skipped={report.skipped} "
-        f"+findings={report.findings_added} -findings={report.findings_removed} "
         f"+integrations={report.endpoints_added} -integrations={report.endpoints_removed}"
     )
     _trace_index("cli.index.end")
@@ -915,77 +912,12 @@ def _require_index(repo_root: Path) -> None:
         raise typer.Exit(code=2)
 
 
-@app.command()
-
-
-@app.command(name="findings")
-def findings_cmd(
-    query: Optional[str] = typer.Argument(  # noqa: UP007 (Typer nécessite Optional)
-        None, help="Requête précision-first. Omettre pour lister les findings."
-    ),
-    severity: Optional[str] = typer.Option(None, "--severity"),  # noqa: UP007
-    rule: Optional[str] = typer.Option(None, "--rule"),  # noqa: UP007
-    path: Optional[str] = typer.Option(None, "--path"),  # noqa: UP007
-    limit: int = typer.Option(5, "--limit"),
-    offset: int = typer.Option(0, "--offset"),
-    context: bool = typer.Option(False, "--context"),
-    json_output: bool = typer.Option(False, "--json"),
-) -> None:
-    """Liste les findings indexés ou les filtre par requête précision-first,
-    sans recherche de code — pour la recherche code + findings, voir `search`.
-
-    Exemples : `cccr findings`, `cccr findings "sql injection" --json`.
-    """
-    repo_root = Path.cwd()
-    _require_index(repo_root)
-
-    try:
-        with Store(repo_root) as store:
-            hits = search_findings(
-                store,
-                object(),  # recherche findings lexicale ; aucun modèle requis
-                query,
-                severity=severity,
-                rule=rule,
-                path_glob=path,
-                limit=limit,
-                offset=offset,
-            )
-    except SearchError as exc:
-        typer.echo(str(exc), err=True)
-        raise typer.Exit(code=2) from exc
-
-    if json_output:
-        typer.echo(json.dumps(render_search_json(hits, repo_root, context)))
-    else:
-        typer.echo(render_search_text(hits, repo_root, context))
-
-
-@app.command(name="summary")
-def summary_cmd(json_output: bool = typer.Option(False, "--json")) -> None:
-    """Vue agrégée des findings (sévérités, top règles, top répertoires).
-
-    Exemples : `cccr summary`, `cccr summary --json`.
-    """
-    repo_root = Path.cwd()
-    _require_index(repo_root)
-
-    with Store(repo_root) as store:
-        result = compute_summary(store)
-
-    if json_output:
-        typer.echo(json.dumps(render_summary_json(result)))
-    else:
-        typer.echo(render_summary_text(result))
-
-
 @dataclass(frozen=True)
 class _MicroserviceGraphData:
     services_by_name: dict[str, list[MessageEndpoint]]
     edges: list[GraphEdge]
     collections_by_service: dict[str, list[str]]
     modules_by_service: dict[str, DiscoveredModule]
-    findings_by_service: dict[str, list[Finding]]
     build_modules: list[DiscoveredModule]
     module_dependencies: list[ModuleDependency]
     source_roots: list[Path]
@@ -1047,11 +979,6 @@ def _load_microservice_graph(
         edges,
         collections_by_service,
         modules_by_service,
-        {
-            name: findings
-            for name, findings in inventory.findings_by_service.items()
-            if name in services_by_name
-        },
         inventory.modules,
         inventory.module_dependencies,
         inventory.source_roots,
@@ -1170,7 +1097,7 @@ def export_microservices_cmd(
                 graph_data.build_modules,
                 graph_data.module_dependencies,
                 graph_data.source_roots,
-                graph_data.findings_by_service,
+                None,
                 vscode_wsl_distro,
                 request_reply_strategy1=True,
             ),
@@ -1184,7 +1111,7 @@ def export_microservices_cmd(
                 graph_data.services_by_name,
                 graph_data.edges,
                 graph_data.collections_by_service,
-                graph_data.findings_by_service,
+                None,
                 graph_data.modules_by_service,
                 graph_data.warnings,
                 graph_data.build_modules,
@@ -1854,7 +1781,7 @@ def _selected_indexed_module(name: str, repo_root: Path):
     return matches[0]
 @app.command(name="mcp")
 def mcp_cmd() -> None:
-    """Lance le serveur MCP (stdio) exposant les findings du repo courant.
+    """Lance le serveur MCP (stdio) exposant l'architecture du repo courant.
 
     Enregistrement client (ex. Claude Code), à ajouter à la config MCP :
 

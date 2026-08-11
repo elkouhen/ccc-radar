@@ -4189,7 +4189,6 @@ class FlowSiteInfo(TypedDict):
     start_line: int
     end_line: int
     topic_dynamic: bool
-    finding_rule_ids: list[str]
 
 
 class FlowResultInfo(TypedDict):
@@ -4215,7 +4214,6 @@ def render_flow_json(result: FlowResult) -> FlowResultInfo:
                 start_line=site.endpoint.start_line,
                 end_line=site.endpoint.end_line,
                 topic_dynamic=site.endpoint.topic_dynamic,
-                finding_rule_ids=[f.rule_id for f in site.findings],
             )
             for site in result.sites
         ],
@@ -4236,8 +4234,6 @@ def render_flow_text(result: FlowResultInfo) -> str:
             f"  {service_marker}{site['role']}/{site['system']}{framework_marker}"
             f"{dynamic_marker}  {site['path']}:{site['start_line']}-{site['end_line']}"
         )
-        for rule_id in site["finding_rule_ids"]:
-            lines.append(f"    ⚠ finding: {rule_id}")
     for warning in result["warnings"]:
         lines.append(f"⚠ {warning}")
     return "\n".join(lines)

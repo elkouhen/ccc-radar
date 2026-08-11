@@ -39,12 +39,10 @@ but does not alter AST endpoint extraction.
 count and materialized relations. Its final line is:
 
 ```text
-scanned=<N> skipped=<N> +findings=<N> -findings=<N> +integrations=<N> -integrations=<N>
+scanned=<N> skipped=<N> +integrations=<N> -integrations=<N>
 ```
 
-The findings counters are retained for database/report compatibility and remain
-zero for newly indexed AST-only repositories. On the first AST-only run, stale
-results from the retired external analyzer are removed.
+The first AST-only run removes stale results from the retired analyzer.
 
 `--topic-strategy strategy1` is opt-in. `--disable` accepts `properties`,
 `module-architecture`, and `module-tree-sitter`.
@@ -91,7 +89,7 @@ The MCP server exposes the same indexed architecture. Its primary tools are:
 | `trace_message_flow` | Trace a topic or route through its source sites. |
 | `list_modules` | Return the persisted module inventory. |
 | `list_workspace_services` | Discover and load a multi-service Maven/Gradle workspace read-only. |
-| `reindex_findings` | Backward-compatible name for incremental AST reindexing. |
+| `reindex_architecture` | Incrementally refresh AST facts after a source change. |
 
 MCP tools require an existing index where they query persisted facts. Errors are
 returned through the standard MCP tool-error path.
