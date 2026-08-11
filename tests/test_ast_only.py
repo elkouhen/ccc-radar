@@ -52,7 +52,7 @@ def test_strategy1_recognizes_envoyer_message_kafka_as_a_producer(tmp_path: Path
         """package com.example;
 class Publisher {
   void publish(OrderCreated event) {
-    kafkaService.envoyerMessageKafka("orders.created", event);
+    kafkaService.envoyerMessageKafka(kafkaProperties.getTopics().getOrdersCreated(), event);
   }
 }
 record OrderCreated(String orderId) {}
@@ -65,7 +65,7 @@ record OrderCreated(String orderId) {}
     )
 
     assert [(endpoint.role, endpoint.topic, endpoint.message_type, endpoint.framework) for endpoint in endpoints] == [
-        ("produce", "orders.created", "OrderCreated", "kafka-topic-strategy1")
+        ("produce", "ORDERS_CREATED", "OrderCreated", "kafka-topic-strategy1")
     ]
 
 

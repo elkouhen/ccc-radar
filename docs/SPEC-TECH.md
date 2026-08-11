@@ -68,8 +68,10 @@ It preserves dynamic topic expressions and derives a payload type only from an
 explicit listener parameter or client generic signature.
 
 With `--topic-strategy strategy1`, `envoyerMessageKafka(topic, payload)` is an
-additional producer convention. Its first argument uses the same conservative
-topic resolver and its second argument is used to derive the payload type.
+additional producer convention. A first argument shaped as
+`kafkaProperties.getTopics().getXxx()` resolves to the normalized Strategy1
+topic name; other values use the conservative topic resolver. The second
+argument is used to derive the payload type.
 
 `render_graph_html` resolves the Java DTOs and enums rooted at those Kafka
 payload types from production source roots. It follows declared field types

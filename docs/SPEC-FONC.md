@@ -72,7 +72,7 @@ advanced tabs; both tabs support filtering their complete list (OpenAPI by
 path or service, DTOs by simple name or package).
 
 `--topic-strategy strategy1` adds opt-in convention extraction for selected
-`getTopics()` accessors, `envoyerMessageKafka(topic, payload)` calls,
+`getTopics()` accessors, `envoyerMessageKafka(kafkaProperties.getTopics().getXxx(), payload)` calls,
 `${kafka.topics.*.name}` expressions and configured REST client constants. It
 may also derive a high-confidence request/reply pair
 when both sides follow the `retour_<request-topic>` convention.

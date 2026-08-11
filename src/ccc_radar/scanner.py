@@ -2247,6 +2247,15 @@ def _strategy1_topic_name(value: str) -> str:
     return separated.replace("-", "_").upper()
 
 
+def _strategy1_topic_from_value(value_node, source: bytes, repo_root: Path, rel_path: str) -> tuple[str, bool]:
+    """Resolve a Strategy1 `getTopics().getXxx()` argument before fallback."""
+    if value_node is not None:
+        value = java_parser.node_text(source, value_node)
+        if match := _STRATEGY1_PRODUCER_RE.search(value):
+            return _strategy1_topic_name(match.group(1)), False
+    return _kafka_topic_from_value(value_node, source, repo_root, rel_path)
+
+
 def _kafka_listener_annotation_blocks(source: str) -> list[tuple[int, str]]:
     """Return complete `@KafkaListener(...)` blocks without parsing Java AST."""
     blocks: list[tuple[int, str]] = []
@@ -2326,7 +2335,7 @@ def infer_kafka_topic_strategy1_endpoints(
             _object_node, method_name, args = java_parser.invocation_parts(node, source_bytes)
             if method_name != "envoyerMessageKafka" or len(args) < 2:
                 continue
-            topic, dynamic = _kafka_topic_from_value(args[0], source_bytes, repo_root, rel_path)
+            topic, dynamic = _strategy1_topic_from_value(args[0], source_bytes, repo_root, rel_path)
             endpoint = _kafka_endpoint(
                 repo_root,
                 rel_path,
