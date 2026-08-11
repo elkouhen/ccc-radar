@@ -86,16 +86,13 @@ flow rather than a bare sequence of graph nodes.
 
 - Show every path stop in order, with its node type: microservice, Kafka topic,
   MongoDB collection, or external service.
-- For each Kafka topic on the path, show the DTO types published to that topic
-  and the types declared by the consumer services reached by the path.
-- Show the services and topics involved in a compact ordered summary before
-  lower-level technical evidence.
+- For each Kafka topic on the path, show its associated DTO names directly in
+  the compact ordered summary.
+- Make every service, topic and collection in the ordered summary clickable to
+  reveal its detail and available technical evidence.
 - Make unavailable or unresolved DTO information explicit; do not infer a
   message type.
-- Keep the detail scoped to the selected path, not to every relation of every
-  node in the whole graph.
-- If a topic has producers or consumers outside the selected path, indicate
-  that additional participants exist without expanding them into the primary
-  flow explanation.
+- Keep the detail scoped to the selected path; it does not expand every
+  relation of every node in the graph.
 - Reveal producer/consumer source locations and file links only after the user
   selects the relevant path stop.

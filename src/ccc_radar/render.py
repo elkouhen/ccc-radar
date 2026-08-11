@@ -1643,14 +1643,6 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
     .path-overview-item.is-collection { border-left: 3px solid #16a34a; }
     .path-overview-stop { width: 100%; padding: 0; border: 0; color: inherit; background: transparent; font: inherit; text-align: left; cursor: pointer; }
     .path-overview-stop:hover, .path-overview-stop:focus-visible { color: #1d4f91; text-decoration: underline; outline: none; }
-    .path-flow { display: grid; gap: 9px; }
-    .path-flow-step { padding: 9px; border: 1px solid #e2e8f0; border-radius: 7px; background: #f8fafc; }
-    .path-flow-step h3 { margin: 0; color: #334155; font-size: 12px; }
-    .path-flow-step p { margin: 5px 0 0; color: #52616b; font-size: 12px; }
-    .path-flow-types { display: grid; gap: 4px; margin: 7px 0 0; padding: 0; list-style: none; }
-    .path-flow-types li { padding: 4px 6px; border-radius: 4px; background: #fff; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; }
-    .path-flow-dto { width: 100%; padding: 4px 6px; border: 1px solid #bfdbfe; border-radius: 4px; color: #1d4f91; background: #eff6ff; font: inherit; font-size: 11px; text-align: left; cursor: pointer; }
-    .path-flow-dto:hover, .path-flow-dto:focus-visible { border-color: #60a5fa; background: #dbeafe; outline: none; }
     .dependency-view { display: grid; gap: 8px; padding: 2px 0; }
     .dependency-view-kicker { margin: 0; color: #1d4f91; font-size: 10px; font-weight: 800; letter-spacing: .09em; text-transform: uppercase; }
     .dependency-view h2 { margin: 0; color: #172033; font-size: 16px; }
@@ -3140,10 +3132,15 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
         if (node.kind === "mongodb_collection") return "Collection MongoDB";
         return node.external ? "Service externe" : "Microservice";
       };
-      const pathNodeLabel = id => {
+      const pathNodeLabel = (id, index) => {
         const node = nodeDataById.get(id);
-        const order = pathMicroserviceOrder.get(id);
-        return `${order ? `${order}. ` : ""}${node.name} · ${nodeKindLabel(node)}`;
+        const topicDtos = node.kind === "kafka_topic"
+          ? (graphData.kafka_dtos || [])
+            .filter(dto => (dto.topics || []).includes(node.name))
+            .sort((left, right) => dtoLabel(left).localeCompare(dtoLabel(right)))
+          : [];
+        const dtoSuffix = topicDtos.length ? ` (${topicDtos.map(dto => dtoLabel(dto)).join(", ")})` : "";
+        return `${index + 1}. ${node.name} : ${nodeKindLabel(node)}${dtoSuffix}`;
       };
       const header = document.createElement("header");
       header.className = "path-details-header";
@@ -3166,7 +3163,7 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
       overviewTitle.textContent = "Parcours";
       const overviewList = document.createElement("ol");
       overviewList.className = "path-overview";
-      path.nodes.forEach(id => {
+      path.nodes.forEach((id, index) => {
         const item = document.createElement("li");
         item.className = "path-overview-item";
         const node = nodeDataById.get(id);
@@ -3174,7 +3171,7 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
         const stop = document.createElement("button");
         stop.type = "button";
         stop.className = "path-overview-stop";
-        stop.textContent = pathNodeLabel(id);
+        stop.textContent = pathNodeLabel(id, index);
         stop.title = `Afficher les details et les preuves de ${node.name}`;
         stop.addEventListener("click", () => selectNode(id, true));
         item.append(stop);
@@ -3182,72 +3179,6 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
       });
       overview.append(overviewTitle, overviewList);
       details.append(overview);
-      const flow = document.createElement("section");
-      flow.className = "details-section";
-      const flowTitle = document.createElement("h2");
-      flowTitle.textContent = "Flux de donnees";
-      const flowList = document.createElement("div");
-      flowList.className = "path-flow";
-      path.nodes.forEach((id, index) => {
-        const node = nodeDataById.get(id);
-        if (node.kind !== "kafka_topic") return;
-        const previous = path.edges[index - 1]?.link;
-        const next = path.edges[index]?.link;
-        const published = previous?.published_message_types || [];
-        const consumed = next?.consumed_message_types || [];
-        const card = document.createElement("article");
-        card.className = "path-flow-step";
-        const cardTitle = document.createElement("h3");
-        cardTitle.textContent = `${node.name} · topic Kafka`;
-        const publishedText = document.createElement("p");
-        publishedText.textContent = published.length ? `Publie par ${nodeDataById.get(previous.source).name}` : "Type publie non indexe pour cette etape.";
-        card.append(cardTitle, publishedText);
-        const types = document.createElement("ul");
-        types.className = "path-flow-types";
-        (published.length ? published : ["Type Java non indexe"]).forEach(type => {
-          const item = document.createElement("li"); item.textContent = type; types.append(item);
-        });
-        card.append(types);
-        const topicDtos = (graphData.kafka_dtos || [])
-          .filter(dto => (dto.topics || []).includes(node.name))
-          .sort((left, right) => dtoLabel(left).localeCompare(dtoLabel(right)));
-        const dtoText = document.createElement("p");
-        dtoText.textContent = topicDtos.length ? "DTO associes au topic" : "Aucun DTO Java associe a ce topic n'est indexe.";
-        card.append(dtoText);
-        if (topicDtos.length) {
-          const dtoList = document.createElement("ul");
-          dtoList.className = "path-flow-types";
-          topicDtos.forEach(dto => {
-            const item = document.createElement("li");
-            const dtoButton = document.createElement("button");
-            dtoButton.type = "button";
-            dtoButton.className = "path-flow-dto";
-            dtoButton.textContent = `DTO · ${dtoLabel(dto)}`;
-            dtoButton.title = `Afficher la structure de ${dtoLabel(dto)}`;
-            dtoButton.addEventListener("click", () => openDtoInspector(dto.id));
-            item.append(dtoButton);
-            dtoList.append(item);
-          });
-          card.append(dtoList);
-        }
-        const consumedText = document.createElement("p");
-        consumedText.textContent = next?.target && nodeDataById.get(next.target)?.kind === "microservice"
-          ? (consumed.length ? `Consomme par ${nodeDataById.get(next.target).name}` : `Type declare par ${nodeDataById.get(next.target).name} non indexe.`)
-          : "Aucun consommateur de ce topic ne fait partie de cet itineraire.";
-        card.append(consumedText);
-        if (consumed.length) {
-          const consumerTypes = document.createElement("ul"); consumerTypes.className = "path-flow-types";
-          consumed.forEach(type => { const item = document.createElement("li"); item.textContent = type; consumerTypes.append(item); });
-          card.append(consumerTypes);
-        }
-        const allProducers = graphData.links.filter(link => link.kind === "kafka" && link.target === id).map(link => link.source);
-        const allConsumers = graphData.links.filter(link => link.kind === "kafka" && link.source === id).map(link => link.target);
-        const pathParticipants = new Set([previous?.source, next?.target]);
-        const extraCount = [...allProducers, ...allConsumers].filter(participant => !pathParticipants.has(participant)).length;
-        if (extraCount) { const extra = document.createElement("p"); extra.textContent = `${extraCount} participant${extraCount > 1 ? "s" : ""} hors de cet itineraire non affiche${extraCount > 1 ? "s" : ""}.`; card.append(extra); }
-        flowList.append(card);
-      });
-      if (flowList.childElementCount) { flow.append(flowTitle, flowList); details.append(flow); }
     }
     function showPath(path, stops = path.nodes) {
       pathStops.splice(0, pathStops.length, ...stops);

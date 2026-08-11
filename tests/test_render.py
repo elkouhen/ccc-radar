@@ -123,7 +123,7 @@ enum PaymentStatus { AUTHORIZED, DECLINED }
     assert "function resolveExactNodeName(name)" in document
     assert "function runExploreSearch()" in document
     assert "Aucun chemin oriente ne passe par les noeuds demandes dans cet ordre." in document
-    assert "Flux de donnees" in document
+    assert "${nodeKindLabel(node)}${dtoSuffix}" in document
     assert "Sources Kafka" in document
 
 

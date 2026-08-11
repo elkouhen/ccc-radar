@@ -104,10 +104,13 @@ def test_html_export_resources_are_usable_in_a_constrained_browser_viewport(tmp_
         search = page.locator("#search")
         search.fill("orders -> orders.created -> payments")
         search.press("Enter")
-        page.get_by_text("Flux de donnees").wait_for(state="visible")
-        assert page.get_by_text("Publie par orders").is_visible()
-        assert page.get_by_role("button", name="DTO · OrderCreated").is_visible()
-        assert page.get_by_text("Consomme par payments").is_visible()
+        orders_stop = page.get_by_role("button", name="1. orders : Microservice")
+        assert orders_stop.is_visible()
+        assert page.get_by_role("button", name="2. orders.created : Topic Kafka (OrderCreated)").is_visible()
+        assert page.get_by_role("button", name="3. payments : Microservice").is_visible()
+        assert not page.get_by_text("Flux de donnees").count()
+        orders_stop.click()
+        assert page.locator(".details-title").inner_text() == "orders"
 
         search.fill("does-not-exist")
         search.press("Enter")
