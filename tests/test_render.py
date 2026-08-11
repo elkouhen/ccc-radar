@@ -122,7 +122,8 @@ enum PaymentStatus { AUTHORIZED, DECLINED }
     assert 'placeholder="orders ou orders -> payments"' in document
     assert "function resolveExactNodeName(name)" in document
     assert "function runExploreSearch()" in document
-    assert "Aucun chemin oriente ne passe par les noeuds demandes dans cet ordre." in document
+    assert "Aucun itineraire Kafka oriente ne passe par les noeuds demandes dans cet ordre." in document
+    assert 'link => link.kind === "kafka"' in document
     assert "${nodeKindLabel(node)}${dtoSuffix}" in document
     assert "function appendServiceKafkaActivities" in document
 

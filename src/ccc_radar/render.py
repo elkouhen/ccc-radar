@@ -2398,7 +2398,9 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
 
     function isValidPathStops(stops) {
       if (!Array.isArray(stops) || stops.length < 2 || new Set(stops).size !== stops.length) return false;
-      return stops.every(id => nodeDataById.has(id));
+      return stops.every(id => nodeDataById.has(id) && ["microservice", "kafka_topic"].includes(nodeDataById.get(id).kind))
+        && nodeDataById.get(stops[0]).kind === "microservice"
+        && nodeDataById.get(stops.at(-1)).kind === "microservice";
     }
     function loadAnalyzedPaths() {
       try {
@@ -3013,9 +3015,10 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
       }
       return `Kafka · ${target.name} consomme ${source.name}`;
     }
-    function shortestPath(sourceId, targetId) {
+    function shortestPath(sourceId, targetId, matchesLink = () => true) {
       const outgoing = new Map();
       graphData.links.forEach((link, index) => {
+        if (!matchesLink(link)) return;
         if (!outgoing.has(link.source)) outgoing.set(link.source, []);
         outgoing.get(link.source).push({ target: link.target, edge: `edge-${index}`, link });
       });
@@ -3045,7 +3048,7 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
     function shortestPathThrough(stops) {
       const path = { nodes: [], edges: [] };
       for (let index = 0; index < stops.length - 1; index += 1) {
-        const segment = shortestPath(stops[index], stops[index + 1]);
+        const segment = shortestPath(stops[index], stops[index + 1], link => link.kind === "kafka");
         if (segment === null) return null;
         path.nodes.push(...(index === 0 ? segment.nodes : segment.nodes.slice(1)));
         path.edges.push(...segment.edges);
@@ -3055,7 +3058,7 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
     function allSimplePaths(sourceId, targetId, maxDepth = MAX_SIMPLE_PATH_DEPTH, maxPaths = MAX_SIMPLE_PATHS, maxExplorations = MAX_SIMPLE_PATH_EXPLORATIONS) {
       const outgoing = new Map();
       graphData.links.forEach((link, index) => {
-        if (!isVisibleRelation(link.kind)) return;
+        if (link.kind !== "kafka") return;
         if (!outgoing.has(link.source)) outgoing.set(link.source, []);
         outgoing.get(link.source).push({ target: link.target, edge: `edge-${index}`, link });
       });
@@ -3112,6 +3115,12 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
         const resolved = resolveExactNodeName(name);
         if (resolved.error) return resolved;
         stops.push(resolved.id);
+      }
+      if (stops.some(id => !["microservice", "kafka_topic"].includes(nodeDataById.get(id).kind))) {
+        return { error: "Un itineraire Kafka ne peut contenir que des microservices et des topics Kafka." };
+      }
+      if (nodeDataById.get(stops[0]).kind !== "microservice" || nodeDataById.get(stops.at(-1)).kind !== "microservice") {
+        return { error: "Un itineraire Kafka doit commencer et se terminer par un microservice." };
       }
       if (new Set(stops).size !== stops.length) {
         return { error: "Un itineraire ne peut pas repeter le meme noeud." };
@@ -3239,7 +3248,7 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
       const stops = parsed.stops;
       const path = shortestPathThrough(stops);
       if (path === null) {
-        const message = "Aucun chemin oriente ne passe par les noeuds demandes dans cet ordre.";
+        const message = "Aucun itineraire Kafka oriente ne passe par les noeuds demandes dans cet ordre.";
         if (preserveGraphOnError) { searchStatus.textContent = message; return false; }
         selectedId = null; relatedNodes = null; relatedEdges = null; pathMicroserviceOrder = new Map();
         renderer.refresh();

@@ -83,8 +83,9 @@ add facts to the SQLite index.
 
 The graph export keeps an exact-name index of its visual nodes. Its client-side
 itinerary algorithm performs directed breadth-first searches for each pair of
-user-supplied stops and concatenates those shortest segments. This uses all
-indexed graph relations, independently of temporary display filters. Kafka
+user-supplied stops and concatenates those shortest segments. It uses only
+Kafka graph relations, independently of temporary display filters, so an
+itinerary always alternates between microservices and Kafka topics. Kafka
 links carry relation-specific published or consumed Java message types; the
 selected-path detail uses only these adjacent links and explicitly reports
 missing type information.

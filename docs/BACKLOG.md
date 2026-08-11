@@ -33,9 +33,9 @@ Prefix and substring matching do not select a node. If no exact match exists,
 or if the exact name identifies more than one node, the query is rejected with
 an actionable message and the graph remains unchanged.
 
-An itinerary may use any indexed node type as a stop or endpoint, including a
-microservice, Kafka topic, MongoDB collection, or an external service when it
-is present in the graph. For example:
+An itinerary is a Kafka data-flow path. It starts and ends with a microservice
+and follows Kafka topics only; HTTP and MongoDB dependencies are excluded. For
+example:
 
 ```text
 orders -> orders.created -> payments -> payment-events

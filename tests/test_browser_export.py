@@ -68,9 +68,24 @@ def test_html_export_resources_are_usable_in_a_constrained_browser_viewport(tmp_
         source="code", framework="spring-kafka", path="Consumer.java", start_line=8,
         end_line=8, snippet="", message_type="com.example.OrderCreated",
     )
+    rest_call = MessageEndpoint(
+        id=compute_endpoint_id("call", "GET /payments", "OrderClient.java", 12),
+        role="call", system="rest", topic="GET /payments", topic_dynamic=False,
+        source="code", framework="resttemplate", path="OrderClient.java", start_line=12,
+        end_line=12, snippet="", message_type=None,
+    )
+    rest_server = MessageEndpoint(
+        id=compute_endpoint_id("serve", "GET /payments", "PaymentController.java", 6),
+        role="serve", system="rest", topic="GET /payments", topic_dynamic=False,
+        source="code", framework="spring-mvc", path="PaymentController.java", start_line=6,
+        end_line=6, snippet="", message_type=None,
+    )
     document = render_graph_html(
-        {"orders": [_producer("com.example.OrderCreated")], "payments": [consumer]},
-        [GraphEdge("kafka", "orders", "payments", _producer("com.example.OrderCreated"), consumer)],
+        {"orders": [_producer("com.example.OrderCreated"), rest_call], "payments": [consumer, rest_server]},
+        [
+            GraphEdge("kafka", "orders", "payments", _producer("com.example.OrderCreated"), consumer),
+            GraphEdge("rest", "orders", "payments", rest_call, rest_server),
+        ],
         build_modules=[module],
     )
 
@@ -111,7 +126,7 @@ def test_html_export_resources_are_usable_in_a_constrained_browser_viewport(tmp_
         assert not page.get_by_text("Flux de donnees").count()
         orders_stop.click()
         assert page.locator(".details-title").inner_text() == "orders"
-        assert page.locator("#details .details-group > summary").all_text_contents() == ["Kafka", "Sources"]
+        assert page.locator("#details .details-group > summary").all_text_contents() == ["API", "Kafka", "Sources"]
         assert page.get_by_text("Publie", exact=True).is_visible()
         assert page.get_by_role("button", name="orders.created", exact=True).is_visible()
         assert page.get_by_role("button", name="DTO · OrderCreated").is_visible()

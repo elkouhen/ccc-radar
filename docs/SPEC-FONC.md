@@ -67,9 +67,10 @@ Its initial view foregrounds task-oriented entry points (Kafka topic, service
 dependencies, service-to-service path and Kafka messages). Relation/resource
 filters, graph layouts, specialized reference views and build dependencies are
 available as advanced controls.
-The Explore search accepts either one exact, unambiguous graph-node name or an
-itinerary written with `->`. An itinerary accepts every indexed node type and
-highlights the shortest directed path through the supplied stops in order.
+The Explore search accepts either one exact, unambiguous graph-node name or a
+Kafka itinerary written with `->`. An itinerary starts and ends with a
+microservice and follows only directed Kafka relations through Kafka topics;
+it never traverses HTTP or MongoDB dependencies.
 Invalid, ambiguous, repeated, or unreachable stops leave the current graph
 unchanged and produce an actionable message. The itinerary detail is an
 ordered, clickable list of node names and types. A Kafka topic lists its
