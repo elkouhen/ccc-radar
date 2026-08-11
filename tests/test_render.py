@@ -124,7 +124,7 @@ enum PaymentStatus { AUTHORIZED, DECLINED }
     assert "function runExploreSearch()" in document
     assert "Aucun chemin oriente ne passe par les noeuds demandes dans cet ordre." in document
     assert "${nodeKindLabel(node)}${dtoSuffix}" in document
-    assert "Sources Kafka" in document
+    assert "function appendServiceKafkaActivities" in document
 
 
 def test_graph_html_distinguishes_dtos_with_the_same_simple_name_by_package(tmp_path: Path) -> None:

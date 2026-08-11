@@ -74,6 +74,10 @@ unchanged and produce an actionable message. The itinerary detail is an
 ordered, clickable list of node names and types. A Kafka topic lists its
 associated DTO names in parentheses. Selecting any path stop reveals its
 ordinary detail view, including the indexed Kafka source links where present.
+The microservice detail starts with functional counts, then separates `API`
+and `Kafka` into consumed and published resources. Each Kafka topic lists its
+applicable DTOs. A collapsed `Sources` section lists the indexed OpenAPI and
+Kafka files that provide the evidence, avoiding repetition in every topic.
 Indexing issues that have a source endpoint expose a VS Code link to the
 associated file and line. The `Resources` view groups distinct OpenAPI and
 Kafka DTO sections; both support filtering their complete list (OpenAPI by

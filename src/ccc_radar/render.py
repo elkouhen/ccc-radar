@@ -1627,6 +1627,14 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
     .details-group > .details-section { padding-left: 16px; padding-right: 16px; }
     .relation-link { display: block; width: 100%; padding: 7px 8px; border: 1px solid #e2e8f0; border-radius: 6px; color: #1d4f91; background: #f8fafc; font: inherit; text-align: left; cursor: pointer; overflow-wrap: anywhere; }
     .relation-link:hover, .relation-link:focus-visible { border-color: #93c5fd; background: #eff6ff; outline: none; }
+    .service-kafka-list { display: grid; gap: 7px; margin: 0; padding: 0; list-style: none; }
+    .service-kafka-item { display: grid; gap: 6px; padding: 8px; border: 1px solid #dbeafe; border-radius: 7px; background: #f8fbff; }
+    .service-kafka-topic { width: 100%; padding: 0; border: 0; color: #1d4f91; background: transparent; font: inherit; font-weight: 700; text-align: left; cursor: pointer; overflow-wrap: anywhere; }
+    .service-kafka-topic:hover, .service-kafka-topic:focus-visible { color: #1e429f; text-decoration: underline; outline: none; }
+    .service-kafka-meta { display: flex; flex-wrap: wrap; gap: 5px; }
+    .service-kafka-meta button, .service-kafka-meta a, .service-kafka-meta span { padding: 3px 6px; border: 1px solid #cbd5e1; border-radius: 999px; color: #475569; background: #fff; font: inherit; font-size: 11px; line-height: 1.25; text-decoration: none; }
+    .service-kafka-meta button { color: #1d4f91; border-color: #bfdbfe; cursor: pointer; }
+    .service-kafka-meta button:hover, .service-kafka-meta button:focus-visible { background: #eff6ff; outline: none; }
     .details-empty { padding: 18px; color: #64748b; text-align: center; }
     .path-details-header { padding: 16px; border-bottom: 1px solid #dbeafe; background: linear-gradient(135deg, #eff6ff, #f8fafc 60%, #f0fdf4); }
     .path-details-kicker { margin: 0 0 3px; color: #1d4f91; font-size: 10px; font-weight: 800; letter-spacing: .09em; text-transform: uppercase; }
@@ -3268,12 +3276,70 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
       renderSimplePathChoices(simplePaths.paths, simplePaths.limited);
       persistState();
     }
+    function appendServiceKafkaActivities(node, direction, links, container) {
+      if (!links.length) return;
+      const section = document.createElement("section");
+      section.className = "details-section";
+      const heading = document.createElement("h2");
+      heading.textContent = direction;
+      const list = document.createElement("ul");
+      list.className = "service-kafka-list";
+      const topicIds = [...new Set(links.map(link => direction === "Publie" ? link.target : link.source))];
+      topicIds.sort((left, right) => nodeDataById.get(left).name.localeCompare(nodeDataById.get(right).name));
+      topicIds.forEach(topicId => {
+        const topic = nodeDataById.get(topicId);
+        const item = document.createElement("li");
+        item.className = "service-kafka-item";
+        const topicButton = document.createElement("button");
+        topicButton.type = "button";
+        topicButton.className = "service-kafka-topic";
+        topicButton.textContent = topic.name;
+        topicButton.title = `Afficher le detail du topic ${topic.name}`;
+        topicButton.addEventListener("click", () => selectNode(topicId));
+        item.append(topicButton);
+        const meta = document.createElement("div");
+        meta.className = "service-kafka-meta";
+        const dtos = (graphData.kafka_dtos || []).filter(dto => {
+          const matchesRole = (
+            (direction === "Publie" && (dto.producers || []).includes(node.name))
+            || (direction === "Consomme" && (dto.consumers || []).includes(node.name))
+          );
+          return (dto.topics || []).includes(topic.name) && matchesRole;
+        }).sort((left, right) => dtoLabel(left).localeCompare(dtoLabel(right)));
+        if (dtos.length) {
+          dtos.forEach(dto => {
+            const dtoButton = document.createElement("button");
+            dtoButton.type = "button";
+            dtoButton.textContent = `DTO · ${dtoLabel(dto)}`;
+            dtoButton.title = `Afficher la structure de ${dtoLabel(dto)}`;
+            dtoButton.addEventListener("click", () => openDtoInspector(dto.id));
+            meta.append(dtoButton);
+          });
+        } else {
+          const unknown = document.createElement("span");
+          unknown.textContent = "DTO non indexe";
+          meta.append(unknown);
+        }
+        item.append(meta);
+        list.append(item);
+      });
+      section.append(heading, list);
+      container.append(section);
+    }
     function renderDetails(id) {
       const node = nodeDataById.get(id);
       const indexedEdges = graphData.links.filter(link => link.source === id || link.target === id);
       const edges = indexedEdges.filter(
         link => isVisibleRelation(link.kind) && (link.source === id || link.target === id)
       );
+      const isMicroservice = node.kind === "microservice";
+      const publishedApiCount = isMicroservice ? (node.resources || []).length : 0;
+      const publishedTopicCount = isMicroservice ? new Set(
+        indexedEdges.filter(link => link.kind === "kafka" && link.source === id).map(link => link.target)
+      ).size : 0;
+      const collectionCount = isMicroservice ? new Set(
+        indexedEdges.filter(link => link.kind === "mongodb" && link.source === id).map(link => link.target)
+      ).size : 0;
       details.replaceChildren();
       const kindLabel = node.kind === "kafka_topic" ? "Topic Kafka" : node.kind === "mongodb_collection" ? "Collection MongoDB" : "Microservice";
       const complexity = node.complexity;
@@ -3288,15 +3354,24 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
       title.textContent = node.name;
       const meta = document.createElement("div");
       meta.className = "details-meta";
-      const relationBadge = document.createElement("span");
-      relationBadge.className = "detail-badge";
-      relationBadge.textContent = `Relations indexees : ${indexedEdges.length}`;
-      const visibleBadge = document.createElement("span");
-      visibleBadge.className = "detail-badge";
-      visibleBadge.textContent = `Affichees : ${edges.length}`;
-      meta.append(relationBadge, visibleBadge);
+      if (isMicroservice) {
+        [
+          `${publishedApiCount} API${publishedApiCount > 1 ? "s" : ""} exposee${publishedApiCount > 1 ? "s" : ""}`,
+          `${publishedTopicCount} topic${publishedTopicCount > 1 ? "s" : ""} publie${publishedTopicCount > 1 ? "s" : ""}`,
+          `${collectionCount} collection${collectionCount > 1 ? "s" : ""} utilisee${collectionCount > 1 ? "s" : ""}`,
+        ].forEach(label => { const badge = document.createElement("span"); badge.className = "detail-badge"; badge.textContent = label; meta.append(badge); });
+      } else {
+        const relationBadge = document.createElement("span");
+        relationBadge.className = "detail-badge";
+        relationBadge.textContent = `Relations indexees : ${indexedEdges.length}`;
+        const visibleBadge = document.createElement("span");
+        visibleBadge.className = "detail-badge";
+        visibleBadge.textContent = `Affichees : ${edges.length}`;
+        meta.append(relationBadge, visibleBadge);
+      }
       const confidenceLabels = { proved: "prouvee", inferred: "inferee", conventional: "conventionnelle" };
       ["proved", "inferred", "conventional"].forEach(confidence => {
+        if (isMicroservice) return;
         const count = edges.filter(link => link.confidence === confidence).length;
         if (!count) return;
         const badge = document.createElement("span");
@@ -3314,16 +3389,7 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
       header.append(kicker, title, meta);
       details.append(header);
       if (node.kind === "microservice") {
-        if (node.vscode_uri) {
-          const folder = document.createElement("a");
-          folder.href = node.vscode_uri;
-          folder.className = "dto-summary";
-          folder.textContent = "Ouvrir le répertoire du microservice dans VS Code";
-          folder.title = "Ouvrir le répertoire source du microservice";
-          details.append(folder);
-        }
         const httpCalls = edges.filter(link => link.kind === "rest" && link.source === id);
-        const httpClients = edges.filter(link => link.kind === "rest" && link.target === id);
         const kafkaPublications = edges.filter(link => link.kind === "kafka" && link.source === id);
         const kafkaConsumptions = edges.filter(link => link.kind === "kafka" && link.target === id);
         const mongoCollections = edges.filter(link => link.kind === "mongodb" && link.source === id);
@@ -3343,78 +3409,36 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
               action: () => focusPublishedRestResource(id, resource),
             })),
         ];
-        const exposesGroup = createDetailsGroup("Expose");
-        appendActionList("APIs publiees", publishedApis, exposesGroup);
-        const restConsumers = [];
-        const seenRestConsumers = new Set();
-        httpClients.forEach(link => {
-          const source = nodeDataById.get(link.source);
-          const contracts = contractsForPublishedRestResource(node, restResourceLabel(link, node));
-          if (!contracts.length) {
-            const key = `${link.source}::unindexed`;
-            if (seenRestConsumers.has(key)) return;
-            seenRestConsumers.add(key);
-            restConsumers.push({
-              label: `${source.name} · contrat non indexe`,
-              title: "Selectionner ce consommateur dans le graphe",
-              action: () => selectNode(link.source),
-            });
-            return;
-          }
-          contracts.forEach(contract => {
-            const key = `${link.source}::${contract.path}`;
-            if (seenRestConsumers.has(key)) return;
-            seenRestConsumers.add(key);
-            restConsumers.push({
-              label: `${source.name} · Contrat OpenAPI · ${contract.path}`,
-              title: `Ouvrir le contrat OpenAPI ${contract.path}`,
-              action: () => openOpenApiContract(contract),
-            });
-          });
-        });
-        appendActionList("Consommateurs REST detectes", restConsumers, exposesGroup);
-        discardEmptyDetailsGroup(exposesGroup);
-        const consumesGroup = createDetailsGroup("Consomme");
-        appendRelationList("APIs REST consommees", httpCalls, id, link => (
+        const apiGroup = createDetailsGroup("API");
+        appendRelationList("Consomme", httpCalls, id, link => (
           `API de ${nodeDataById.get(link.target).name}`
-        ), consumesGroup);
-        discardEmptyDetailsGroup(consumesGroup);
-        const dataGroup = createDetailsGroup("Donnees et evenements");
-        const kafkaTopics = [
-          ...kafkaPublications.map(link => ({
-            topicId: link.target,
-            direction: "Publie",
-          })),
-          ...kafkaConsumptions.map(link => ({
-            topicId: link.source,
-            direction: "Consomme",
-          })),
-        ];
-        appendActionList("Topics Kafka", kafkaTopics.map(({ topicId, direction }) => {
-          const topic = nodeDataById.get(topicId);
-          return {
-            label: `${direction} · ${topic.name}`,
-            title: "Naviguer vers le topic Kafka",
-            action: () => selectNode(topicId),
-          };
-        }), dataGroup);
-        const dtos = (graphData.kafka_dtos || [])
-          .filter(dto => (dto.producers || []).includes(node.name) || (dto.consumers || []).includes(node.name))
-          .sort((left, right) => dtoLabel(left).localeCompare(dtoLabel(right)));
-        appendActionList("Contrats de messages", dtos.map(dto => ({
-          label: `DTO · ${dtoLabel(dto)}`,
-          title: "Afficher les champs et les relations Kafka de ce DTO",
-          action: () => openDtoInspector(dto.id),
-        })), dataGroup);
-        appendRelationList("Collections MongoDB utilisees", mongoCollections, id, link => (
+        ), apiGroup);
+        appendActionList("Publie", publishedApis, apiGroup);
+        discardEmptyDetailsGroup(apiGroup);
+        const kafkaGroup = createDetailsGroup("Kafka");
+        appendServiceKafkaActivities(node, "Consomme", kafkaConsumptions, kafkaGroup);
+        appendServiceKafkaActivities(node, "Publie", kafkaPublications, kafkaGroup);
+        discardEmptyDetailsGroup(kafkaGroup);
+        const dataGroup = createDetailsGroup("Donnees");
+        appendRelationList("Collections MongoDB", mongoCollections, id, link => (
           nodeDataById.get(link.target).name
         ), dataGroup);
-        appendActionList("Sources Kafka", (node.kafka_endpoints || []).map(endpoint => ({
-          label: `${endpoint.role === "produce" ? "Publication" : "Consommation"} · ${endpoint.topic}${endpoint.message_type ? ` · ${endpoint.message_type}` : ""} · ${endpoint.location}`,
-          title: `Ouvrir ${endpoint.location} dans VS Code`,
-          action: () => { if (endpoint.vscode_uri) window.location.href = endpoint.vscode_uri; },
-        })), dataGroup);
         discardEmptyDetailsGroup(dataGroup);
+        const sourceEntries = [
+          ...openApiContracts.map(contract => ({
+            label: `OpenAPI · ${contract.path}`,
+            title: `Ouvrir ${contract.path} dans VS Code`,
+            action: () => { if (contract.vscode_uri) window.location.href = contract.vscode_uri; },
+          })),
+          ...(node.kafka_endpoints || []).map(endpoint => ({
+            label: `Kafka · ${endpoint.location}`,
+            title: `Ouvrir ${endpoint.location} dans VS Code`,
+            action: () => { if (endpoint.vscode_uri) window.location.href = endpoint.vscode_uri; },
+          })),
+        ];
+        const sourcesGroup = createDetailsGroup("Sources", false);
+        appendActionList("Fichiers de preuve", sourceEntries, sourcesGroup);
+        discardEmptyDetailsGroup(sourcesGroup);
       }
       if (node.kind === "kafka_topic") {
         const eventGroup = createDetailsGroup("Evenement");

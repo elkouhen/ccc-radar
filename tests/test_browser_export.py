@@ -111,6 +111,12 @@ def test_html_export_resources_are_usable_in_a_constrained_browser_viewport(tmp_
         assert not page.get_by_text("Flux de donnees").count()
         orders_stop.click()
         assert page.locator(".details-title").inner_text() == "orders"
+        assert page.locator("#details .details-group > summary").all_text_contents() == ["Kafka", "Sources"]
+        assert page.get_by_text("Publie", exact=True).is_visible()
+        assert page.get_by_role("button", name="orders.created", exact=True).is_visible()
+        assert page.get_by_role("button", name="DTO · OrderCreated").is_visible()
+        page.get_by_text("Sources", exact=True).click()
+        assert page.get_by_text("Publisher.java:4").is_visible()
 
         search.fill("does-not-exist")
         search.press("Enter")
