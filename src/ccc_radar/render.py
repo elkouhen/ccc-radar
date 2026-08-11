@@ -1577,7 +1577,7 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
     .references-section { display: grid; gap: 7px; }
     .references-section h3 { margin: 0; color: #59708d; font-size: 10px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
     .references-list { display: grid; gap: 7px; max-height: min(50vh, 460px); margin: 0; padding: 0; overflow: auto; list-style: none; }
-    .dto-reference-filter { width: 100%; }
+    .reference-filter-input { width: 100%; }
     .reference-item { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 8px; border: 1px solid #e2e8f0; border-radius: 7px; background: #f8fafc; }
     .reference-title { color: #334155; font-size: 12px; font-weight: 700; overflow-wrap: anywhere; }
     .reference-meta { margin-top: 2px; color: #64748b; font-size: 10px; overflow-wrap: anywhere; }
@@ -1766,7 +1766,7 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
         <h2 id="openapi-references-title" class="references-title">Contrats OpenAPI</h2>
         <p class="references-description">Ouvrez une spécification locale dans Swagger UI.</p>
       </div>
-      <section class="references-section"><ul id="openapi-references" class="references-list"></ul><p id="openapi-references-empty" class="references-empty">Aucun contrat OpenAPI détecté.</p></section>
+      <section class="references-section"><input id="openapi-reference-filter" class="reference-filter-input" type="search" placeholder="Filtrer les contrats par chemin ou service" autocomplete="off" aria-label="Filtrer les contrats OpenAPI"><ul id="openapi-references" class="references-list"></ul><p id="openapi-references-empty" class="references-empty">Aucun contrat OpenAPI détecté.</p></section>
     </div>
     <div id="dto-panel" class="toolbar-panel references-view" role="tabpanel" aria-labelledby="dto-tab" hidden>
       <div class="references-header">
@@ -1774,7 +1774,7 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
         <h2 id="dto-references-title" class="references-title">DTO Kafka</h2>
         <p class="references-description">Inspectez les classes Java échangées via Kafka.</p>
       </div>
-      <section class="references-section"><input id="dto-reference-filter" class="dto-reference-filter" type="search" placeholder="Filtrer les DTO par nom ou package" autocomplete="off" aria-label="Filtrer les DTO Kafka"><ul id="dto-references" class="references-list"></ul><p id="dto-references-empty" class="references-empty">Aucun DTO Kafka détecté.</p></section>
+      <section class="references-section"><input id="dto-reference-filter" class="reference-filter-input" type="search" placeholder="Filtrer les DTO par nom ou package" autocomplete="off" aria-label="Filtrer les DTO Kafka"><ul id="dto-references" class="references-list"></ul><p id="dto-references-empty" class="references-empty">Aucun DTO Kafka détecté.</p></section>
     </div>
     <div id="request-reply-panel" class="toolbar-panel request-reply-view" role="tabpanel" aria-labelledby="request-reply-tab" hidden>
       <div class="references-header">
@@ -2262,6 +2262,7 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
     const indexingIssues = graphData.indexing_issues || [];
     const openApiReferencesList = document.getElementById("openapi-references");
     const openApiReferencesEmpty = document.getElementById("openapi-references-empty");
+    const openApiReferencesFilter = document.getElementById("openapi-reference-filter");
     const dtoReferencesList = document.getElementById("dto-references");
     const dtoReferencesEmpty = document.getElementById("dto-references-empty");
     const dtoReferencesFilter = document.getElementById("dto-reference-filter");
@@ -2534,8 +2535,17 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
           ? (node.openapi_contracts || []).map(contract => ({ service: node.name, contract }))
           : []
       ));
-      openApiReferencesEmpty.hidden = contracts.length > 0;
-      contracts.forEach(({ service, contract }) => {
+      const openApiQuery = openApiReferencesFilter.value.trim().toLocaleLowerCase();
+      const visibleContracts = contracts.filter(({ service, contract }) => (
+        !openApiQuery
+        || service.toLocaleLowerCase().includes(openApiQuery)
+        || contract.path.toLocaleLowerCase().includes(openApiQuery)
+      ));
+      openApiReferencesEmpty.hidden = visibleContracts.length > 0;
+      openApiReferencesEmpty.textContent = openApiQuery && !visibleContracts.length
+        ? "Aucun contrat ne correspond à ce filtre."
+        : "Aucun contrat OpenAPI détecté.";
+      visibleContracts.forEach(({ service, contract }) => {
         openApiReferencesList.append(referenceItem(
           contract.path,
           `${service} · ${contract.resources?.length || 0} ressource(s)`,
@@ -2563,7 +2573,7 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
           () => openDtoInspector(dto.id),
         ));
       });
-      openapiReferencesTitle.textContent = `Contrats OpenAPI (${contracts.length})`;
+      openapiReferencesTitle.textContent = `Contrats OpenAPI (${visibleContracts.length}/${contracts.length})`;
       dtoReferencesTitle.textContent = `DTO Kafka (${visibleDtos.length}/${dtos.length})`;
     }
     function renderRequestReplyPatterns() {
@@ -3534,6 +3544,7 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
       reset();
       dependencyRenderer?.refresh();
     }));
+    openApiReferencesFilter.addEventListener("input", renderReferences);
     dtoReferencesFilter.addEventListener("input", renderReferences);
     pathLock.addEventListener("change", persistState);
     pathQuery.addEventListener("keydown", event => {

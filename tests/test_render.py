@@ -109,6 +109,7 @@ enum PaymentStatus { AUTHORIZED, DECLINED }
     assert '>Ajuster</button>' in document
     assert '>Effacer</button>' in document
     assert 'id="dto-reference-filter"' in document
+    assert 'id="openapi-reference-filter"' in document
     assert 'id="openapi-tab"' in document
     assert 'id="dto-tab"' in document
     assert 'id="openapi-panel"' in document
