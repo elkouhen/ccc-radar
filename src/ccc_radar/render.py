@@ -1649,6 +1649,8 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
     .path-flow-step p { margin: 5px 0 0; color: #52616b; font-size: 12px; }
     .path-flow-types { display: grid; gap: 4px; margin: 7px 0 0; padding: 0; list-style: none; }
     .path-flow-types li { padding: 4px 6px; border-radius: 4px; background: #fff; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; }
+    .path-flow-dto { width: 100%; padding: 4px 6px; border: 1px solid #bfdbfe; border-radius: 4px; color: #1d4f91; background: #eff6ff; font: inherit; font-size: 11px; text-align: left; cursor: pointer; }
+    .path-flow-dto:hover, .path-flow-dto:focus-visible { border-color: #60a5fa; background: #dbeafe; outline: none; }
     .dependency-view { display: grid; gap: 8px; padding: 2px 0; }
     .dependency-view-kicker { margin: 0; color: #1d4f91; font-size: 10px; font-weight: 800; letter-spacing: .09em; text-transform: uppercase; }
     .dependency-view h2 { margin: 0; color: #172033; font-size: 16px; }
@@ -3206,6 +3208,28 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
           const item = document.createElement("li"); item.textContent = type; types.append(item);
         });
         card.append(types);
+        const topicDtos = (graphData.kafka_dtos || [])
+          .filter(dto => (dto.topics || []).includes(node.name))
+          .sort((left, right) => dtoLabel(left).localeCompare(dtoLabel(right)));
+        const dtoText = document.createElement("p");
+        dtoText.textContent = topicDtos.length ? "DTO associes au topic" : "Aucun DTO Java associe a ce topic n'est indexe.";
+        card.append(dtoText);
+        if (topicDtos.length) {
+          const dtoList = document.createElement("ul");
+          dtoList.className = "path-flow-types";
+          topicDtos.forEach(dto => {
+            const item = document.createElement("li");
+            const dtoButton = document.createElement("button");
+            dtoButton.type = "button";
+            dtoButton.className = "path-flow-dto";
+            dtoButton.textContent = `DTO · ${dtoLabel(dto)}`;
+            dtoButton.title = `Afficher la structure de ${dtoLabel(dto)}`;
+            dtoButton.addEventListener("click", () => openDtoInspector(dto.id));
+            item.append(dtoButton);
+            dtoList.append(item);
+          });
+          card.append(dtoList);
+        }
         const consumedText = document.createElement("p");
         consumedText.textContent = next?.target && nodeDataById.get(next.target)?.kind === "microservice"
           ? (consumed.length ? `Consomme par ${nodeDataById.get(next.target).name}` : `Type declare par ${nodeDataById.get(next.target).name} non indexe.`)

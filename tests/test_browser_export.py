@@ -106,6 +106,7 @@ def test_html_export_resources_are_usable_in_a_constrained_browser_viewport(tmp_
         search.press("Enter")
         page.get_by_text("Flux de donnees").wait_for(state="visible")
         assert page.get_by_text("Publie par orders").is_visible()
+        assert page.get_by_role("button", name="DTO · OrderCreated").is_visible()
         assert page.get_by_text("Consomme par payments").is_visible()
 
         search.fill("does-not-exist")
