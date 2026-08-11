@@ -2,6 +2,7 @@ import json
 import os
 import re
 import subprocess
+from dataclasses import dataclass
 from html import escape
 from pathlib import Path
 from typing import NotRequired, TypedDict
@@ -351,6 +352,9 @@ def _indexing_issues(
     endpoints_by_service: dict[str, list[MessageEndpoint]],
     edges: list[GraphEdge],
     warnings: list[str] | None,
+    modules: list[DiscoveredModule],
+    source_roots: list[Path] | None,
+    vscode_wsl_distro: str | None,
 ) -> list[dict[str, str]]:
     """Return every unresolved inventory fact suitable for the HTML export."""
     issues: list[dict[str, str]] = []
@@ -361,6 +365,9 @@ def _indexing_issues(
         issue = {"severity": severity, "category": category, "message": message}
         if endpoint is not None:
             issue["location"] = f"{endpoint.path}:{endpoint.start_line}"
+            issue["vscode_uri"] = _endpoint_vscode_uri(
+                endpoint, modules, source_roots, vscode_wsl_distro
+            )
         issues.append(issue)
 
     for warning in dict.fromkeys(warnings or []):
@@ -465,6 +472,14 @@ def _openapi_contract_spec(
     return None
 
 
+def _java_type_references(source_bytes: bytes, type_node) -> list[str]:
+    """Return declared Java type names, retaining their package when present."""
+    return re.findall(
+        r"(?:[A-Za-z_]\w*\.)*[A-Za-z_]\w*",
+        java_parser.node_text(source_bytes, type_node),
+    )
+
+
 def _java_dto_fields(source: str, dto_name: str) -> tuple[list[dict[str, object]], list[list[str]]]:
     """Extract the readable fields of a Java class or record DTO.
 
@@ -491,11 +506,7 @@ def _java_dto_fields(source: str, dto_name: str) -> tuple[list[dict[str, object]
         name_node = node.child_by_field_name("name")
         if type_node is None or name_node is None:
             return None
-        references = [
-            java_parser.node_text(source_bytes, child).rsplit(".", 1)[-1]
-            for child in java_parser.walk(type_node)
-            if child.type in {"type_identifier", "scoped_type_identifier"}
-        ]
+        references = _java_type_references(source_bytes, type_node)
         return (
             {
                 "type": java_parser.node_text(source_bytes, type_node).strip(),
@@ -533,11 +544,7 @@ def _java_dto_fields(source: str, dto_name: str) -> tuple[list[dict[str, object]
             name_node = declarator.child_by_field_name("name")
             if name_node is not None:
                 fields.append({"type": field_type, "name": java_parser.node_text(source_bytes, name_node)})
-                references_by_field.append([
-                    java_parser.node_text(source_bytes, child).rsplit(".", 1)[-1]
-                    for child in java_parser.walk(type_node)
-                    if child.type in {"type_identifier", "scoped_type_identifier"}
-                ])
+                references_by_field.append(_java_type_references(source_bytes, type_node))
     return fields, references_by_field
 
 
@@ -584,20 +591,44 @@ def _java_project_dto_names(source: str) -> set[str]:
     }
 
 
+@dataclass(frozen=True)
+class _JavaDtoCandidate:
+    qualified_name: str
+    name: str
+    source_path: str
+    source: str
+    source_file: Path
+    package: str
+    imports: frozenset[str]
+
+
+def _java_package_and_imports(source: str) -> tuple[str, frozenset[str]]:
+    """Extract a Java source context used to disambiguate simple type names."""
+    source_bytes = source.encode("utf-8")
+    root = java_parser.java_parser("dto_context").parse(source_bytes).root_node
+    if root.has_error:
+        return "", frozenset()
+    package = ""
+    imports: set[str] = set()
+    for node in root.named_children:
+        text = java_parser.node_text(source_bytes, node).strip().rstrip(";")
+        if node.type == "package_declaration":
+            package = text.removeprefix("package").strip()
+        elif node.type == "import_declaration" and not text.startswith("import static "):
+            imported = text.removeprefix("import").strip()
+            if imported:
+                imports.add(imported)
+    return package, frozenset(imports)
+
+
 def _kafka_dto_views(
     endpoints_by_service: dict[str, list[MessageEndpoint]],
     modules: list[DiscoveredModule],
     vscode_wsl_distro: str | None = None,
 ) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
     """Build Kafka DTOs and recursively reachable project DTO definitions."""
-    endpoint_types = {
-        endpoint.message_type
-        for endpoints in endpoints_by_service.values()
-        for endpoint in endpoints
-        if endpoint.system == "kafka" and endpoint.message_type
-    }
-    root_names = {value.rsplit(".", 1)[-1] for value in endpoint_types}
-    candidates: dict[str, list[tuple[str, str, Path]]] = {}
+    candidates: dict[str, _JavaDtoCandidate] = {}
+    source_contexts: dict[str, tuple[str, frozenset[str]]] = {}
     for module in modules:
         source_root = module.path / "src" / "main" / "java"
         if not source_root.is_dir():
@@ -608,50 +639,114 @@ def _kafka_dto_views(
             except OSError:
                 continue
             relative_path = str(java_path.relative_to(module.path))
+            package, imports = _java_package_and_imports(source)
             for dto_name in _java_project_dto_names(source):
-                candidates.setdefault(dto_name, []).append((relative_path, source, java_path))
+                qualified_name = f"{package}.{dto_name}" if package else dto_name
+                candidates.setdefault(
+                    qualified_name,
+                    _JavaDtoCandidate(
+                        qualified_name=qualified_name,
+                        name=dto_name,
+                        source_path=relative_path,
+                        source=source,
+                        source_file=java_path,
+                        package=package,
+                        imports=imports,
+                    ),
+                )
+                source_contexts.setdefault(qualified_name, (package, imports))
 
-    unique_candidates = {
-        name: candidate[0]
-        for name, candidate in candidates.items()
-        if len(candidate) == 1
-    }
+    candidates_by_name: dict[str, list[_JavaDtoCandidate]] = {}
+    for dto_candidate in candidates.values():
+        candidates_by_name.setdefault(dto_candidate.name, []).append(dto_candidate)
+
+    def resolve_type(
+        type_name: str,
+        context: tuple[str, frozenset[str]] | None = None,
+    ) -> str | None:
+        """Resolve a Java type without guessing between distinct packages."""
+        normalized = type_name.strip().replace("$", ".")
+        if normalized in candidates:
+            return normalized
+        simple_name = normalized.rsplit(".", 1)[-1]
+        package, imports = context or ("", frozenset())
+        for imported in imports:
+            if imported.endswith(".*"):
+                qualified_name = f"{imported[:-2]}.{simple_name}"
+                if qualified_name in candidates:
+                    return qualified_name
+            elif imported.rsplit(".", 1)[-1] == simple_name and imported in candidates:
+                return imported
+        if package:
+            qualified_name = f"{package}.{simple_name}"
+            if qualified_name in candidates:
+                return qualified_name
+        matches = candidates_by_name.get(simple_name, [])
+        return matches[0].qualified_name if len(matches) == 1 else None
+
+    root_ids: set[str] = set()
+    endpoint_root_ids: dict[str, str] = {}
+    for endpoints in endpoints_by_service.values():
+        for endpoint in endpoints:
+            if endpoint.system != "kafka" or not endpoint.message_type:
+                continue
+            root_id = resolve_type(
+                endpoint.message_type,
+                source_contexts.get(endpoint.qualified_name or ""),
+            )
+            if root_id is None:
+                root_id = f"unresolved:{endpoint.message_type}"
+            root_ids.add(root_id)
+            endpoint_root_ids[endpoint.id] = root_id
+
     definitions: dict[str, dict[str, object]] = {}
-    pending = list(sorted(root_names))
+    pending = list(sorted(root_ids))
     while pending:
-        dto_name = pending.pop(0)
-        if dto_name in definitions:
+        dto_id = pending.pop(0)
+        if dto_id in definitions:
             continue
-        definition: dict[str, object] = {"name": dto_name, "fields": [], "source": None}
-        if candidate := unique_candidates.get(dto_name):
-            source_path, source, source_file = candidate
-            fields, references_by_field = _java_dto_fields(source, dto_name)
+        candidate = candidates.get(dto_id)
+        dto_name = candidate.name if candidate else dto_id.removeprefix("unresolved:").rsplit(".", 1)[-1]
+        definition: dict[str, object] = {
+            "id": dto_id,
+            "name": dto_name,
+            "qualified_name": candidate.qualified_name if candidate else None,
+            "fields": [],
+            "source": None,
+        }
+        if candidate:
+            fields, references_by_field = _java_dto_fields(candidate.source, candidate.name)
             for field, references in zip(fields, references_by_field, strict=True):
-                nested = sorted({reference for reference in references if reference in unique_candidates})
+                nested = sorted(
+                    {
+                        resolved
+                        for reference in references
+                        if (resolved := resolve_type(reference, (candidate.package, candidate.imports)))
+                    }
+                )
                 if nested:
                     field["dto_references"] = nested
-                    pending.extend(reference for reference in nested if reference != dto_name)
+                    pending.extend(reference for reference in nested if reference != dto_id)
             definition["fields"] = fields
-            if enum_values := _java_enum_values(source, dto_name):
+            if enum_values := _java_enum_values(candidate.source, candidate.name):
                 definition["enum_values"] = enum_values
-            definition["source"] = source_path
-            definition["vscode_uri"] = _vscode_file_uri(source_file, vscode_wsl_distro)
-        definitions[dto_name] = definition
+            definition["source"] = candidate.source_path
+            definition["vscode_uri"] = _vscode_file_uri(candidate.source_file, vscode_wsl_distro)
+        definitions[dto_id] = definition
 
     root_definitions: list[dict[str, object]] = []
     nested_definitions: list[dict[str, object]] = []
-    for dto_name, definition in sorted(definitions.items()):
+    for dto_id, definition in sorted(definitions.items()):
         matches = [
             (service, endpoint)
             for service, endpoints in endpoints_by_service.items()
             for endpoint in endpoints
-            if endpoint.system == "kafka" and endpoint.message_type
-            and endpoint.message_type.rsplit(".", 1)[-1] == dto_name
+            if endpoint_root_ids.get(endpoint.id) == dto_id
         ]
         definition["producers"] = sorted({service for service, endpoint in matches if endpoint.role == "produce"})
         definition["consumers"] = sorted({service for service, endpoint in matches if endpoint.role == "consume"})
         definition["topics"] = sorted({endpoint.topic for _service, endpoint in matches})
-        (root_definitions if dto_name in root_names else nested_definitions).append(definition)
+        (root_definitions if dto_id in root_ids else nested_definitions).append(definition)
     return root_definitions, nested_definitions
 
 
@@ -890,7 +985,14 @@ def render_graph_html(
             "build_dependencies": _module_dependency_view(build_modules, module_dependencies),
             "kafka_dtos": kafka_dtos,
             "project_dto_definitions": project_dto_definitions,
-            "indexing_issues": _indexing_issues(endpoints_by_service, edges, indexing_warnings),
+            "indexing_issues": _indexing_issues(
+                endpoints_by_service,
+                edges,
+                indexing_warnings,
+                all_modules,
+                source_roots,
+                vscode_wsl_distro,
+            ),
         },
         ensure_ascii=False,
     ).replace("</", "<\\/")
@@ -1466,7 +1568,7 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
     .indexing-issue.warning .indexing-issue-severity { color: #92400e; background: #fef3c7; }
     .indexing-issue.info .indexing-issue-severity { color: #1d4f91; background: #dbeafe; }
     .indexing-issue-message { margin: 5px 0 0; color: #475569; font-size: 12px; line-height: 1.4; overflow-wrap: anywhere; }
-    .indexing-issue-location { display: block; margin-top: 5px; color: #64748b; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10px; overflow-wrap: anywhere; }
+    .indexing-issue-location { display: inline-flex; margin-top: 7px; color: #1d4f91; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10px; overflow-wrap: anywhere; text-decoration: underline; }
     .references-view, .request-reply-view { gap: 12px; }
     .references-header { padding: 2px 2px 5px; }
     .references-kicker { margin: 0 0 2px; color: #64748b; font-size: 10px; font-weight: 800; letter-spacing: .09em; text-transform: uppercase; }
@@ -1474,7 +1576,8 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
     .references-description, .references-empty { margin: 5px 0 0; color: #64748b; font-size: 12px; line-height: 1.4; }
     .references-section { display: grid; gap: 7px; }
     .references-section h3 { margin: 0; color: #59708d; font-size: 10px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
-    .references-list { display: grid; gap: 7px; max-height: 220px; margin: 0; padding: 0; overflow: auto; list-style: none; }
+    .references-list { display: grid; gap: 7px; max-height: min(50vh, 460px); margin: 0; padding: 0; overflow: auto; list-style: none; }
+    .dto-reference-filter { width: 100%; }
     .reference-item { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 8px; border: 1px solid #e2e8f0; border-radius: 7px; background: #f8fafc; }
     .reference-title { color: #334155; font-size: 12px; font-weight: 700; overflow-wrap: anywhere; }
     .reference-meta { margin-top: 2px; color: #64748b; font-size: 10px; overflow-wrap: anywhere; }
@@ -1663,7 +1766,7 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
         <p class="references-description">Ouvrez une spécification dans Swagger UI ou inspectez les classes Java échangées via Kafka.</p>
       </div>
       <section class="references-section"><h3>Contrats OpenAPI</h3><ul id="openapi-references" class="references-list"></ul><p id="openapi-references-empty" class="references-empty">Aucun contrat OpenAPI détecté.</p></section>
-      <section class="references-section"><h3>DTO Kafka</h3><ul id="dto-references" class="references-list"></ul><p id="dto-references-empty" class="references-empty">Aucun DTO Kafka détecté.</p></section>
+      <section class="references-section"><h3>DTO Kafka</h3><input id="dto-reference-filter" class="dto-reference-filter" type="search" placeholder="Filtrer les DTO par nom ou package" autocomplete="off" aria-label="Filtrer les DTO Kafka"><ul id="dto-references" class="references-list"></ul><p id="dto-references-empty" class="references-empty">Aucun DTO Kafka détecté.</p></section>
     </div>
     <div id="request-reply-panel" class="toolbar-panel request-reply-view" role="tabpanel" aria-labelledby="request-reply-tab" hidden>
       <div class="references-header">
@@ -1675,7 +1778,7 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
       <p id="request-reply-empty" class="references-empty">Aucun couple request/reply détecté.</p>
     </div>
   </div>
-  <details class="legend" aria-label="Legende du graphe">
+  <details id="graph-legend" class="legend" aria-label="Legende du graphe">
     <summary>Legende</summary>
     <div class="legend-content">
       <div class="legend-row"><span class="legend-mark" style="background:#2563eb"></span>Complexite faible (tiers inferieur)</div>
@@ -2096,6 +2199,7 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
     const pathsTab = document.getElementById("paths-tab");
     const referencesTab = document.getElementById("references-tab");
     const requestReplyTab = document.getElementById("request-reply-tab");
+    const graphLegend = document.getElementById("graph-legend");
     const graphPanel = document.getElementById("graph-panel");
     const dependenciesPanel = document.getElementById("dependencies-panel");
     const issuesPanel = document.getElementById("issues-panel");
@@ -2150,6 +2254,7 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
     const openApiReferencesEmpty = document.getElementById("openapi-references-empty");
     const dtoReferencesList = document.getElementById("dto-references");
     const dtoReferencesEmpty = document.getElementById("dto-references-empty");
+    const dtoReferencesFilter = document.getElementById("dto-reference-filter");
     const referencesTitle = document.getElementById("references-title");
     const requestReplyPatternsList = document.getElementById("request-reply-patterns");
     const requestReplyEmpty = document.getElementById("request-reply-empty");
@@ -2302,6 +2407,7 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
       pathsPanel.hidden = !showingPaths;
       referencesPanel.hidden = !showingReferences;
       requestReplyPanel.hidden = !showingRequestReply;
+      graphLegend.hidden = !showingGraph;
       graphCanvas.hidden = showingDependencies;
       dependencyCanvas.hidden = !showingDependencies;
       if (showingDependencies) {
@@ -2374,9 +2480,13 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
         header.append(severity, category);
         item.append(header, message);
         if (issue.location) {
-          const location = document.createElement("code");
+          const location = document.createElement(issue.vscode_uri ? "a" : "code");
           location.className = "indexing-issue-location";
           location.textContent = issue.location;
+          if (issue.vscode_uri) {
+            location.href = issue.vscode_uri;
+            location.title = "Ouvrir le fichier concerné dans VS Code";
+          }
           item.append(location);
         }
         indexingIssuesList.append(item);
@@ -2421,14 +2531,21 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
       });
       dtoReferencesList.replaceChildren();
       const dtos = graphData.kafka_dtos || [];
-      dtoReferencesEmpty.hidden = dtos.length > 0;
-      dtos.forEach(dto => {
+      const query = dtoReferencesFilter.value.trim().toLocaleLowerCase();
+      const visibleDtos = dtos.filter(dto => (
+        !query || dtoLabel(dto).toLocaleLowerCase().includes(query)
+      ));
+      dtoReferencesEmpty.hidden = visibleDtos.length > 0;
+      dtoReferencesEmpty.textContent = query && !visibleDtos.length
+        ? "Aucun DTO ne correspond à ce filtre."
+        : "Aucun DTO Kafka détecté.";
+      visibleDtos.forEach(dto => {
         const exchangeCount = (dto.producers?.length || 0) + (dto.consumers?.length || 0);
         dtoReferencesList.append(referenceItem(
-          dto.name,
+          dtoLabel(dto),
           `${dto.fields?.length || 0} champ(s) · ${dto.topics?.length || 0} topic(s) · ${exchangeCount} liaison(s)`,
           "Inspecter",
-          () => openDtoInspector(dto.name),
+          () => openDtoInspector(dto.id),
         ));
       });
       referencesTitle.textContent = `Contrats et messages (${contracts.length + dtos.length})`;
@@ -2687,7 +2804,12 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
     }
     function dtoDefinition(dtoName) {
       return [...(graphData.kafka_dtos || []), ...(graphData.project_dto_definitions || [])]
-        .find(item => item.name === dtoName);
+        .find(item => item.id === dtoName);
+    }
+    function dtoLabel(dto) {
+      const definitions = [...(graphData.kafka_dtos || []), ...(graphData.project_dto_definitions || [])];
+      const duplicate = definitions.filter(item => item.name === dto.name).length > 1;
+      return duplicate && dto.qualified_name ? `${dto.name} · ${dto.qualified_name}` : dto.name;
     }
     function openDtoInspector(dtoName) {
       dtoNavigation.splice(0);
@@ -2748,8 +2870,9 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
           type.textContent = field.type;
           if (references.length) {
             type.type = "button";
-            type.title = `Ouvrir le type projet ${references[0]}`;
-            type.addEventListener("click", () => openNestedDtoInspector(references[0], dto.name));
+            const referencedDto = dtoDefinition(references[0]);
+            type.title = `Ouvrir le type projet ${referencedDto ? dtoLabel(referencedDto) : references[0]}`;
+            type.addEventListener("click", () => openNestedDtoInspector(references[0], dto.id));
           }
           const name = document.createElement("span");
           name.className = "dto-field-name";
@@ -3225,14 +3348,13 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
             action: () => selectNode(topicId),
           };
         }), dataGroup);
-        const dtoNames = (graphData.kafka_dtos || [])
+        const dtos = (graphData.kafka_dtos || [])
           .filter(dto => (dto.producers || []).includes(node.name) || (dto.consumers || []).includes(node.name))
-          .map(dto => dto.name)
-          .sort();
-        appendActionList("Contrats de messages", dtoNames.map(dto => ({
-          label: `DTO · ${dto}`,
+          .sort((left, right) => dtoLabel(left).localeCompare(dtoLabel(right)));
+        appendActionList("Contrats de messages", dtos.map(dto => ({
+          label: `DTO · ${dtoLabel(dto)}`,
           title: "Afficher les champs et les relations Kafka de ce DTO",
-          action: () => openDtoInspector(dto),
+          action: () => openDtoInspector(dto.id),
         })), dataGroup);
         appendRelationList("Collections MongoDB utilisees", mongoCollections, id, link => (
           nodeDataById.get(link.target).name
@@ -3249,14 +3371,13 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
           link => nodeDataById.get(link.target).name, eventGroup);
         appendRelationList("Pattern request/reply", edges.filter(link => link.kind === "request_reply" && (link.source === id || link.target === id)), id,
           link => nodeDataById.get(link.source === id ? link.target : link.source).name, eventGroup);
-        const dtoNames = [...new Set([
-          ...(node.published_message_types || []),
-          ...(node.consumed_message_types || []),
-        ])].sort();
-        appendActionList("Classes DTO Kafka", dtoNames.map(dto => ({
-          label: dto,
+        const dtos = (graphData.kafka_dtos || [])
+          .filter(dto => (dto.topics || []).includes(node.name))
+          .sort((left, right) => dtoLabel(left).localeCompare(dtoLabel(right)));
+        appendActionList("Classes DTO Kafka", dtos.map(dto => ({
+          label: dtoLabel(dto),
           title: "Afficher les champs et les relations Kafka de ce DTO",
-          action: () => openDtoInspector(dto),
+          action: () => openDtoInspector(dto.id),
         })), eventGroup);
         discardEmptyDetailsGroup(eventGroup);
       }
@@ -3396,6 +3517,7 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
       reset();
       dependencyRenderer?.refresh();
     }));
+    dtoReferencesFilter.addEventListener("input", renderReferences);
     pathLock.addEventListener("change", persistState);
     pathQuery.addEventListener("keydown", event => {
       if (event.key === "Enter") showShortestPath();
@@ -3554,6 +3676,28 @@ def _rest_resources_served(endpoints: list[MessageEndpoint]) -> list[str]:
             if endpoint.system == "rest" and endpoint.role == "serve"
         }
     )
+
+
+def _endpoint_vscode_uri(
+    endpoint: MessageEndpoint,
+    modules: list[DiscoveredModule],
+    source_roots: list[Path] | None,
+    wsl_distro: str | None = None,
+) -> str:
+    """Build a deep link to an endpoint source location when reporting an issue."""
+    module_roots = [module.path for module in modules if module.name == endpoint.module]
+    roots = module_roots + list(source_roots or []) + [module.path for module in modules]
+    for root in dict.fromkeys(roots):
+        candidate = (root / endpoint.path).resolve()
+        if candidate.is_file():
+            if wsl_distro:
+                return f"vscode://file//wsl.localhost/{quote(wsl_distro, safe='')}{quote(candidate.as_posix(), safe='/')}:{endpoint.start_line}"
+            return f"vscode://file/{quote(candidate.as_posix(), safe='/')}:{endpoint.start_line}"
+    root = roots[0] if roots else Path.cwd()
+    candidate = (root / endpoint.path).resolve()
+    if wsl_distro:
+        return f"vscode://file//wsl.localhost/{quote(wsl_distro, safe='')}{quote(candidate.as_posix(), safe='/')}:{endpoint.start_line}"
+    return f"vscode://file/{quote(candidate.as_posix(), safe='/')}:{endpoint.start_line}"
 
 
 def _vscode_uri(finding: Finding, module: DiscoveredModule | None, source_roots: list[Path] | None, wsl_distro: str | None = None) -> str:
