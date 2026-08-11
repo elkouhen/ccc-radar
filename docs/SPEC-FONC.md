@@ -61,7 +61,7 @@ sources and are labelled `source=manifest`.
 
 The HTML microservice export provides an inspector for each statically typed
 Kafka message. It shows the message topic, producer and consumer services, and
-allows navigation through recursively referenced project DTO fields.
+allows navigation through recursively referenced project DTO fields and enums.
 
 `--topic-strategy strategy1` adds opt-in convention extraction for selected
 `getTopics()` accessors, `${kafka.topics.*.name}` expressions and configured

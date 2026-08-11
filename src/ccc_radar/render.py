@@ -541,6 +541,33 @@ def _java_dto_fields(source: str, dto_name: str) -> tuple[list[dict[str, object]
     return fields, references_by_field
 
 
+def _java_enum_values(source: str, enum_name: str) -> list[str]:
+    """Return declared enum constants without inferring enum behaviour."""
+    source_bytes = source.encode("utf-8")
+    root = java_parser.java_parser("enum_values").parse(source_bytes).root_node
+    if root.has_error:
+        return []
+    declaration = next(
+        (
+            node
+            for node in java_parser.type_declarations(root)
+            if node.type == "enum_declaration"
+            if java_parser.declaration_name(node, source_bytes) == enum_name
+        ),
+        None,
+    )
+    if declaration is None:
+        return []
+    body = java_parser.child_by_type(declaration, "enum_body")
+    if body is None:
+        return []
+    return [
+        java_parser.node_text(source_bytes, node.child_by_field_name("name"))
+        for node in body.named_children
+        if node.type == "enum_constant" and node.child_by_field_name("name") is not None
+    ]
+
+
 def _java_project_dto_names(source: str) -> set[str]:
     source_bytes = source.encode("utf-8")
     root = java_parser.java_parser("dto_names").parse(source_bytes).root_node
@@ -549,7 +576,7 @@ def _java_project_dto_names(source: str) -> set[str]:
     return {
         name
         for declaration in java_parser.type_declarations(root)
-        if declaration.type in {"class_declaration", "record_declaration"}
+        if declaration.type in {"class_declaration", "record_declaration", "enum_declaration"}
         if (name := java_parser.declaration_name(declaration, source_bytes)) is not None
     }
 
@@ -602,6 +629,8 @@ def _kafka_dto_views(
                     field["dto_references"] = nested
                     pending.extend(reference for reference in nested if reference != dto_name)
             definition["fields"] = fields
+            if enum_values := _java_enum_values(source, dto_name):
+                definition["enum_values"] = enum_values
             definition["source"] = source_path
             definition["vscode_uri"] = _vscode_file_uri(source_file, vscode_wsl_distro)
         definitions[dto_name] = definition
@@ -2699,6 +2728,7 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
         inspectorBody.append(section);
       }
       appendDtoInspectorSection("Topics", dto.topics || []);
+      appendDtoInspectorSection("Valeurs enum", dto.enum_values || []);
       appendDtoInspectorSection("Producteurs", dto.producers || []);
       appendDtoInspectorSection("Consommateurs", dto.consumers || []);
     }

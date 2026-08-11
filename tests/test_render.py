@@ -42,10 +42,11 @@ import java.util.List;
 
 public record OrderCreated(OrderDetails details, List<LineItem> lines) {}
 class OrderDetails { Customer customer; }
-record LineItem(String sku, Price price) {}
+record LineItem(String sku, Price price, PaymentStatus status) {}
 record Customer(String id, Address address) {}
 record Price(String currency) {}
 record Address(String city) {}
+enum PaymentStatus { AUTHORIZED, DECLINED }
 """,
         encoding="utf-8",
     )
@@ -91,6 +92,9 @@ record Address(String city) {}
     assert definitions["LineItem"]["fields"] == [
         {"name": "sku", "type": "String"},
         {"name": "price", "type": "Price", "dto_references": ["Price"]},
+        {"name": "status", "type": "PaymentStatus", "dto_references": ["PaymentStatus"]},
     ]
     assert definitions["Address"]["fields"] == [{"name": "city", "type": "String"}]
     assert definitions["Price"]["fields"] == [{"name": "currency", "type": "String"}]
+    assert definitions["PaymentStatus"]["enum_values"] == ["AUTHORIZED", "DECLINED"]
+    assert 'appendDtoInspectorSection("Valeurs enum", dto.enum_values || [])' in document

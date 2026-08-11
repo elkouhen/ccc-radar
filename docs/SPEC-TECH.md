@@ -67,11 +67,12 @@ KafkaTemplate/ProducerRecord usage and Spring Cloud Stream StreamBridge calls.
 It preserves dynamic topic expressions and derives a payload type only from an
 explicit listener parameter or client generic signature.
 
-`render_graph_html` resolves the Java DTOs rooted at those Kafka payload types
-from production source roots. It follows declared field types recursively only
-when a project DTO name resolves unambiguously, and embeds the resulting
-definitions in the self-contained HTML payload. DTO navigation is therefore a
-read-only export concern and does not add facts to the SQLite index.
+`render_graph_html` resolves the Java DTOs and enums rooted at those Kafka
+payload types from production source roots. It follows declared field types
+recursively only when a project type name resolves unambiguously, and embeds
+the resulting definitions and enum constants in the self-contained HTML
+payload. DTO navigation is therefore a read-only export concern and does not
+add facts to the SQLite index.
 
 The manifest extractors add explicitly declared Kafka facts from Markdown and
 JSON. Strategy1 is separate and opt-in because it embeds repository-specific
