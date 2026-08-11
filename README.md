@@ -10,27 +10,25 @@ SQLite database. It does not invoke an external code-analysis engine.
 
 ```bash
 uv tool install ccc-radar
-env -u SSL_CERT_FILE uvx --from huggingface_hub hf download \
-  jinaai/jina-code-embeddings-1.5b \
-  --local-dir ~/models/jina-code-embeddings-1.5b
 ```
-
-The embedding model is optional. Without it, `cccr index` still extracts and
-persists architecture facts; endpoint vectors are simply not refreshed.
 
 ## Quick start
 
-Run these commands at the root of the Java/Spring repository to inspect.
+Run these commands at the root of the Java/Spring repository. The HTML export
+is the recommended first result: it provides an interactive view of the
+services, APIs, Kafka topics and DTOs.
 
 ```bash
 cccr init
 cccr doctor
 cccr index
-cccr microservices
-cccr topics
-cccr apis
-cccr analyze audit
+cccr export microservices --html architecture.html
 ```
+
+Open `architecture.html` in a browser. From there, start with a question such
+as “who produces this Kafka topic?” or “what depends on this service?”. Use
+`cccr microservices`, `cccr topics`, `cccr apis`, and `cccr analyze audit` for
+terminal-oriented exploration.
 
 Indexing is incremental. Use `cccr index --full` after a broad change, and
 `cccr index --topic-strategy strategy1` only for repositories that follow the

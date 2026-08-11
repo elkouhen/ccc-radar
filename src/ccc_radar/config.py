@@ -8,8 +8,6 @@ from ccc_radar.paths import config_path, state_dir
 DEFAULT_INCLUDE = ["**/*"]
 DEFAULT_EXCLUDE = [".git/**", ".venv/**", "node_modules/**", ".cccr/**"]
 DEFAULT_MIN_SEVERITY = "INFO"
-DEFAULT_EMBEDDING_MODEL = "~/models/jina-code-embeddings-1.5b"
-
 VALID_SEVERITIES = ("INFO", "WARNING", "ERROR")
 
 
@@ -22,7 +20,6 @@ class Config:
     include: list[str] = field(default_factory=lambda: list(DEFAULT_INCLUDE))
     exclude: list[str] = field(default_factory=lambda: list(DEFAULT_EXCLUDE))
     min_severity: str = DEFAULT_MIN_SEVERITY
-    embedding_model: str = DEFAULT_EMBEDDING_MODEL
 
 
 def load_config(repo_root: Path) -> Config:
@@ -46,7 +43,6 @@ def load_config(repo_root: Path) -> Config:
         include=list(raw.get("include", DEFAULT_INCLUDE)),
         exclude=list(raw.get("exclude", DEFAULT_EXCLUDE)),
         min_severity=min_severity,
-        embedding_model=raw.get("embedding_model", DEFAULT_EMBEDDING_MODEL),
     )
 
 
@@ -60,7 +56,6 @@ def init_config(repo_root: Path) -> Path:
         "include": DEFAULT_INCLUDE,
         "exclude": DEFAULT_EXCLUDE,
         "min_severity": DEFAULT_MIN_SEVERITY,
-        "embedding_model": DEFAULT_EMBEDDING_MODEL,
     }
     path.write_text(yaml.dump(content, sort_keys=False))
     return path

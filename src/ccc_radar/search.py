@@ -10,9 +10,7 @@ _WORD_RE = re.compile(r"\w+")
 
 
 class SearchError(Exception):
-    """Paramètre de recherche invalide (BACKLOG-16 P4) — distinct
-    d'`EmbeddingError` (incompatibilité de modèle/dimension) : ici la
-    requête elle-même est mal formée, indépendamment de l'index."""
+    """A findings search parameter is invalid."""
 
 
 @dataclass

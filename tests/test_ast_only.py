@@ -28,6 +28,7 @@ def test_init_writes_ast_only_configuration(tmp_path: Path, monkeypatch) -> None
     content = (tmp_path / ".cccr" / "config.yml").read_text()
     assert "include:" in content
     assert "rules:" not in content
+    assert "embedding_model:" not in content
 
 
 def test_ast_extractors_find_rest_and_kafka_facts() -> None:
@@ -45,8 +46,8 @@ def test_index_is_incremental_without_embeddings(tmp_path: Path) -> None:
     shutil.copytree(FIXTURES / "endpoint_index_repo", repo)
 
     with Store(repo) as store:
-        first = index_repo(repo, Config(), store, None)
-        second = index_repo(repo, Config(), store, None)
+        first = index_repo(repo, Config(), store)
+        second = index_repo(repo, Config(), store)
         endpoints = store.all_endpoints()
 
     assert first.scanned == 2
@@ -55,21 +56,16 @@ def test_index_is_incremental_without_embeddings(tmp_path: Path) -> None:
     assert second.scanned == 0
 
 
-def test_cli_index_runs_without_a_local_embedding_model(tmp_path: Path, monkeypatch) -> None:
+def test_cli_index_does_not_require_an_embedding_model(tmp_path: Path, monkeypatch) -> None:
     repo = tmp_path / "repo"
     shutil.copytree(FIXTURES / "endpoint_index_repo", repo)
     monkeypatch.chdir(repo)
     assert RUNNER.invoke(app, ["init"]).exit_code == 0
-    config_path = repo / ".cccr" / "config.yml"
-    config_path.write_text(config_path.read_text().replace(
-        "~/models/jina-code-embeddings-1.5b", "/missing/model"
-    ))
-
     result = RUNNER.invoke(app, ["index"])
 
     assert result.exit_code == 0
-    assert "sans vecteurs" in result.output
     assert "+integrations=2" in result.output
+    assert "cccr export microservices --html architecture.html" in result.output
 
 
 def test_indexed_kafka_facts_build_a_traceable_service_edge(tmp_path: Path) -> None:
@@ -77,7 +73,7 @@ def test_indexed_kafka_facts_build_a_traceable_service_edge(tmp_path: Path) -> N
     shutil.copytree(FIXTURES / "kafka_repo", repo)
 
     with Store(repo) as store:
-        index_repo(repo, Config(), store, None)
+        index_repo(repo, Config(), store)
         endpoints = store.all_endpoints()
 
     by_service = group_endpoints_by_module_for_flow(endpoints)

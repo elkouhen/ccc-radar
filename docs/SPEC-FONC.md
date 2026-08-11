@@ -12,7 +12,6 @@ root is accepted. There is no external code-analysis process in this workflow.
 include: ["**/*"]
 exclude: [".git/**", ".venv/**", "node_modules/**", ".cccr/**"]
 min_severity: INFO
-embedding_model: ~/models/jina-code-embeddings-1.5b
 ```
 
 `include` and `exclude` control source inventory. Maven/Gradle test source
@@ -25,7 +24,7 @@ but does not alter AST endpoint extraction.
 | Command | Behaviour |
 |---|---|
 | `cccr init` | Creates `.cccr/config.yml`; it never overwrites an existing file. |
-| `cccr doctor [--json]` | Read-only check of configuration, local AST readiness, embedding model and index state. |
+| `cccr doctor [--json]` | Read-only check of configuration, local AST readiness and index state. |
 | `cccr index [--full] [--topic-strategy default\|strategy1] [--manifest FILE]...` | Incrementally extracts and persists architecture facts. |
 | `cccr microservices`, `topics`, `apis`, `dtos`, `mongodb`, `modules` | Browse the indexed catalog; each supports the documented list/show/neighbors actions and JSON output where applicable. |
 | `cccr analyze audit` | Reports static architecture risks. |
@@ -36,7 +35,8 @@ but does not alter AST endpoint extraction.
 | `cccr mcp` | Starts the stdio MCP server. |
 
 `cccr index` reports its file delta, AST analysis stage, persisted endpoint
-count and materialized relations. Its final line is:
+count and materialized relations. It then prints a next-step hint towards the
+interactive microservice HTML export. Its result line is:
 
 ```text
 scanned=<N> skipped=<N> +integrations=<N> -integrations=<N>
@@ -62,6 +62,10 @@ sources and are labelled `source=manifest`.
 The HTML microservice export provides an inspector for each statically typed
 Kafka message. It shows the message topic, producer and consumer services, and
 allows navigation through recursively referenced project DTO fields and enums.
+Its initial view foregrounds task-oriented entry points (Kafka topic, service
+dependencies, service-to-service path and Kafka messages). Relation/resource
+filters, graph layouts, specialized reference views and build dependencies are
+available as advanced controls.
 
 `--topic-strategy strategy1` adds opt-in convention extraction for selected
 `getTopics()` accessors, `${kafka.topics.*.name}` expressions and configured

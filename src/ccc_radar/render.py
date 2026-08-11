@@ -561,11 +561,14 @@ def _java_enum_values(source: str, enum_name: str) -> list[str]:
     body = java_parser.child_by_type(declaration, "enum_body")
     if body is None:
         return []
-    return [
-        java_parser.node_text(source_bytes, node.child_by_field_name("name"))
-        for node in body.named_children
-        if node.type == "enum_constant" and node.child_by_field_name("name") is not None
-    ]
+    values: list[str] = []
+    for node in body.named_children:
+        if node.type != "enum_constant":
+            continue
+        name = node.child_by_field_name("name")
+        if name is not None:
+            values.append(java_parser.node_text(source_bytes, name))
+    return values
 
 
 def _java_project_dto_names(source: str) -> set[str]:
@@ -1401,6 +1404,16 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
     .graph-actions { display: flex; gap: 4px; }
     .toolbar button { width: 34px; height: 34px; border: 1px solid #b9c5d6; border-radius: 6px; color: #315f9b; background: #fff; font-size: 19px; line-height: 1; cursor: pointer; }
     .toolbar button:hover { background: #eaf2ff; }
+    .graph-actions .graph-action-label { width: auto; padding: 0 8px; font-size: 11px; font-weight: 700; }
+    .exploration-start { display: grid; gap: 7px; padding: 10px; border: 1px solid #dbeafe; border-radius: 8px; background: #f8fbff; }
+    .exploration-start h2 { margin: 0; color: #1d4f91; font-size: 12px; }
+    .exploration-start p { margin: 0; color: #52616b; font-size: 11px; line-height: 1.4; }
+    .question-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+    .question-action { width: auto !important; height: auto !important; min-height: 38px; padding: 7px !important; color: #1d4f91 !important; border-color: #bfdbfe !important; background: #fff !important; font-size: 11px !important; font-weight: 700; line-height: 1.2; text-align: left; }
+    .advanced-controls, .advanced-tools { border: 0; border-top: 1px solid #e2e8f0; padding-top: 8px; }
+    .advanced-controls > summary, .advanced-tools > summary { color: #315f9b; font-size: 12px; font-weight: 700; cursor: pointer; }
+    .advanced-controls[open] > summary, .advanced-tools[open] > summary { margin-bottom: 8px; }
+    .advanced-tools .toolbar-tabs { margin-top: 8px; }
     .relation-filters { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; border: 0; }
     .relation-filters legend { width: 100%; margin-bottom: 2px; color: #59708d; font-size: 11px; font-weight: 700; text-transform: uppercase; }
     .relation-filter { display: inline-flex; align-items: center; gap: 5px; height: 30px; padding: 0 8px; border: 1px solid #cdd7e5; border-radius: 999px; color: #315f9b; background: #fff; font-size: 12px; white-space: nowrap; cursor: pointer; }
@@ -1544,23 +1557,39 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
     <div class="toolbar-header">
       <strong>CCC Radar</strong>
       <div class="graph-actions" aria-label="Navigation du graphe">
-        <button id="zoom-out" type="button" aria-label="Dezoomer" title="Dezoomer">-</button>
+        <button id="zoom-out" type="button" aria-label="Dézoomer" title="Dézoomer">−</button>
         <button id="zoom-in" type="button" aria-label="Zoomer" title="Zoomer">+</button>
-        <button id="fit-view" type="button" aria-label="Ajuster a l'ecran" title="Ajuster a l'ecran">o</button>
-        <button id="reset" type="button" aria-label="Reinitialiser la selection" title="Reinitialiser">x</button>
+        <button id="fit-view" class="graph-action-label" type="button" aria-label="Ajuster le graphe à l'écran" title="Ajuster le graphe à l'écran">Ajuster</button>
+        <button id="reset" class="graph-action-label" type="button" aria-label="Effacer la sélection" title="Effacer la sélection">Effacer</button>
       </div>
     </div>
     <div id="graph-summary" class="graph-summary" aria-label="Synthese de l'architecture"></div>
     <div class="toolbar-tabs" role="tablist" aria-label="Outils du graphe">
-      <button id="graph-tab" class="toolbar-tab is-active" type="button" role="tab" aria-selected="true" aria-controls="graph-panel">Interactions</button>
+      <button id="graph-tab" class="toolbar-tab is-active" type="button" role="tab" aria-selected="true" aria-controls="graph-panel">Explorer</button>
       <button id="paths-tab" class="toolbar-tab" type="button" role="tab" aria-selected="false" aria-controls="paths-panel">Parcours</button>
-      <button id="references-tab" class="toolbar-tab" type="button" role="tab" aria-selected="false" aria-controls="references-panel" title="Contrats OpenAPI et DTO Kafka">Contrats &amp; DTO</button>
-      <button id="request-reply-tab" class="toolbar-tab" type="button" role="tab" aria-selected="false" aria-controls="request-reply-panel" title="Patterns Kafka request/reply detectes par convention">Request/reply</button>
-      <button id="dependencies-tab" class="toolbar-tab" type="button" role="tab" aria-selected="false" aria-controls="dependencies-panel" title="Dépendances Maven et Gradle entre modules">Dependency Tree</button>
       <button id="issues-tab" class="toolbar-tab" type="button" role="tab" aria-selected="false" aria-controls="issues-panel" title="Problemes d'indexation">Qualité</button>
     </div>
     <div id="graph-panel" class="toolbar-panel" role="tabpanel" aria-labelledby="graph-tab">
-      <input id="search" type="search" placeholder="Rechercher un noeud" autocomplete="off" aria-label="Rechercher un noeud">
+      <section class="exploration-start" aria-labelledby="exploration-start-title">
+        <h2 id="exploration-start-title">Que voulez-vous comprendre ?</h2>
+        <p>Choisissez un point de départ, puis sélectionnez un nœud du graphe pour voir son contexte.</p>
+        <div class="question-actions">
+          <button id="question-topic" class="question-action" type="button">Qui produit ou consomme un topic Kafka ?</button>
+          <button id="question-service" class="question-action" type="button">Quelles dépendances a ce service ?</button>
+          <button id="question-path" class="question-action" type="button">Quel chemin relie deux services ?</button>
+          <button id="question-messages" class="question-action" type="button">Quel DTO circule via Kafka ?</button>
+        </div>
+      </section>
+      <input id="search" type="search" placeholder="Rechercher un service, un topic ou une collection" autocomplete="off" aria-label="Rechercher un service, un topic ou une collection">
+      <div class="filter-presets" role="group" aria-label="Vues de relations">
+        <button class="filter-preset is-active" type="button" data-preset="all">Toutes</button>
+        <button class="filter-preset" type="button" data-preset="http">REST</button>
+        <button class="filter-preset" type="button" data-preset="kafka">Kafka</button>
+        <button class="filter-preset" type="button" data-preset="mongodb">MongoDB</button>
+        <button class="filter-preset" type="button" data-preset="selection" title="Isoler les relations du noeud selectionne">Sélection</button>
+      </div>
+      <details id="advanced-controls" class="advanced-controls">
+        <summary>Filtres et disposition avancés</summary>
       <fieldset class="relation-filters">
         <legend>Relations affichees</legend>
         <label class="relation-filter" title="Afficher les appels HTTP"><input id="relation-http" type="checkbox" checked aria-label="Afficher les relations HTTP">HTTP</label>
@@ -1574,13 +1603,6 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
         <label class="relation-filter" title="Afficher les topics Kafka"><input id="node-kafka-topic" type="checkbox" checked aria-label="Afficher les topics Kafka">Topics Kafka</label>
         <label class="relation-filter" title="Afficher les collections MongoDB"><input id="node-mongodb-collection" type="checkbox" checked aria-label="Afficher les collections MongoDB">MongoDB</label>
       </fieldset>
-      <div class="filter-presets" role="group" aria-label="Vues de relations">
-        <button class="filter-preset is-active" type="button" data-preset="all">Toutes</button>
-        <button class="filter-preset" type="button" data-preset="http">REST</button>
-        <button class="filter-preset" type="button" data-preset="kafka">Kafka</button>
-        <button class="filter-preset" type="button" data-preset="mongodb">MongoDB</button>
-        <button class="filter-preset" type="button" data-preset="selection" title="Isoler les relations du noeud selectionne">Sélection</button>
-      </div>
       <fieldset class="layout-controls">
         <legend>Disposition</legend>
         <div class="layout-options" role="group" aria-label="Choix de la disposition du graphe">
@@ -1601,7 +1623,16 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
           </div>
         </div>
       </details>
+      </details>
     </div>
+    <details id="advanced-tools" class="advanced-tools">
+      <summary>Outils avancés</summary>
+      <div class="toolbar-tabs" role="tablist" aria-label="Outils avancés du graphe">
+        <button id="references-tab" class="toolbar-tab" type="button" role="tab" aria-selected="false" aria-controls="references-panel" title="Contrats OpenAPI et DTO Kafka">Contrats &amp; DTO</button>
+        <button id="request-reply-tab" class="toolbar-tab" type="button" role="tab" aria-selected="false" aria-controls="request-reply-panel" title="Patterns Kafka request/reply détectés par convention">Request/reply</button>
+        <button id="dependencies-tab" class="toolbar-tab" type="button" role="tab" aria-selected="false" aria-controls="dependencies-panel" title="Dépendances Maven et Gradle entre modules">Dépendances build</button>
+      </div>
+    </details>
     <div id="dependencies-panel" class="toolbar-panel dependency-view" role="tabpanel" aria-labelledby="dependencies-tab" hidden>
       <p class="dependency-view-kicker">Structure de build</p>
       <h2>Arbre des dépendances</h2>
@@ -2071,6 +2102,8 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
     const pathsPanel = document.getElementById("paths-panel");
     const referencesPanel = document.getElementById("references-panel");
     const requestReplyPanel = document.getElementById("request-reply-panel");
+    const advancedControls = document.getElementById("advanced-controls");
+    const advancedTools = document.getElementById("advanced-tools");
     const graphCanvas = document.getElementById("graph");
     const dependencyCanvas = document.getElementById("dependency-graph");
     function ensureDependencyRenderer() {
@@ -3321,6 +3354,27 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
     window.addEventListener("keydown", event => { if (event.key === "Escape" && !inspectorModal.hidden) closeInspector(); });
     document.getElementById("show-path").addEventListener("click", showShortestPath);
     document.getElementById("show-simple-paths").addEventListener("click", showSimplePaths);
+    document.getElementById("question-topic").addEventListener("click", () => {
+      setToolbarTab("graph");
+      applyRelationPreset("kafka");
+      search.placeholder = "Rechercher un topic Kafka";
+      search.focus();
+    });
+    document.getElementById("question-service").addEventListener("click", () => {
+      setToolbarTab("graph");
+      applyRelationPreset("all");
+      search.placeholder = "Rechercher un microservice";
+      search.focus();
+    });
+    document.getElementById("question-path").addEventListener("click", () => {
+      setToolbarTab("graph");
+      advancedControls.open = true;
+      pathQuery.focus();
+    });
+    document.getElementById("question-messages").addEventListener("click", () => {
+      advancedTools.open = true;
+      setToolbarTab("references");
+    });
     layoutButtons.forEach((button, layout) => button.addEventListener("click", () => applyLayout(layout)));
     graphTab.addEventListener("click", () => setToolbarTab("graph"));
     dependenciesTab.addEventListener("click", () => setToolbarTab("dependencies"));

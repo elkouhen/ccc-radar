@@ -17,12 +17,12 @@ class Check:
 
 
 def run_doctor(repo_root: Path) -> list[Check]:
-    """Report readiness without creating files or downloading models."""
+    """Report local indexing readiness without mutating the repository."""
     checks = [
         Check("cccr", "ok", "CLI disponible."),
     ]
     try:
-        config = load_config(repo_root)
+        load_config(repo_root)
     except ConfigError as exc:
         checks.append(Check("configuration", "error", str(exc)))
         return checks
@@ -30,14 +30,6 @@ def run_doctor(repo_root: Path) -> list[Check]:
     checks.append(Check("configuration", "ok", "Configuration .cccr/config.yml chargée."))
     checks.append(Check("analyse AST", "ok", "Extracteurs Java/Spring locaux actifs."))
 
-    model = Path(config.embedding_model).expanduser()
-    checks.append(Check(
-        "modèle d'embeddings",
-        "ok" if model.exists() else "warning",
-        f"Modèle local : {model}." if model.exists() else (
-            f"Modèle local absent : {model}. L'indexation peut le télécharger ou échouer hors ligne."
-        ),
-    ))
     checks.append(Check(
         "index",
         "ok" if db_path(repo_root).is_file() else "warning",

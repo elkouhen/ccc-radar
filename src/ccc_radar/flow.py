@@ -1,25 +1,12 @@
-"""Traçage d'un flux de messages Kafka ou d'une route REST à travers les
-endpoints indexés (BACKLOG-10 K5). Résout une requête (nom de topic/route
-exact, sinon correspondance approximative sur le texte du topic) vers tous
-ses sites — producteurs/consommateurs Kafka, ou serveurs/appelants REST —
+"""Trace a Kafka message flow or REST route through indexed endpoints.
 
-Résolution textuelle d'abord (égalité exacte, puis sous-chaîne insensible
-à la casse si le résultat est non ambigu) ; `resolve_topic_by_similarity`
-(BACKLOG-10 K3) prend le relais en dernier recours, quand aucun candidat
-textuel n'existe, via la similarité vectorielle sur les endpoints
-(`Store.knn_search_endpoints`) — utile pour une requête en langage naturel
-qui ne correspond à aucun nom de topic/route littéral (ex. « qui traite le
-paiement d'une commande » plutôt que le nom exact du topic). Seulement
-disponible pour le projet courant (pas de fédération multi-services : le
-support serait une extension future, pas un manque documenté ici en
-détail) — voir `docs/SPEC-TECH.md`.
+Queries resolve by exact name first, then by an unambiguous case-insensitive
+substring. A missing or ambiguous match fails explicitly rather than guessing.
 """
 
 from dataclasses import dataclass
 
-from ccc_radar.embedder import EmbedderLike
 from ccc_radar.models import MessageEndpoint
-from ccc_radar.store import Store
 
 
 class FlowError(Exception):
@@ -41,9 +28,6 @@ class FlowResult:
     warnings: list[str]
 
 
-_DEFAULT_SIMILARITY_THRESHOLD = 0.35
-
-
 def group_endpoints_by_module_for_flow(
     endpoints: list[MessageEndpoint],
 ) -> dict[str | None, list[MessageEndpoint]]:
@@ -59,32 +43,6 @@ def group_endpoints_by_module_for_flow(
     for endpoint in endpoints:
         grouped.setdefault(endpoint.module, []).append(endpoint)
     return grouped
-
-
-def resolve_topic_by_similarity(
-    store: Store,
-    embedder: EmbedderLike,
-    query: str,
-    endpoints: list[MessageEndpoint],
-    min_score: float = _DEFAULT_SIMILARITY_THRESHOLD,
-) -> str | None:
-    """Dernier recours (BACKLOG-10 K3) quand `resolve_topic` ne trouve aucun
-    candidat textuel unique : plus proche voisin parmi les endpoints déjà
-    embeddés (`cccr index`) dans `store`, mais seulement si son score dépasse
-    `min_score` — sous ce seuil, aucun résultat n'est un meilleur signal
-    qu'une requête qui ne ressemble à rien d'indexé, mieux vaut échouer
-    explicitement que renvoyer un candidat non pertinent (même philosophie
-    que `topic_dynamic` : jamais résolu au hasard). `endpoints` sert
-    uniquement à retrouver le topic associé à l'endpoint gagnant (le KNN
-    lui-même interroge `store` directement) — aucun résultat si le store n'a
-    aucun endpoint embeddé (repo sans pack d'inventaire, ou pas encore
-    réindexé)."""
-    topic_by_id = {e.id: e.topic for e in endpoints}
-    query_vec = embedder.embed_query(query)
-    for endpoint_id, score in store.knn_search_endpoints(query_vec, top_k=1):
-        if score >= min_score and endpoint_id in topic_by_id:
-            return topic_by_id[endpoint_id]
-    return None
 
 
 def resolve_topic(query: str, all_topics: set[str]) -> str | None:

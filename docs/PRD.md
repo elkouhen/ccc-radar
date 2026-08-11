@@ -55,7 +55,7 @@ Not delivered:
 3. A changed or deleted source file must update or remove its facts on the next
    index run.
 4. The tool must continue to operate without network access once its local
-   embedding model is available.
+   architecture inventory is available.
 5. Graph, catalog and audit output must make uncertainty visible rather than
    inventing a dependency.
 

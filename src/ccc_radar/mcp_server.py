@@ -3,7 +3,7 @@ from typing import cast
 
 from mcp.server.fastmcp import FastMCP
 
-from ccc_radar.config import ConfigError, load_config
+from ccc_radar.config import load_config
 from ccc_radar.architecture_inventory import load_architecture_inventory
 from ccc_radar.architecture import (
     analyze as analyze_architecture,
@@ -24,13 +24,7 @@ from ccc_radar.dependency_analysis import (
     audit_dependency_graph as run_dependency_audit,
     build_dependency_graph,
 )
-from ccc_radar.embedder import EmbeddingError, make_embedder, resolve_embedding_model
-from ccc_radar.flow import (
-    FlowError,
-    group_endpoints_by_module_for_flow,
-    resolve_topic_by_similarity,
-    trace_flow,
-)
+from ccc_radar.flow import group_endpoints_by_module_for_flow, trace_flow
 from ccc_radar.graph import (
     build_graph,
     find_outbound_calls_in_consumers,
@@ -199,10 +193,8 @@ def reindex_architecture() -> IndexReport:
     """Met à jour l'index AST après modification de fichiers."""
     repo_root = _repo_root()
     config = load_config(repo_root)
-    resolved_model, _ = resolve_embedding_model(config.embedding_model)
-    embedder = make_embedder(resolved_model) if Path(resolved_model).exists() else None
     with Store(repo_root) as store:
-        report = index_repo(repo_root, config, store, embedder)
+        report = index_repo(repo_root, config, store)
         store.set_meta("index_engine", "manual")
         return report
 
@@ -345,23 +337,7 @@ def trace_message_flow(query: str, workspace_root: str | None = None) -> FlowRes
             repo_warning = _current_repo_endpoint_warning(store)
             if repo_warning is not None:
                 warnings.append(repo_warning)
-            try:
-                result = trace_flow(query, endpoints_by_service, warnings)
-            except FlowError as exc:
-                fallback_topic = None
-                try:
-                    config = load_config(repo_root)
-                    embedder = make_embedder(config.embedding_model)
-                    fallback_topic = resolve_topic_by_similarity(
-                        store, embedder, query, endpoints
-                    )
-                except (ConfigError, EmbeddingError):
-                    pass
-                if fallback_topic is None:
-                    raise exc
-                result = trace_flow(
-                    fallback_topic, endpoints_by_service, warnings
-                )
+            result = trace_flow(query, endpoints_by_service, warnings)
         return render_flow_json(result)
 
     services = discover_maven_services(Path(workspace_root))

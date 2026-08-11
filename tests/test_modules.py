@@ -597,7 +597,7 @@ def test_index_repo_materializes_modules_snapshot(
     _write_pom(module / "pom.xml", "orders-api", "3.1.0")
 
     with Store(tmp_path) as store:
-        index_repo(tmp_path, Config(), store, embedder=None)
+        index_repo(tmp_path, Config(), store)
         persisted = store.all_modules()
 
     assert [(item.name, item.version) for item in persisted] == [("orders-api", "3.1.0")]
@@ -614,7 +614,7 @@ def test_index_repo_materializes_local_module_dependencies(
     _write_pom(orders / "pom.xml", "orders-api", "3.1.0", dependencies=("shared-kernel",))
 
     with Store(tmp_path) as store:
-        index_repo(tmp_path, Config(), store, embedder=None)
+        index_repo(tmp_path, Config(), store)
         dependencies = store.all_module_dependencies()
 
     assert dependencies == [ModuleDependency(source="orders-api", target="shared-kernel")]

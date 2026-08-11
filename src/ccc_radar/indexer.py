@@ -8,7 +8,6 @@ from pathlib import Path
 from typing import Callable
 
 from ccc_radar.config import Config
-from ccc_radar.embedder import EmbedderLike, endpoint_to_text
 from ccc_radar.inventory_freshness import current_endpoint_inventory_signature
 from ccc_radar.models import MessageEndpoint
 from ccc_radar.modules import (
@@ -26,7 +25,7 @@ from ccc_radar.scanner import (
     infer_markdown_topic_manifest_endpoints,
     apply_kafka_topic_strategy1,
 )
-from ccc_radar.store import CodeChunk, Store
+from ccc_radar.store import Store
 
 
 ProgressCallback = Callable[[str], None]
@@ -191,95 +190,6 @@ def _analysis_inputs_signature(repo_root: Path, config: Config) -> str:
     return digest.hexdigest()
 
 
-def _embedder_signature(embedder: EmbedderLike, config: Config) -> str:
-    return str(getattr(embedder, "signature", config.embedding_model))
-
-
-def _embed_endpoints(
-    embedder: EmbedderLike, store: Store, endpoints: list[MessageEndpoint]
-) -> int | None:
-    if not endpoints:
-        return None
-    vectors = embedder.embed_texts([endpoint_to_text(e) for e in endpoints])
-    dim = int(vectors.shape[1]) if vectors.ndim == 2 else int(vectors.shape[0])
-    for endpoint, vector in zip(endpoints, vectors, strict=True):
-        store.set_endpoint_embedding(endpoint.id, vector)
-    return dim
-
-
-_LANG_BY_SUFFIX = {
-    ".py": "python",
-    ".js": "javascript",
-    ".jsx": "javascript",
-    ".ts": "typescript",
-    ".tsx": "typescript",
-    ".go": "go",
-    ".rs": "rust",
-    ".java": "java",
-    ".kt": "kotlin",
-    ".rb": "ruby",
-    ".php": "php",
-    ".c": "c",
-    ".h": "c",
-    ".cpp": "cpp",
-    ".hpp": "cpp",
-    ".cs": "csharp",
-    ".md": "markdown",
-    ".mdx": "markdown",
-    ".toml": "toml",
-    ".yaml": "yaml",
-    ".yml": "yaml",
-    ".json": "json",
-}
-
-
-def _detect_language(path: str) -> str:
-    return _LANG_BY_SUFFIX.get(Path(path).suffix.lower(), "text")
-
-
-def _chunk_code_file(repo_root: Path, rel_path: str, max_lines: int = 80) -> list[CodeChunk]:
-    path = repo_root / rel_path
-    try:
-        lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
-    except OSError:
-        return []
-    if not lines:
-        return []
-    chunks: list[CodeChunk] = []
-    language = _detect_language(rel_path)
-    for start_idx in range(0, len(lines), max_lines):
-        chunk_lines = lines[start_idx : start_idx + max_lines]
-        start_line = start_idx + 1
-        end_line = start_idx + len(chunk_lines)
-        content = "\n".join(chunk_lines)
-        digest = hashlib.sha256(
-            f"{rel_path}|{start_line}:{end_line}|{content}".encode()
-        ).hexdigest()[:16]
-        chunks.append(
-            CodeChunk(
-                id=digest,
-                path=rel_path,
-                start_line=start_line,
-                end_line=end_line,
-                language=language,
-                content=content,
-            )
-        )
-    return chunks
-
-
-def _embed_code_chunks(
-    embedder: EmbedderLike, store: Store, chunks: list[CodeChunk]
-) -> int | None:
-    if not chunks:
-        return None
-    vectors = embedder.embed_texts([chunk.content for chunk in chunks])
-    dim = int(vectors.shape[1]) if vectors.ndim == 2 else int(vectors.shape[0])
-    for chunk, vector in zip(chunks, vectors, strict=True):
-        store.set_code_chunk_embedding(chunk.id, vector)
-    return dim
-
-
 def _report_progress(progress: ProgressCallback | None, message: str) -> None:
     if progress is not None:
         progress(message)
@@ -297,9 +207,7 @@ def index_repo(
     repo_root: Path,
     config: Config,
     store: Store,
-    embedder: EmbedderLike | None,
     full: bool = False,
-    index_code_chunks: bool = False,
     disabled: frozenset[str] = frozenset(),
     extra_files: list[str] | None = None,
     topic_strategy: str = "default",
@@ -473,50 +381,6 @@ def index_repo(
     )
     store.replace_architecture_relations(relations)
     _report_progress(progress, f"→ Indexation : {len(relations)} relation(s) d'architecture matérialisée(s).")
-
-    if index_code_chunks and embedder is not None:
-        chunk_paths = changed
-        if not chunk_paths and store.code_chunk_embedding_count() == 0:
-            chunk_paths = sorted(current_paths)
-        chunks: list[CodeChunk] = []
-        if chunk_paths:
-            _report_progress(
-                progress,
-                f"→ Indexation : préparation des chunks de code sur {len(chunk_paths)} fichier(s)...",
-            )
-            chunks = [
-                chunk
-                for path in chunk_paths
-                for chunk in _chunk_code_file(repo_root, path)
-            ]
-            store.replace_code_chunks_for_files(chunk_paths, chunks)
-
-        # BACKLOG-16 P5 : contrairement aux findings/endpoints (voir le
-        # bloc `embedding_signature` ci-dessous), les chunks n'étaient
-        # jamais ré-embeddés qu'au changement de *dimension* — un
-        # changement de modèle à dimension égale laissait silencieusement
-        # des vecteurs de modèles différents dans `vec_code_chunks`.
-        code_signature = _embedder_signature(embedder, config)
-        if store.get_meta("code_embedding_signature") != code_signature:
-            store.set_meta("code_embedding_signature", code_signature)
-            _report_progress(progress, "→ Indexation : embedding complet des chunks de code...")
-            _embed_code_chunks(embedder, store, store.all_code_chunks())
-        elif chunks:
-            _report_progress(progress, f"→ Indexation : embedding de {len(chunks)} chunk(s) de code...")
-            _embed_code_chunks(embedder, store, chunks)
-
-    if embedder is not None:
-        signature = _embedder_signature(embedder, config)
-        if store.get_meta("endpoint_embedding_signature") != signature:
-            store.set_meta("endpoint_embedding_signature", signature)
-            _report_progress(progress, "→ Indexation : embedding complet des endpoints...")
-            endpoint_dim = _embed_endpoints(embedder, store, store.all_endpoints())
-        else:
-            embedded_endpoint_ids = {endpoint_id for endpoint_id, _ in store.iter_endpoint_embeddings()}
-            new_endpoints = [e for e in endpoints if e.id not in embedded_endpoint_ids]
-            endpoint_dim = _embed_endpoints(embedder, store, new_endpoints)
-        if endpoint_dim is not None:
-            store.set_meta("endpoint_embedding_dim", str(endpoint_dim))
 
     _trace("index_repo.end", scanned=len(changed), skipped=len(unchanged))
     return IndexReport(

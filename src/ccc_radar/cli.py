@@ -26,11 +26,7 @@ from ccc_radar.architecture import (
 from ccc_radar.architecture_inventory import load_architecture_inventory
 from ccc_radar.audit import assess_architecture, render_audit_json, render_audit_text
 from ccc_radar.config import ConfigError, init_config, load_config
-from ccc_radar.embedder import EmbedderLike, EmbeddingError, make_embedder, resolve_embedding_model
-from ccc_radar.flow import (
-    resolve_topic,
-    resolve_topic_by_similarity,
-)
+from ccc_radar.flow import resolve_topic
 from ccc_radar.graph import (
     GraphEdge,
     build_graph,
@@ -872,35 +868,23 @@ def index_cmd(
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=1) from exc
 
-    resolved_model, model_warning = resolve_embedding_model(config.embedding_model)
-    if model_warning is not None:
-        typer.echo(f"⚠ {model_warning}")
-    embedder: EmbedderLike | None = None
-    if Path(resolved_model).exists() or os.environ.get("CCCR_FAKE_EMBEDDER") == "1":
-        _trace_index("embedder.begin", model=resolved_model)
-        embedder = make_embedder(resolved_model)
-        _trace_index("embedder.end")
-    else:
-        typer.echo("⚠ Modèle d'embeddings absent : indexation AST sans vecteurs.")
-
-    try:
-        _trace_index("store.open.begin")
-        with Store(repo_root) as store:
-            _trace_index("store.open.end")
-            report = index_repo(
-                repo_root, config, store, embedder, full=full, progress=_echo_index_progress,
-                disabled=disabled, extra_files=explicit_manifests,
-                topic_strategy=topic_strategy,
-            )
-            store.set_meta("index_engine", "manual")
-            _trace_index("store.close.begin")
-    except EmbeddingError as exc:
-        typer.echo(str(exc), err=True)
-        raise typer.Exit(code=2) from exc
-
+    _trace_index("store.open.begin")
+    with Store(repo_root) as store:
+        _trace_index("store.open.end")
+        report = index_repo(
+            repo_root, config, store, full=full, progress=_echo_index_progress,
+            disabled=disabled, extra_files=explicit_manifests,
+            topic_strategy=topic_strategy,
+        )
+        store.set_meta("index_engine", "manual")
+        _trace_index("store.close.begin")
     typer.echo(
         f"scanned={report.scanned} skipped={report.skipped} "
         f"+integrations={report.endpoints_added} -integrations={report.endpoints_removed}"
+    )
+    typer.echo(
+        "Prochaine étape : cccr export microservices --html architecture.html "
+        "pour explorer le graphe."
     )
     _trace_index("cli.index.end")
 
@@ -1343,15 +1327,6 @@ def _search_architecture_object(
 ) -> dict[str, object] | None:
     endpoints = [endpoint for endpoint in catalog.endpoints if endpoint.system == system]
     resolved = resolve_topic(query, {endpoint.topic for endpoint in endpoints})
-    if resolved is None and db_path(root).is_file():
-        try:
-            with Store(root, readonly=True) as store:
-                config = load_config(root)
-                resolved = resolve_topic_by_similarity(
-                    store, make_embedder(config.embedding_model), query, endpoints
-                )
-        except (ConfigError, EmbeddingError, StoreError):
-            resolved = None
     if resolved is None:
         return None
     summary = show_architecture_object(catalog, kind, resolved)

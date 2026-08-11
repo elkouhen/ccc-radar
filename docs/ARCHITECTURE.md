@@ -32,7 +32,7 @@ SQLite database.
 
 ```mermaid
 flowchart TD
-    CLI["CLI: index_cmd"] --> Config["load_config + make_embedder"]
+    CLI["CLI: index_cmd"] --> Config["load_config"]
     MCP["MCP: incremental reindex"] --> Config
     Config --> Store["Store"]
     Store --> Indexer["indexer.index_repo"]
@@ -45,8 +45,6 @@ flowchart TD
     ModuleFacts --> Persist
     Persist --> Relations["relations.build_architecture_relations"]
     Relations --> Store
-    Persist --> Embeddings["embedder"]
-    Embeddings --> Store
 ```
 
 `indexer.index_repo` is the orchestration root once input has crossed an

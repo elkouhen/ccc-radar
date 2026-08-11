@@ -98,3 +98,9 @@ enum PaymentStatus { AUTHORIZED, DECLINED }
     assert definitions["Price"]["fields"] == [{"name": "currency", "type": "String"}]
     assert definitions["PaymentStatus"]["enum_values"] == ["AUTHORIZED", "DECLINED"]
     assert 'appendDtoInspectorSection("Valeurs enum", dto.enum_values || [])' in document
+    assert "Que voulez-vous comprendre ?" in document
+    assert "Qui produit ou consomme un topic Kafka ?" in document
+    assert 'id="advanced-controls"' in document
+    assert 'id="advanced-tools"' in document
+    assert '>Ajuster</button>' in document
+    assert '>Effacer</button>' in document
