@@ -117,6 +117,10 @@ def test_html_export_resources_are_usable_in_a_constrained_browser_viewport(tmp_
         assert page.get_by_role("button", name="DTO · OrderCreated").is_visible()
         page.get_by_text("Sources", exact=True).click()
         assert page.get_by_text("Publisher.java:4").is_visible()
+        page.get_by_role("button", name="orders.created", exact=True).click()
+        assert page.get_by_text("DTO Kafka", exact=True).is_visible()
+        assert not page.get_by_text("Types publies", exact=True).count()
+        assert not page.get_by_text("Types consommes", exact=True).count()
 
         search.fill("does-not-exist")
         search.press("Enter")

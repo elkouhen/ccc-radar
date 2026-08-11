@@ -78,6 +78,9 @@ The microservice detail starts with functional counts, then separates `API`
 and `Kafka` into consumed and published resources. Each Kafka topic lists its
 applicable DTOs. A collapsed `Sources` section lists the indexed OpenAPI and
 Kafka files that provide the evidence, avoiding repetition in every topic.
+The topic detail lists resolved Kafka DTOs once. It lists message types only
+when no matching DTO has been resolved, avoiding duplicate published and
+consumed type lists when they describe the same contract.
 Indexing issues that have a source endpoint expose a VS Code link to the
 associated file and line. The `Resources` view groups distinct OpenAPI and
 Kafka DTO sections; both support filtering their complete list (OpenAPI by

@@ -3442,8 +3442,6 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
       }
       if (node.kind === "kafka_topic") {
         const eventGroup = createDetailsGroup("Evenement");
-        appendList("Types publies", node.published_message_types, eventGroup);
-        appendList("Types consommes", node.consumed_message_types, eventGroup);
         appendRelationList("Services producteurs", edges.filter(link => link.kind === "kafka" && link.target === id), id,
           link => nodeDataById.get(link.source).name, eventGroup);
         appendRelationList("Services consommateurs", edges.filter(link => link.kind === "kafka" && link.source === id), id,
@@ -3453,11 +3451,17 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
         const dtos = (graphData.kafka_dtos || [])
           .filter(dto => (dto.topics || []).includes(node.name))
           .sort((left, right) => dtoLabel(left).localeCompare(dtoLabel(right)));
-        appendActionList("Classes DTO Kafka", dtos.map(dto => ({
+        appendActionList("DTO Kafka", dtos.map(dto => ({
           label: dtoLabel(dto),
           title: "Afficher les champs et les relations Kafka de ce DTO",
           action: () => openDtoInspector(dto.id),
         })), eventGroup);
+        const indexedDtoTypes = new Set(dtos.flatMap(dto => [dto.id, dto.name, dto.qualified_name].filter(Boolean)));
+        const unresolvedTypes = [...new Set([
+          ...(node.published_message_types || []),
+          ...(node.consumed_message_types || []),
+        ])].filter(type => !indexedDtoTypes.has(type) && !indexedDtoTypes.has(type.split(".").at(-1)));
+        appendList("Types de message non resolus", unresolvedTypes, eventGroup);
         const endpointSources = graphData.nodes
           .filter(candidate => candidate.kind === "microservice")
           .flatMap(candidate => (candidate.kafka_endpoints || []).map(endpoint => ({ service: candidate.name, ...endpoint })))
