@@ -2058,7 +2058,9 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
         if (alpha < .01) discard;
         float border = smoothstep(.34, .42, shape);
         vec3 fill = vec3(.98, .99, 1.0);
-        gl_FragColor = vec4(mix(fill, v_color.rgb, border), v_color.a * alpha);
+        // Kafka topics carry connectivity complexity too. Tint the full disc,
+        // not only its narrow outline, so its low/medium/high colour is legible.
+        gl_FragColor = vec4(mix(fill, v_color.rgb, .32 + border * .68), v_color.a * alpha);
       }
     `;
     const MONGODB_COLLECTION_FRAGMENT_SHADER = `
@@ -2074,7 +2076,7 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
         if (alpha < .01) discard;
         float border = smoothstep(-.065, -.016, distance);
         vec3 fill = vec3(.98, .99, 1.0);
-        gl_FragColor = vec4(mix(fill, v_color.rgb, border), v_color.a * alpha);
+        gl_FragColor = vec4(mix(fill, v_color.rgb, .22 + border * .78), v_color.a * alpha);
       }
     `;
     const packedColorBuffer = new ArrayBuffer(4);
