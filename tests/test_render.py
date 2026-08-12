@@ -233,7 +233,7 @@ def test_graph_html_colours_topics_and_mongodb_collections_by_connectivity() -> 
         "breakdown": {"http": 0, "kafka": 0, "mongodb": 1},
     }
     assert collection["color"] == "#2563eb"
-    assert "Kafka topics carry connectivity complexity too." in render_graph_html(
+    assert "Topics use the complexity colour as their actual fill." in render_graph_html(
         {"orders": [producer], "payments": [consumer]},
         [GraphEdge("kafka", "orders", "payments", producer, consumer)],
     )
