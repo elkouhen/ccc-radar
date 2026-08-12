@@ -81,7 +81,10 @@ for each resource type. For a microservice, the count is its distinct direct
 HTTP clients and targets, Kafka producer/consumer topic relations, and MongoDB
 collection relations; multiple HTTP routes between the same client and target
 are counted once. The HTML complexity badge exposes the HTTP, Kafka, and
-MongoDB breakdown as a tooltip.
+MongoDB breakdown as a tooltip, along with the resource rank and its soft
+tercile bounds. The lowest third is blue, the middle third orange, and the
+highest third red; the terciles are recalculated separately for each resource
+type in every export.
 The Explore search accepts either one exact, unambiguous graph-node name or a
 Kafka itinerary written with `->`. An itinerary starts and ends with a
 microservice and follows only directed Kafka relations through Kafka topics;

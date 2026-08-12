@@ -5,7 +5,7 @@ import subprocess
 from dataclasses import dataclass
 from html import escape
 from pathlib import Path
-from typing import NotRequired, TypedDict
+from typing import Literal, NotRequired, TypedDict
 from urllib.parse import quote
 
 import yaml
@@ -40,6 +40,14 @@ class FindingHit(TypedDict):
     owasp: list[str]
     context: str | None
     context_error: str | None
+
+
+class ComplexityRanking(TypedDict):
+    level: Literal["low", "medium", "high"]
+    rank: int
+    population: int
+    tier_start: int
+    tier_end: int
 
 
 class RuleCount(TypedDict):
@@ -971,8 +979,8 @@ def render_graph_html(
         bucket = "http" if kind == "rest" else kind
         relation_breakdowns[source][bucket] += 1
         relation_breakdowns[target][bucket] += 1
-    complexity_levels_by_kind = {
-        kind: _complexity_levels({
+    complexity_rankings_by_kind = {
+        kind: _complexity_ranking({
             str(node["id"]): relation_counts[str(node["id"])]
             for node in nodes
             if node["kind"] == kind
@@ -981,18 +989,23 @@ def render_graph_html(
     }
     for node in nodes:
         base_size = 17 if node["kind"] == "microservice" else 14 if node["kind"] == "mongodb_collection" else 13
-        if node["kind"] not in complexity_levels_by_kind:
+        if node["kind"] not in complexity_rankings_by_kind:
             node["color"] = "#64748b"
             node["size"] = base_size
             continue
         node_id = str(node["id"])
         score = relation_counts[node_id]
-        level = complexity_levels_by_kind[str(node["kind"])][node_id]
+        ranking = complexity_rankings_by_kind[str(node["kind"])][node_id]
+        level = ranking["level"]
         node["complexity"] = {
             "score": score,
             "level": level,
             "relations": relation_counts[node_id],
             "breakdown": relation_breakdowns[node_id],
+            "rank": ranking["rank"],
+            "population": ranking["population"],
+            "tier_start": ranking["tier_start"],
+            "tier_end": ranking["tier_end"],
         }
         node["color"] = {"low": "#2563eb", "medium": "#d97706", "high": "#dc2626"}[level]
         node["size"] = base_size + {"low": 0, "medium": 2, "high": 4}[level]
@@ -1065,13 +1078,34 @@ def _complexity_levels(relation_counts: dict[str, int]) -> dict[str, str]:
     for index in range(remainder):
         group_sizes[index] += 1
 
-    levels: dict[str, str] = {}
+    return {
+        node_id: ranking["level"]
+        for node_id, ranking in _complexity_ranking(relation_counts).items()
+    }
+
+
+def _complexity_ranking(relation_counts: dict[str, int]) -> dict[str, ComplexityRanking]:
+    """Return the soft tercile, rank, and inclusive bounds for each resource."""
+    ranked_nodes = sorted(relation_counts, key=lambda node_id: (relation_counts[node_id], node_id))
+    size, remainder = divmod(len(ranked_nodes), 3)
+    group_sizes = [size, size, size]
+    for index in range(remainder):
+        group_sizes[index] += 1
+
+    rankings: dict[str, ComplexityRanking] = {}
     offset = 0
     for level, group_size in zip(("low", "medium", "high"), group_sizes):
-        for node_id in ranked_nodes[offset:offset + group_size]:
-            levels[node_id] = level
+        typed_level: Literal["low", "medium", "high"] = level  # type: ignore[assignment]
+        for rank, node_id in enumerate(ranked_nodes[offset:offset + group_size], start=offset + 1):
+            rankings[node_id] = {
+                "level": typed_level,
+                "rank": rank,
+                "population": len(ranked_nodes),
+                "tier_start": offset + 1,
+                "tier_end": offset + group_size,
+            }
         offset += group_size
-    return levels
+    return rankings
 
 
 def render_request_reply_html(result: dict[str, object]) -> str:
@@ -1831,9 +1865,10 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
   <details id="graph-legend" class="legend" aria-label="Legende du graphe">
     <summary>Legende</summary>
     <div class="legend-content">
-      <div class="legend-row"><span class="legend-mark" style="background:#2563eb"></span>Complexite faible (tiers inferieur)</div>
+      <div class="legend-row"><span class="legend-mark" style="background:#2563eb"></span>Complexite faible (premier tiers)</div>
       <div class="legend-row"><span class="legend-mark" style="background:#d97706"></span>Complexite moyenne (tiers central)</div>
-      <div class="legend-row"><span class="legend-mark" style="background:#dc2626"></span>Complexite elevee (tiers superieur)</div>
+      <div class="legend-row"><span class="legend-mark" style="background:#dc2626"></span>Complexite elevee (dernier tiers)</div>
+      <div class="legend-row">Les tiers sont recalcules separement pour les microservices, topics et collections.</div>
       <div class="legend-row"><span class="legend-mark" style="background:#64748b;clip-path:polygon(25% 7%,75% 7%,100% 50%,75% 93%,25% 93%,0 50%)"></span>Microservice</div>
       <div class="legend-row"><span class="legend-mark" style="background:#64748b"></span>Topic Kafka</div>
       <div class="legend-row"><span class="legend-mark" style="border-radius:4px;background:#64748b"></span>Collection MongoDB</div>
@@ -3408,7 +3443,7 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
         scoreBadge.className = `detail-badge complexity ${complexity.level}`;
         scoreBadge.textContent = `Connectivite : ${complexity.level} (${complexity.score})`;
         const breakdown = complexity.breakdown || {};
-        scoreBadge.title = `HTTP : ${breakdown.http || 0} · Kafka : ${breakdown.kafka || 0} · MongoDB : ${breakdown.mongodb || 0}`;
+        scoreBadge.title = `HTTP : ${breakdown.http || 0} · Kafka : ${breakdown.kafka || 0} · MongoDB : ${breakdown.mongodb || 0} · Rang ${complexity.rank}/${complexity.population} · Tiers : ${complexity.tier_start}-${complexity.tier_end}`;
         meta.append(scoreBadge);
       }
       header.append(kicker, title, meta);

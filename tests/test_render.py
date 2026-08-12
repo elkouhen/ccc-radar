@@ -224,6 +224,10 @@ def test_graph_html_colours_topics_and_mongodb_collections_by_connectivity() -> 
         "level": "low",
         "relations": 2,
         "breakdown": {"http": 0, "kafka": 2, "mongodb": 0},
+        "rank": 1,
+        "population": 1,
+        "tier_start": 1,
+        "tier_end": 1,
     }
     assert topic["color"] == "#2563eb"
     assert collection["complexity"] == {
@@ -231,6 +235,10 @@ def test_graph_html_colours_topics_and_mongodb_collections_by_connectivity() -> 
         "level": "low",
         "relations": 1,
         "breakdown": {"http": 0, "kafka": 0, "mongodb": 1},
+        "rank": 1,
+        "population": 1,
+        "tier_start": 1,
+        "tier_end": 1,
     }
     assert collection["color"] == "#2563eb"
     assert "Topics use the complexity colour as their actual fill." in render_graph_html(
