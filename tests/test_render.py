@@ -243,10 +243,12 @@ def test_graph_html_colours_topics_and_mongodb_collections_by_connectivity() -> 
     }
     assert collection["color"] == "#2563eb"
     assert collection["label"] == "orders · 1"
-    assert "Topics use the complexity colour as their full, opaque fill." in render_graph_html(
+    document = render_graph_html(
         {"orders": [producer], "payments": [consumer]},
         [GraphEdge("kafka", "orders", "payments", producer, consumer)],
     )
+    assert 'type: node.kind === "kafka_topic" ? "circle"' in document
+    assert "kafka_topic: createNodeProgram" not in document
 
 
 def test_graph_html_microservice_complexity_counts_distinct_direct_clients() -> None:

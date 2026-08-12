@@ -2242,7 +2242,10 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
       network = new graphology.MultiDirectedGraph();
       layoutNodes.forEach(node => network.addNode(node.id, {
         label: node.label, x: node.x, y: node.y, size: node.size, color: node.color,
-        type: node.external ? "external_microservice" : node.kind,
+        // Sigma's native circle program uses `color` as an opaque fill. Keep
+        // topics on it so their complexity colour cannot degrade to a neutral
+        // outline through the custom WebGL shader.
+        type: node.kind === "kafka_topic" ? "circle" : node.external ? "external_microservice" : node.kind,
       }));
       visibleLinks.forEach((link, index) => network.addEdgeWithKey(`edge-${index}`, link.source, link.target, {
         label: link.label, size: 1.2, color: relationColor(link), kind: link.kind, type: "arrow",
@@ -2253,7 +2256,6 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
         nodeProgramClasses: {
           microservice: createNodeProgram(MICROSERVICE_FRAGMENT_SHADER),
           external_microservice: createNodeProgram(EXTERNAL_MICROSERVICE_FRAGMENT_SHADER),
-          kafka_topic: createNodeProgram(KAFKA_TOPIC_FRAGMENT_SHADER),
           mongodb_collection: createNodeProgram(MONGODB_COLLECTION_FRAGMENT_SHADER),
         },
         renderEdgeLabels: false, labelDensity: .08, labelGridCellSize: 110, labelRenderedSizeThreshold: 8,
