@@ -1,4 +1,4 @@
-# Architecture Decision Records — archlens (`archlens`)
+# Architecture Decision Records — codeatlas (`codeatlas`)
 
 ## ADR-1 — Local AST extraction is the sole analysis source
 
@@ -22,7 +22,7 @@ being guessed.
 portable local state.
 
 **Decision:** Persist files, endpoints, modules, dependencies and architecture
-relations in `.archlens/findings.db`. The filename is retained for compatibility
+relations in `.codeatlas/findings.db`. The filename is retained for compatibility
 with existing installations.
 
 **Consequences:** The database is private implementation state; clients use CLI
@@ -67,18 +67,20 @@ default AST extractor.
 **Consequences:** Default indexing remains framework-oriented and portable;
 Strategy1 facts are explicitly identified as convention-derived.
 
-## ADR-6 — ArchLens is the public product and state namespace
+## ADR-6 — CodeAtlas is the public product and state namespace
 
 **Status:** Accepted.
 
-**Context:** The former product name and `cccr` command were opaque to users,
-while the tool's purpose is to make a local architecture view easier to read.
+**Context:** The former product names and commands (`cccr` and `archlens`) were
+not suitable for users, while the tool's purpose is to make a local
+architecture view easier to read.
 
 **Decision:** Rename the distribution, Python package, CLI command, MCP server
-name, generated-export labels and state directory to `ArchLens` / `archlens`.
-The project state is now stored in `.archlens/`.
+name, generated-export labels and state directory to `CodeAtlas` / `codeatlas`.
+The project state is now stored in `.codeatlas/`.
 
-**Consequences:** This is a breaking rename. Existing `.cccr/` configuration
-and index data are not read by ArchLens: run `archlens init` and `archlens
-index` in each repository to create a fresh `.archlens/` inventory. Trace
-environment variables use the `ARCHLENS_` prefix.
+**Consequences:** This is a breaking rename. Existing `.cccr/` and
+`.archlens/` configuration and index data are not read by CodeAtlas: run
+`codeatlas init` and `codeatlas index` in each repository to create a fresh
+`.codeatlas/` inventory. Trace environment variables use the `CODEATLAS_`
+prefix.

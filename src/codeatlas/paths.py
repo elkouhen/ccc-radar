@@ -1,6 +1,6 @@
 from pathlib import Path
 
-PRIMARY_STATE_DIRNAME = ".archlens"
+PRIMARY_STATE_DIRNAME = ".codeatlas"
 
 
 def state_dir(repo_root: Path) -> Path:

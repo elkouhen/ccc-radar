@@ -3,10 +3,10 @@ from pathlib import Path
 
 import yaml
 
-from archlens.paths import config_path, state_dir
+from codeatlas.paths import config_path, state_dir
 
 DEFAULT_INCLUDE = ["**/*"]
-DEFAULT_EXCLUDE = [".git/**", ".venv/**", "node_modules/**", ".archlens/**"]
+DEFAULT_EXCLUDE = [".git/**", ".venv/**", "node_modules/**", ".codeatlas/**"]
 DEFAULT_MIN_SEVERITY = "INFO"
 VALID_SEVERITIES = ("INFO", "WARNING", "ERROR")
 
@@ -27,7 +27,7 @@ def load_config(repo_root: Path) -> Config:
     if not path.is_file():
         raise ConfigError(
             f"Fichier de configuration introuvable : {path}. "
-            "Lancez d'abord: archlens init"
+            "Lancez d'abord: codeatlas init"
         )
 
     raw = yaml.safe_load(path.read_text()) or {}

@@ -3,9 +3,9 @@ from typing import cast
 
 from mcp.server.fastmcp import FastMCP
 
-from archlens.config import load_config
-from archlens.architecture_inventory import load_architecture_inventory
-from archlens.architecture import (
+from codeatlas.config import load_config
+from codeatlas.architecture_inventory import load_architecture_inventory
+from codeatlas.architecture import (
     analyze as analyze_architecture,
     build_catalog,
     find_microservice_paths,
@@ -17,23 +17,23 @@ from archlens.architecture import (
     show_object,
     trace_topic_flows,
 )
-from archlens.audit import assess_architecture, render_audit_json
-from archlens.dependency_analysis import (
+from codeatlas.audit import assess_architecture, render_audit_json
+from codeatlas.dependency_analysis import (
     DependencyAuditResult,
     DependencyGraphResult,
     audit_dependency_graph as run_dependency_audit,
     build_dependency_graph,
 )
-from archlens.flow import group_endpoints_by_module_for_flow, trace_flow
-from archlens.graph import (
+from codeatlas.flow import group_endpoints_by_module_for_flow, trace_flow
+from codeatlas.graph import (
     build_graph,
     find_outbound_calls_in_consumers,
 )
-from archlens.indexer import IndexReport, index_repo
-from archlens.inventory_freshness import endpoint_inventory_warning
-from archlens.modules import DiscoveredModule
-from archlens.paths import db_path
-from archlens.render import (
+from codeatlas.indexer import IndexReport, index_repo
+from codeatlas.inventory_freshness import endpoint_inventory_warning
+from codeatlas.modules import DiscoveredModule
+from codeatlas.paths import db_path
+from codeatlas.render import (
     EndpointHit,
     FlowResultInfo,
     GraphResult,
@@ -45,13 +45,13 @@ from archlens.render import (
     render_modules_list_json,
     render_workspace_json,
 )
-from archlens.store import Store
-from archlens.workspace import (
+from codeatlas.store import Store
+from codeatlas.workspace import (
     discover_maven_services,
     load_federation,
 )
 
-mcp = FastMCP("archlens")
+mcp = FastMCP("codeatlas")
 
 
 def _repo_root() -> Path:
@@ -60,7 +60,7 @@ def _repo_root() -> Path:
 
 def _require_index(repo_root: Path) -> None:
     if not db_path(repo_root).is_file():
-        raise RuntimeError("Index absent. Lancez d'abord: archlens index")
+        raise RuntimeError("Index absent. Lancez d'abord: codeatlas index")
 
 
 def _current_repo_endpoint_warning(store: Store) -> str | None:
@@ -153,7 +153,7 @@ def architecture_catalog(
 
 @mcp.tool()
 def architecture_audit(workspace_root: str | None = None) -> list[dict[str, object]]:
-    """Équivalent structuré de `archlens analyze audit [--workspace ROOT]`."""
+    """Équivalent structuré de `codeatlas analyze audit [--workspace ROOT]`."""
     inventory = load_architecture_inventory(
         _repo_root(), Path(workspace_root) if workspace_root else None
     )
@@ -168,7 +168,7 @@ def architecture_audit(workspace_root: str | None = None) -> list[dict[str, obje
 
 @mcp.tool()
 def architecture_coverage() -> dict[str, object]:
-    """Équivalent structuré de `archlens analyze coverage --json` du projet courant."""
+    """Équivalent structuré de `codeatlas analyze coverage --json` du projet courant."""
     repo_root = _repo_root()
     _require_index(repo_root)
     with Store(repo_root, readonly=True) as store:
@@ -180,7 +180,7 @@ def architecture_coverage() -> dict[str, object]:
 def list_request_reply_patterns() -> dict[str, object]:
     """List Kafka request/reply candidates from the Strategy1 topic convention.
 
-    Equivalent to `archlens analyze request-reply --json`. It matches
+    Equivalent to `codeatlas analyze request-reply --json`. It matches
     `retour_<request-topic>` only when the request topic is indexed too.
     """
     repo_root = _repo_root()
@@ -234,7 +234,7 @@ def graph(workspace_root: str | None = None) -> GraphResult:
     visualiser la topologie distribuée ET localiser les endroits
     susceptibles de causer un verrouillage intermittent. Sans
     `workspace_root`, si l'index couvre un répertoire multi-modules Maven ou
-    Gradle (`archlens index` lancé au parent, BACKLOG-13/15), les endpoints attribués à
+    Gradle (`codeatlas index` lancé au parent, BACKLOG-13/15), les endpoints attribués à
     un module sont automatiquement groupés pour rapporter de vraies arêtes
     inter-modules. Avec `workspace_root`, fédère en plus les autres
     microservices indexés séparément (BACKLOG-11 A2, lecture seule) —
@@ -288,7 +288,7 @@ def audit_dependency_graph(workspace_root: str | None = None) -> DependencyAudit
 def list_workspace_services(root: str) -> WorkspaceResult:
     """Découvre les services fédérables sous `root` (BACKLOG-11 A2) :
     modules Maven runtime/shared et microservices Gradle Spring Boot.
-    Lit en lecture seule les projets déjà indexés (`archlens index`) pour
+    Lit en lecture seule les projets déjà indexés (`codeatlas index`) pour
     compter endpoints/findings par service — n'écrit jamais dans leurs
     bases. Utiliser avant `graph` pour vérifier quels services d'un
     répertoire multi-services sont prêts à être fédérés.

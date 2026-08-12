@@ -1,6 +1,6 @@
 # REST and OpenAPI detection
 
-`archlens` derives REST facts from Java ASTs and module metadata. This page records
+`codeatlas` derives REST facts from Java ASTs and module metadata. This page records
 the supported static patterns and their limits; the public endpoint contract is
 in [SPEC-FONC.md](./SPEC-FONC.md).
 
@@ -30,11 +30,11 @@ standard generated-source layouts are present.
 Use these commands to inspect the result:
 
 ```bash
-archlens index
-archlens apis
-archlens apis consumers "POST /orders"
-archlens modules show order-service
-archlens modules --json
+codeatlas index
+codeatlas apis
+codeatlas apis consumers "POST /orders"
+codeatlas modules show order-service
+codeatlas modules --json
 ```
 
 ## Limits

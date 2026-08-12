@@ -26,5 +26,5 @@ def endpoint_inventory_warning(
     )
     return (
         f"{scope} : inventaire des intégrations potentiellement obsolète ({observed}) ; "
-        "relancez `archlens index`."
+        "relancez `codeatlas index`."
     )

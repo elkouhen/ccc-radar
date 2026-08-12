@@ -3,9 +3,9 @@ import re
 from dataclasses import replace
 from pathlib import Path
 
-from archlens.models import MessageEndpoint, compute_endpoint_id
-from archlens.modules import DiscoveredModule
-from archlens.render import render_graph_html
+from codeatlas.models import MessageEndpoint, compute_endpoint_id
+from codeatlas.modules import DiscoveredModule
+from codeatlas.render import render_graph_html
 
 
 def _kafka_endpoint(

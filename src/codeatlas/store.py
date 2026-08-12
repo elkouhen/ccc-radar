@@ -10,8 +10,8 @@ from typing import Any
 import numpy as np
 import sqlite_vec
 
-from archlens.models import ArchitectureRelation, Finding, MessageEndpoint
-from archlens.modules import (
+from codeatlas.models import ArchitectureRelation, Finding, MessageEndpoint
+from codeatlas.modules import (
     BlockingPoint,
     DiscoveredModule,
     KafkaMethod,
@@ -19,7 +19,7 @@ from archlens.modules import (
     MongoMethod,
     SourceEvidence,
 )
-from archlens.paths import db_path
+from codeatlas.paths import db_path
 
 SCHEMA_VERSION = "15"
 SEVERITY_ORDER = ["INFO", "WARNING", "ERROR"]
@@ -134,7 +134,7 @@ class Store:
         if version != SCHEMA_VERSION:
             raise StoreError(
                 f"Schéma incompatible ({self._db_path}) : version {version!r}, "
-                f"attendu {SCHEMA_VERSION!r} — relancez archlens index sur ce projet."
+                f"attendu {SCHEMA_VERSION!r} — relancez codeatlas index sur ce projet."
             )
 
     @property
@@ -256,7 +256,7 @@ class Store:
         """Schema v1 stored embeddings as a BLOB column on `findings` (brute-force
         cosine in Python). v2 moves them to a `vec0` virtual table (sqlite-vec,
         SIMD-accelerated KNN). Dropping the old column forces a transparent full re-embed on
-        the next `archlens index`, since embedding_signature no longer matches.
+        the next `codeatlas index`, since embedding_signature no longer matches.
         """
         cols = {row["name"] for row in self.conn.execute("PRAGMA table_info(findings)")}
         if "embedding" not in cols:
@@ -270,7 +270,7 @@ class Store:
     def _migrate_module_columns(self) -> None:
         """Schema v4 -> v5 (BACKLOG-13 M1) : `module`/`qualified_name`
         ajoutés à `findings`/`endpoints`, purement additifs (`NULL` pour les
-        lignes existantes jusqu'au prochain `archlens index` qui les
+        lignes existantes jusqu'au prochain `codeatlas index` qui les
         recalculera) — pas de ré-embedding forcé, contrairement à la
         migration v1 -> v2."""
         for table in ("findings", "endpoints"):
@@ -316,7 +316,7 @@ class Store:
     # -- modules --
 
     def replace_modules(self, modules: list[DiscoveredModule]) -> None:
-        """Persist the build inventory produced during `archlens index`."""
+        """Persist the build inventory produced during `codeatlas index`."""
         self.conn.execute("DELETE FROM modules")
         self.conn.execute("DELETE FROM module_dependencies")
         for module in modules:

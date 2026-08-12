@@ -7,7 +7,7 @@ import re
 import sys
 import time
 
-from archlens.models import MessageEndpoint
+from codeatlas.models import MessageEndpoint
 
 
 @dataclass(frozen=True)
@@ -48,11 +48,11 @@ def graph_edge_rest_resource(edge: GraphEdge) -> str:
 
 
 def _trace(stage: str, **fields: object) -> None:
-    if os.environ.get("ARCHLENS_TRACE") != "1":
+    if os.environ.get("CODEATLAS_TRACE") != "1":
         return
     details = " ".join(f"{name}={value}" for name, value in fields.items())
     print(
-        f"ARCHLENS_TRACE ts={time.monotonic():.6f} stage={stage} {details}".rstrip(),
+        f"CODEATLAS_TRACE ts={time.monotonic():.6f} stage={stage} {details}".rstrip(),
         file=sys.stderr,
         flush=True,
     )
@@ -107,9 +107,9 @@ def _segment_matches(call_segment: str, serve_segment: str) -> bool:
 _SERVICE_URL_GETTER_RE = re.compile(r"\.get([A-Z][A-Za-z0-9]*)ServiceUrl\(")
 _SERVICE_URL_HOST_RE = re.compile(r"https?://([a-z0-9](?:[a-z0-9-]*[a-z0-9])?)\b", re.IGNORECASE)
 _LOAD_BALANCED_URI_RE = re.compile(r"lb://([a-z0-9](?:[a-z0-9-]*[a-z0-9])?)\b", re.IGNORECASE)
-_CONFIGURED_API_DOMAIN_RE = re.compile(r"\barchlens-api-domain:([a-z0-9][a-z0-9-]*)\b", re.IGNORECASE)
+_CONFIGURED_API_DOMAIN_RE = re.compile(r"\bcodeatlas-api-domain:([a-z0-9][a-z0-9-]*)\b", re.IGNORECASE)
 _EXTERNAL_MICROSERVICE_RE = re.compile(
-    r"\barchlens-external-microservice:([a-z0-9][a-z0-9-]*)\b", re.IGNORECASE
+    r"\bcodeatlas-external-microservice:([a-z0-9][a-z0-9-]*)\b", re.IGNORECASE
 )
 
 
@@ -118,7 +118,7 @@ def _camel_to_kebab(name: str) -> str:
 
 
 def configured_api_client_domain(endpoint: MessageEndpoint) -> str | None:
-    """Domaine ``archlens-api-domain:`` tamponné sur un endpoint, normalisé en minuscules.
+    """Domaine ``codeatlas-api-domain:`` tamponné sur un endpoint, normalisé en minuscules.
 
     Preuve injectée par le scanner pour les clients créés via
     ``createInternalClientApi`` : la route HTTP n'est pas au site d'appel, mais
@@ -183,7 +183,7 @@ def _resolved_configured_api_call(
     """Projette un client d'API typé sur une ressource de son hôte.
 
     Cette résolution est délibérément réservée aux appels portant l'évidence
-    `archlens-api-domain:` : un appel HTTP dynamique ordinaire ne doit jamais être
+    `codeatlas-api-domain:` : un appel HTTP dynamique ordinaire ne doit jamais être
     relié aveuglément à toutes les routes d'un service.
     """
     if (

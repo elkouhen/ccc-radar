@@ -7,17 +7,17 @@ from pathlib import Path
 
 from typer.testing import CliRunner
 
-from archlens.cli import app
-from archlens.config import Config
-from archlens.flow import group_endpoints_by_module_for_flow, trace_flow
-from archlens.graph import build_graph
-from archlens.indexer import index_repo
-from archlens.scanner import (
+from codeatlas.cli import app
+from codeatlas.config import Config
+from codeatlas.flow import group_endpoints_by_module_for_flow, trace_flow
+from codeatlas.graph import build_graph
+from codeatlas.indexer import index_repo
+from codeatlas.scanner import (
     infer_framework_endpoints,
     infer_kafka_endpoints,
     infer_kafka_topic_strategy1_endpoints,
 )
-from archlens.store import Store
+from codeatlas.store import Store
 
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -30,7 +30,7 @@ def test_init_writes_ast_only_configuration(tmp_path: Path, monkeypatch) -> None
     result = RUNNER.invoke(app, ["init"])
 
     assert result.exit_code == 0
-    content = (tmp_path / ".archlens" / "config.yml").read_text()
+    content = (tmp_path / ".codeatlas" / "config.yml").read_text()
     assert "include:" in content
     assert "rules:" not in content
     assert "embedding_model:" not in content
@@ -106,7 +106,7 @@ def test_cli_index_does_not_require_an_embedding_model(tmp_path: Path, monkeypat
 
     assert result.exit_code == 0
     assert "+integrations=2" in result.output
-    assert "archlens export microservices --html architecture.html" in result.output
+    assert "codeatlas export microservices --html architecture.html" in result.output
 
 
 def test_cli_indexing_issues_emits_ai_ready_json(tmp_path: Path, monkeypatch) -> None:

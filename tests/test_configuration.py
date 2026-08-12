@@ -1,8 +1,8 @@
 from pathlib import Path
 
-from archlens.configuration import service_configuration_example
-from archlens.render import render_workspace_json
-from archlens.workspace import DiscoveredService, FederationResult
+from codeatlas.configuration import service_configuration_example
+from codeatlas.render import render_workspace_json
+from codeatlas.workspace import DiscoveredService, FederationResult
 
 
 def test_service_configuration_example_builds_structure_from_production_code(

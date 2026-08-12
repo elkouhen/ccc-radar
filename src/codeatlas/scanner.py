@@ -10,24 +10,24 @@ from urllib.parse import urlsplit
 
 import yaml
 
-from archlens import gradle as gradle_module
-from archlens import java_parser
-from archlens import maven as maven_module
-from archlens.gradle import gradle_service_for_path
-from archlens.maven import module_name_for_path
-from archlens.modules import discover_rest_controllers, maven_module_dependencies
-from archlens.models import MessageEndpoint, compute_endpoint_id
-from archlens.topic_expressions import spring_topic_reference
+from codeatlas import gradle as gradle_module
+from codeatlas import java_parser
+from codeatlas import maven as maven_module
+from codeatlas.gradle import gradle_service_for_path
+from codeatlas.maven import module_name_for_path
+from codeatlas.modules import discover_rest_controllers, maven_module_dependencies
+from codeatlas.models import MessageEndpoint, compute_endpoint_id
+from codeatlas.topic_expressions import spring_topic_reference
 
 SEVERITY_ORDER = ["INFO", "WARNING", "ERROR"]
 
 def _trace(stage: str, **fields: object) -> None:
-    """Émet des traces opt-in de l'inventaire REST (`ARCHLENS_TRACE=1`)."""
-    if os.environ.get("ARCHLENS_TRACE") != "1":
+    """Émet des traces opt-in de l'inventaire REST (`CODEATLAS_TRACE=1`)."""
+    if os.environ.get("CODEATLAS_TRACE") != "1":
         return
     details = " ".join(f"{name}={value}" for name, value in fields.items())
     print(
-        f"ARCHLENS_TRACE ts={time.monotonic():.6f} stage={stage} {details}".rstrip(),
+        f"CODEATLAS_TRACE ts={time.monotonic():.6f} stage={stage} {details}".rstrip(),
         file=sys.stderr,
         flush=True,
     )
@@ -36,14 +36,14 @@ def _trace(stage: str, **fields: object) -> None:
 def _trace_rest_client(stage: str, **fields: object) -> None:
     """Trace exhaustive de la recherche de clients API.
 
-    Activée séparément avec `ARCHLENS_TRACE_REST_CLIENTS=1`, afin d'éviter le
-    volume des fichiers Java parcourus dans la trace générale `ARCHLENS_TRACE`.
+    Activée séparément avec `CODEATLAS_TRACE_REST_CLIENTS=1`, afin d'éviter le
+    volume des fichiers Java parcourus dans la trace générale `CODEATLAS_TRACE`.
     """
-    if os.environ.get("ARCHLENS_TRACE_REST_CLIENTS") != "1":
+    if os.environ.get("CODEATLAS_TRACE_REST_CLIENTS") != "1":
         return
     details = " ".join(f"{name}={value}" for name, value in fields.items())
     print(
-        f"ARCHLENS_TRACE_REST_CLIENTS ts={time.monotonic():.6f} stage={stage} {details}".rstrip(),
+        f"CODEATLAS_TRACE_REST_CLIENTS ts={time.monotonic():.6f} stage={stage} {details}".rstrip(),
         file=sys.stderr,
         flush=True,
     )
@@ -1326,7 +1326,7 @@ def _infer_strategy1_declared_openapi_publications(
                     end_line=1,
                     snippet=(
                         f"Publication OpenAPI declaree par {declaration_rel_path}\n"
-                        f"archlens-openapi-contract:{contract_rel_path}\n"
+                        f"codeatlas-openapi-contract:{contract_rel_path}\n"
                         f"{contract_endpoint.snippet}"
                     ),
                     module=publisher_module,
@@ -1568,7 +1568,7 @@ def _infer_configured_api_client_endpoints(
                 "rest",
                 "ANY <dynamic>",
                 "configured-api-client-configuration",
-                f"{configuration}\narchlens-api-domain:{domain}",
+                f"{configuration}\ncodeatlas-api-domain:{domain}",
                 topic_dynamic=True,
             )
             endpoints[endpoint.id] = endpoint
@@ -1588,7 +1588,7 @@ def _infer_configured_api_client_endpoints(
                 "rest",
                 "ANY <dynamic>",
                 "configured-external-rest-api-properties",
-                f"{configuration}\narchlens-external-microservice:{service}",
+                f"{configuration}\ncodeatlas-external-microservice:{service}",
                 topic_dynamic=True,
             )
             endpoints[endpoint.id] = endpoint

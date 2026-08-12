@@ -9,13 +9,13 @@ slightly different view of modules, endpoints and warnings.
 from dataclasses import dataclass
 from pathlib import Path
 
-from archlens.graph import group_endpoints_by_module
-from archlens.inventory_freshness import endpoint_inventory_warning
-from archlens.models import Finding, MessageEndpoint
-from archlens.modules import DiscoveredModule, ModuleDependency
-from archlens.paths import db_path
-from archlens.store import Store
-from archlens.workspace import (
+from codeatlas.graph import group_endpoints_by_module
+from codeatlas.inventory_freshness import endpoint_inventory_warning
+from codeatlas.models import Finding, MessageEndpoint
+from codeatlas.modules import DiscoveredModule, ModuleDependency
+from codeatlas.paths import db_path
+from codeatlas.store import Store
+from codeatlas.workspace import (
     dependency_federation_warning,
     discover_workspace_services,
     load_federation,
@@ -100,7 +100,7 @@ def load_architecture_inventory(
         )
 
     if not db_path(repo_root).is_file():
-        raise ArchitectureInventoryError("Index absent. Lancez d'abord: archlens index")
+        raise ArchitectureInventoryError("Index absent. Lancez d'abord: codeatlas index")
     with Store(repo_root, readonly=True) as store:
         endpoints = store.all_endpoints()
         findings = store.all_findings()

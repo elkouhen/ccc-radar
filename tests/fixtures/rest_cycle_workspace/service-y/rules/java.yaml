@@ -1,5 +1,5 @@
 rules:
-  - id: archlens.rest.java.serve-get
+  - id: codeatlas.rest.java.serve-get
     languages: [java]
     severity: INFO
     message: Route REST exposée (GET).
@@ -14,7 +14,7 @@ rules:
           @GetMapping(...)
           $RET $METHOD(...) { ... }
 
-  - id: archlens.rest.java.call-get
+  - id: codeatlas.rest.java.call-get
     languages: [java]
     severity: INFO
     message: Appel REST client (GET).
@@ -29,7 +29,7 @@ rules:
           - pattern: $REST.getForObject(...)
           - pattern: $REST.getForEntity(...)
 
-  - id: archlens.liveness.java.new-resttemplate-no-timeout
+  - id: codeatlas.liveness.java.new-resttemplate-no-timeout
     languages: [java]
     severity: WARNING
     message: >-

@@ -2,11 +2,11 @@
 
 ## Objectif
 
-Tu travailles dans le dépôt `archlens`. Pour chacun des dépôts d'exemple
-ci-dessous, mesure la qualité de l'inventaire et du graphe produits par `archlens`
+Tu travailles dans le dépôt `codeatlas`. Pour chacun des dépôts d'exemple
+ci-dessous, mesure la qualité de l'inventaire et du graphe produits par `codeatlas`
 en les confrontant à une analyse directe du code. Transforme ensuite les écarts
 confirmés en backlog priorisé et, lorsque cela est sûr, en améliorations du
-dépôt `archlens`.
+dépôt `codeatlas`.
 
 Dépôts cibles :
 
@@ -22,20 +22,20 @@ qu'ils ne sont pas annoncés comme pris en charge.
 ## Règles de travail
 
 1. Ne modifie jamais le code source ni les fichiers de build d'un dépôt sous
-   `~/examples`. La suppression et la recréation de l'index `.archlens` sont
+   `~/examples`. La suppression et la recréation de l'index `.codeatlas` sont
    autorisées directement dans ces dépôts ; ne crée aucun commit.
 2. Les commandes de consultation doivent être non mutatives. Une migration ou
-   une régénération de l'index `.archlens` est autorisée lorsqu'elle est nécessaire
+   une régénération de l'index `.codeatlas` est autorisée lorsqu'elle est nécessaire
    à l'analyse ; note explicitement toute incompatibilité rencontrée.
-3. Avant une indexation, exécute `archlens doctor` et vérifie les règles actives.
+3. Avant une indexation, exécute `codeatlas doctor` et vérifie les règles actives.
    En cas d'échec de Semgrep, conserve stderr et classe le problème comme
    prérequis/outillage : ne conclus pas que le dépôt ne contient aucun endpoint.
-   Sur chaque module, supprimer d'abord le répertoire `.archlens`, puis le recréer
-   avec `archlens init` avant d'exécuter `archlens index` et toute analyse ou comparaison
-   avec l'inventaire `archlens`. Pour les dépôts sous `~/examples`, effectuer ces
+   Sur chaque module, supprimer d'abord le répertoire `.codeatlas`, puis le recréer
+   avec `codeatlas init` avant d'exécuter `codeatlas index` et toute analyse ou comparaison
+   avec l'inventaire `codeatlas`. Pour les dépôts sous `~/examples`, effectuer ces
    opérations directement dans le dépôt, sans modifier le code ni les fichiers
    de build.
-4. N'utilise pas les résultats de `archlens` pendant l'analyse directe. Termine et
+4. N'utilise pas les résultats de `codeatlas` pendant l'analyse directe. Termine et
    enregistre cette dernière avant de comparer les deux inventaires.
 5. Analyse le code de production par défaut. Les éléments sous `src/test`,
    `test` ou les fixtures doivent être exclus ou marqués `test` ; ne les compte
@@ -50,15 +50,15 @@ qu'ils ne sont pas annoncés comme pris en charge.
 Pour chaque dépôt :
 
 1. Relever le commit/branche et l'état Git sans modifier le dépôt.
-2. Vérifier `.archlens/`, la version de schéma, la fraîcheur de l'inventaire et le
-   résultat de `archlens doctor`.
-3. Dans chaque module, supprimer le répertoire `.archlens`, exécuter `archlens init`
-   pour le recréer, puis lancer `archlens index`. Ne réaliser cette régénération que
+2. Vérifier `.codeatlas/`, la version de schéma, la fraîcheur de l'inventaire et le
+   résultat de `codeatlas doctor`.
+3. Dans chaque module, supprimer le répertoire `.codeatlas`, exécuter `codeatlas init`
+   pour le recréer, puis lancer `codeatlas index`. Ne réaliser cette régénération que
    si les règles et Semgrep sont opérationnels.
-4. Consigner les versions de `archlens`, Semgrep et les règles actives afin que le
+4. Consigner les versions de `codeatlas`, Semgrep et les règles actives afin que le
    rapport soit reproductible.
 
-## Étape 1 — Analyse outillée avec `archlens`
+## Étape 1 — Analyse outillée avec `codeatlas`
 
 Utilise les commandes MCP ou CLI disponibles (`microservices`, `modules`,
 `endpoints`, `graph`, `flow`, `audit`) et conserve leurs sorties brutes JSON.
@@ -82,7 +82,7 @@ des flèches visuellement distinctes pour HTTP et Kafka, et des libellés
 être explicitement marquées comme telles, sans être confondues avec une cible
 résolue.
 
-## Étape 2 — Analyse directe, indépendante de `archlens`
+## Étape 2 — Analyse directe, indépendante de `codeatlas`
 
 Explorer le dépôt avec une lecture de code ciblée. Chercher notamment :
 
@@ -104,7 +104,7 @@ de l'incertitude. Générer un second diagramme Draw.io selon la même conventio
 
 ## Étape 3 — Comparaison structurée
 
-> **Note de qualité :** attribuer à `archlens` une note globale sur **5**, par
+> **Note de qualité :** attribuer à `codeatlas` une note globale sur **5**, par
 > rapport au scan direct, qui sert de référence. Justifier la note à partir de
 > la couverture des services, endpoints HTTP et Kafka, opérations Mongo et
 > arêtes résolues ; les éléments hors périmètre ou dynamiques non résolubles ne
@@ -112,7 +112,7 @@ de l'incertitude. Générer un second diagramme Draw.io selon la même conventio
 
 Comparer les inventaires par clés normalisées et produire les tableaux suivants :
 
-1. **Services/modules** : présents dans les deux, seulement `archlens`, seulement
+1. **Services/modules** : présents dans les deux, seulement `codeatlas`, seulement
    analyse directe.
 2. **HTTP** : rôle, méthode, chemin, service/module, preuve ; pour chaque écart,
    donner une cause probable (préfixe non fusionné, appel dynamique, framework
@@ -123,14 +123,14 @@ Comparer les inventaires par clés normalisées et produire les tableaux suivant
    (listener, `poll`/`subscribe`, `KafkaTemplate.send`, `ProducerRecord`,
    Spring Cloud Stream, `builder.stream`, `.to`) avec le service/module,
    fichier, ligne, topic résolu ou dynamique et preuve. Différencier les
-   méthodes présentes dans les deux inventaires, seulement `archlens` et seulement
+   méthodes présentes dans les deux inventaires, seulement `codeatlas` et seulement
    analyse directe.
 4. **Mongo** : collection et opération, avec les mêmes catégories d'écart.
    Comparer séparément les collections (`@Document`, collection explicite ou
    dynamique) et les méthodes/opérations observées (`findById`, `findAll`,
    `save`, `aggregate`, `MongoTemplate` ou repository), par service/module,
    fichier, ligne et preuve ; distinguer les éléments présents dans les deux
-   inventaires, seulement `archlens` et seulement analyse directe.
+   inventaires, seulement `codeatlas` et seulement analyse directe.
 5. **Arêtes** : absentes, en trop ou ambiguës, avec leurs endpoints sources.
 6. **Hors périmètre** : protocoles constatés mais non encore pris en charge.
 
@@ -148,7 +148,7 @@ compatibles et résolus.
    - **P2** : extension de protocole, ergonomie, rendu ou dette de test.
 2. Pour chaque tâche retenue, préciser le dépôt révélateur, la preuve, les
    fichiers pressentis et un critère d'acceptation testable.
-3. Implémenter uniquement les améliorations dans `archlens`, jamais dans les
+3. Implémenter uniquement les améliorations dans `codeatlas`, jamais dans les
    exemples. Ajouter le test de non-régression avant ou avec la correction.
 4. Exécuter les tests ciblés puis la suite pertinente. Si un prérequis externe
    bloque les tests, distinguer clairement cet échec des régressions du code.
@@ -162,7 +162,7 @@ Après une boucle complète, produire :
 
 - un rapport Markdown par dépôt dans `reports/<nom-du-depot>.md` ;
 - les deux sources Draw.io et leurs exports image dans
-  `reports/assets/<nom>-archlens.*` et `reports/assets/<nom>-direct.*` ;
+  `reports/assets/<nom>-codeatlas.*` et `reports/assets/<nom>-direct.*` ;
 - les sorties JSON brutes ou leurs chemins temporaires reproductibles ;
 - dans chaque rapport : préflight, inventaires, tableaux de diff, diagrammes,
   limites et axes d'amélioration ;

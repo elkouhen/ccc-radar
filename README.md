@@ -1,15 +1,15 @@
-# ArchLens (`archlens`)
+# CodeAtlas (`codeatlas`)
 
 Local Java/Spring architecture discovery from source ASTs.
 
-`archlens` indexes REST and Kafka integrations, Maven/Gradle modules, OpenAPI
+`codeatlas` indexes REST and Kafka integrations, Maven/Gradle modules, OpenAPI
 contracts, MongoDB collections and derived architecture relations in a local
 SQLite database. It does not invoke an external code-analysis engine.
 
 ## Install
 
 ```bash
-uv tool install archlens
+uv tool install codeatlas
 ```
 
 ## Quick start
@@ -19,19 +19,19 @@ is the recommended first result: it provides an interactive view of the
 services, APIs, Kafka topics and DTOs.
 
 ```bash
-archlens init
-archlens doctor
-archlens index
-archlens export microservices --html architecture.html
+codeatlas init
+codeatlas doctor
+codeatlas index
+codeatlas export microservices --html architecture.html
 ```
 
 Open `architecture.html` in a browser. From there, start with a question such
 as “who produces this Kafka topic?” or “what depends on this service?”. Use
-`archlens microservices`, `archlens topics`, `archlens apis`, and `archlens analyze audit` for
+`codeatlas microservices`, `codeatlas topics`, `codeatlas apis`, and `codeatlas analyze audit` for
 terminal-oriented exploration.
 
-Indexing is incremental. Use `archlens index --full` after a broad change, and
-`archlens index --topic-strategy strategy1` only for repositories that follow the
+Indexing is incremental. Use `codeatlas index --full` after a broad change, and
+`codeatlas index --topic-strategy strategy1` only for repositories that follow the
 documented Strategy1 Kafka and REST conventions.
 
 ## What is extracted
@@ -52,7 +52,7 @@ guess a concrete dependency.
 Start the stdio server from an initialized repository:
 
 ```bash
-archlens mcp
+codeatlas mcp
 ```
 
 The main tools are `list_endpoints`, `architecture_catalog`, `graph`,

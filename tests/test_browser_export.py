@@ -6,17 +6,17 @@ from pathlib import Path
 import pytest
 from playwright.sync_api import sync_playwright
 
-from archlens.models import MessageEndpoint, compute_endpoint_id
-from archlens.graph import GraphEdge
-from archlens.modules import DiscoveredModule
-from archlens.render import render_graph_html
+from codeatlas.models import MessageEndpoint, compute_endpoint_id
+from codeatlas.graph import GraphEdge
+from codeatlas.modules import DiscoveredModule
+from codeatlas.render import render_graph_html
 
 
 pytestmark = pytest.mark.integration
 
 
 def _chrome_executable() -> str | None:
-    configured = os.environ.get("ARCHLENS_CHROME_BIN")
+    configured = os.environ.get("CODEATLAS_CHROME_BIN")
     candidates = [
         Path(configured) if configured else None,
         Path("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"),

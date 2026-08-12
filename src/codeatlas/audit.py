@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 
-from archlens.graph import GraphEdge
-from archlens.models import MessageEndpoint
-from archlens.modules import DiscoveredModule
+from codeatlas.graph import GraphEdge
+from codeatlas.models import MessageEndpoint
+from codeatlas.modules import DiscoveredModule
 
 
 _MONGO_WRITE_OPERATIONS = frozenset({

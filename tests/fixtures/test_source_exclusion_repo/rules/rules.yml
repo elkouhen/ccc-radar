@@ -6,7 +6,7 @@ rules:
     patterns:
       - pattern: System.out.println(...)
 
-  - id: archlens.kafka.java.consume
+  - id: codeatlas.kafka.java.consume
     languages: [java]
     severity: INFO
     message: Consommation Kafka (@KafkaListener).

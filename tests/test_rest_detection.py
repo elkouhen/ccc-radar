@@ -2,8 +2,8 @@
 
 from pathlib import Path
 
-from archlens.modules import discover_rest_controllers, discover_modules
-from archlens.maven import (
+from codeatlas.modules import discover_rest_controllers, discover_modules
+from codeatlas.maven import (
     _has_openapi_generator_plugin,
     detect_openapi_generated_clients,
     detect_openapi_generator_input_specs,

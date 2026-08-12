@@ -1,10 +1,10 @@
 from dataclasses import replace
 from pathlib import Path
 
-from archlens.architecture import build_catalog, indexing_issues
-from archlens.models import MessageEndpoint, compute_endpoint_id
-from archlens.modules import DiscoveredModule, ModuleDependency, MongoMethod
-from archlens.relations import build_architecture_relations
+from codeatlas.architecture import build_catalog, indexing_issues
+from codeatlas.models import MessageEndpoint, compute_endpoint_id
+from codeatlas.modules import DiscoveredModule, ModuleDependency, MongoMethod
+from codeatlas.relations import build_architecture_relations
 
 
 def _endpoint(
