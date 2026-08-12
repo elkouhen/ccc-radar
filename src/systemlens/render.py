@@ -951,34 +951,40 @@ def render_graph_html(
             if reply_topic.casefold().startswith("retour_")
             if (request_topic := reply_topic[len("retour_"):]) in known_topics
         ]
-    complexity_relations = [
-        (f"{source_kind}:{source_name}", f"{target_kind}:{target_name}")
-        for source_kind, source_name, target_kind, target_name, _label, _kind in _visual_graph_edges(edges)
-    ] + [
-        (f"{source_kind}:{source_name}", f"{target_kind}:{target_name}")
-        for source_kind, source_name, target_kind, target_name, _label, _kind in _mongodb_visual_graph_edges(
+    # Complexity is the number of direct, distinct clients/dependencies of a
+    # resource. Multiple HTTP routes from the same client service to the same
+    # target service are one client relation; Kafka and MongoDB keep their
+    # resource identity (service/topic or service/collection).
+    complexity_relations = {
+        (f"{source_kind}:{source_name}", f"{target_kind}:{target_name}", kind)
+        for source_kind, source_name, target_kind, target_name, _label, kind in _visual_graph_edges(edges)
+    } | {
+        (f"{source_kind}:{source_name}", f"{target_kind}:{target_name}", kind)
+        for source_kind, source_name, target_kind, target_name, _label, kind in _mongodb_visual_graph_edges(
             collections_by_service
         )
-    ]
+    }
     relation_counts: dict[str, int] = {str(node["id"]): 0 for node in nodes}
-    for source, target in complexity_relations:
+    for source, target, _kind in complexity_relations:
         relation_counts[source] += 1
         relation_counts[target] += 1
-    microservice_counts = {
-        str(node["id"]): relation_counts[str(node["id"])]
-        for node in nodes
-        if node["kind"] == "microservice"
+    complexity_levels_by_kind = {
+        kind: _complexity_levels({
+            str(node["id"]): relation_counts[str(node["id"])]
+            for node in nodes
+            if node["kind"] == kind
+        })
+        for kind in ("microservice", "kafka_topic", "mongodb_collection")
     }
-    complexity_levels = _complexity_levels(microservice_counts)
     for node in nodes:
         base_size = 17 if node["kind"] == "microservice" else 14 if node["kind"] == "mongodb_collection" else 13
-        if node["kind"] != "microservice":
+        if node["kind"] not in complexity_levels_by_kind:
             node["color"] = "#64748b"
             node["size"] = base_size
             continue
         node_id = str(node["id"])
         score = relation_counts[node_id]
-        level = complexity_levels[node_id]
+        level = complexity_levels_by_kind[str(node["kind"])][node_id]
         node["complexity"] = {
             "score": score,
             "level": level,
@@ -1040,11 +1046,12 @@ _MONGO_WRITE_OPERATIONS = frozenset({
 
 
 def _complexity_levels(relation_counts: dict[str, int]) -> dict[str, str]:
-    """Répartit les microservices en trois tiers de complexité équilibrés.
+    """Répartit un type de ressource en trois tiers de complexité équilibrés.
 
-    Le score est le degré du nœud dans le graphe de dépendances : HTTP,
-    Kafka et MongoDB sont donc tous pris en compte. Les égalités de score sont
-    départagées par l'identifiant afin que l'export reste déterministe.
+    Le score est le degré du nœud dans le graphe de dépendances. Les niveaux
+    sont calculés séparément pour les microservices, topics Kafka et collections
+    MongoDB afin qu'une catégorie peu nombreuse reste lisible. Les égalités de
+    score sont départagées par l'identifiant pour conserver un export déterministe.
     """
     ranked_nodes = sorted(relation_counts, key=lambda node_id: (relation_counts[node_id], node_id))
     size, remainder = divmod(len(ranked_nodes), 3)

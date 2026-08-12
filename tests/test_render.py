@@ -4,6 +4,7 @@ from dataclasses import replace
 from pathlib import Path
 
 from systemlens.models import MessageEndpoint, compute_endpoint_id
+from systemlens.graph import GraphEdge
 from systemlens.modules import DiscoveredModule
 from systemlens.render import render_graph_html
 
@@ -25,6 +26,22 @@ def _kafka_endpoint(
         snippet="",
         message_type=message_type,
         qualified_name=qualified_name,
+    )
+
+
+def _rest_endpoint(role: str, resource: str, path: str) -> MessageEndpoint:
+    return MessageEndpoint(
+        id=compute_endpoint_id(role, resource, path),
+        role=role,
+        system="rest",
+        topic=resource,
+        topic_dynamic=False,
+        source="code",
+        framework="spring-mvc",
+        path=path,
+        start_line=1,
+        end_line=1,
+        snippet="",
     )
 
 
@@ -187,3 +204,46 @@ def test_graph_html_links_an_indexing_issue_to_its_source_file() -> None:
 
     assert issue["location"] == "Listener.java:1"
     assert issue["vscode_uri"].startswith("vscode://file/")
+
+
+def test_graph_html_colours_topics_and_mongodb_collections_by_connectivity() -> None:
+    producer = _kafka_endpoint("produce", "OrderCreated", "Publisher.java")
+    consumer = _kafka_endpoint("consume", "OrderCreated", "Consumer.java")
+
+    graph_data = _html_graph_data(render_graph_html(
+        {"orders": [producer], "payments": [consumer]},
+        [GraphEdge("kafka", "orders", "payments", producer, consumer)],
+        collections_by_service={"orders": ["orders"]},
+    ))
+    nodes = {node["id"]: node for node in graph_data["nodes"]}
+
+    topic = nodes["kafka_topic:orders.created"]
+    collection = nodes["mongodb_collection:orders:orders"]
+    assert topic["complexity"] == {"score": 2, "level": "low", "relations": 2}
+    assert topic["color"] == "#2563eb"
+    assert collection["complexity"] == {"score": 1, "level": "low", "relations": 1}
+    assert collection["color"] == "#2563eb"
+
+
+def test_graph_html_microservice_complexity_counts_distinct_direct_clients() -> None:
+    producer = _kafka_endpoint("produce", "OrderCreated", "Publisher.java")
+    consumer = _kafka_endpoint("consume", "OrderCreated", "Consumer.java")
+    first_call = _rest_endpoint("call", "GET /payments", "PaymentClient.java")
+    first_serve = _rest_endpoint("serve", "GET /payments", "PaymentController.java")
+    second_call = _rest_endpoint("call", "POST /payments", "PaymentClient.java")
+    second_serve = _rest_endpoint("serve", "POST /payments", "PaymentController.java")
+
+    graph_data = _html_graph_data(render_graph_html(
+        {"orders": [producer, first_call, second_call], "payments": [consumer, first_serve, second_serve]},
+        [
+            GraphEdge("kafka", "orders", "payments", producer, consumer),
+            GraphEdge("rest", "orders", "payments", first_call, first_serve),
+            GraphEdge("rest", "orders", "payments", second_call, second_serve),
+        ],
+        collections_by_service={"orders": ["orders"]},
+    ))
+    nodes = {node["id"]: node for node in graph_data["nodes"]}
+
+    # orders -> payments is one HTTP client relation despite two called routes.
+    assert nodes["microservice:orders"]["complexity"]["score"] == 3
+    assert nodes["microservice:payments"]["complexity"]["score"] == 2

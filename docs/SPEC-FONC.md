@@ -74,6 +74,13 @@ filters, graph layouts, specialized reference views and build dependencies are
 available as advanced controls. Changing a relation-type filter rebuilds and
 relayouts the graph from only the selected dependency types; excluded relations
 do not influence the resulting graph layout.
+Microservices, Kafka topics, and MongoDB collections are coloured by their
+connectivity complexity. The relation count includes their indexed HTTP, Kafka,
+and MongoDB dependencies, while low/medium/high tiers are calculated separately
+for each resource type. For a microservice, the count is its distinct direct
+HTTP clients and targets, Kafka producer/consumer topic relations, and MongoDB
+collection relations; multiple HTTP routes between the same client and target
+are counted once.
 The Explore search accepts either one exact, unambiguous graph-node name or a
 Kafka itinerary written with `->`. An itinerary starts and ends with a
 microservice and follows only directed Kafka relations through Kafka topics;
