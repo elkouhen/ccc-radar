@@ -1,5 +1,5 @@
 rules:
-  - id: codeatlas.rest.java.serve-get
+  - id: systemlens.rest.java.serve-get
     languages: [java]
     severity: INFO
     message: Route REST exposée (GET).
@@ -17,7 +17,7 @@ rules:
               @RequestMapping(..., method = RequestMethod.GET, ...)
               $RET $METHOD(...) { ... }
 
-  - id: codeatlas.rest.java.serve-post
+  - id: systemlens.rest.java.serve-post
     languages: [java]
     severity: INFO
     message: Route REST exposée (POST).
@@ -35,7 +35,7 @@ rules:
               @RequestMapping(..., method = RequestMethod.POST, ...)
               $RET $METHOD(...) { ... }
 
-  - id: codeatlas.rest.java.serve-put
+  - id: systemlens.rest.java.serve-put
     languages: [java]
     severity: INFO
     message: Route REST exposée (PUT).
@@ -53,7 +53,7 @@ rules:
               @RequestMapping(..., method = RequestMethod.PUT, ...)
               $RET $METHOD(...) { ... }
 
-  - id: codeatlas.rest.java.serve-delete
+  - id: systemlens.rest.java.serve-delete
     languages: [java]
     severity: INFO
     message: Route REST exposée (DELETE).
@@ -71,7 +71,7 @@ rules:
               @RequestMapping(..., method = RequestMethod.DELETE, ...)
               $RET $METHOD(...) { ... }
 
-  - id: codeatlas.rest.java.serve-patch
+  - id: systemlens.rest.java.serve-patch
     languages: [java]
     severity: INFO
     message: Route REST exposée (PATCH).
@@ -89,7 +89,7 @@ rules:
               @RequestMapping(..., method = RequestMethod.PATCH, ...)
               $RET $METHOD(...) { ... }
 
-  - id: codeatlas.rest.java.call-get
+  - id: systemlens.rest.java.call-get
     languages: [java]
     severity: INFO
     message: Appel REST client (GET).
@@ -103,7 +103,7 @@ rules:
           - pattern: $REST.getForObject(...)
           - pattern: $REST.getForEntity(...)
 
-  - id: codeatlas.rest.java.call-post
+  - id: systemlens.rest.java.call-post
     languages: [java]
     severity: INFO
     message: Appel REST client (POST).
@@ -117,7 +117,7 @@ rules:
           - pattern: $REST.postForObject(...)
           - pattern: $REST.postForEntity(...)
 
-  - id: codeatlas.rest.java.call-put
+  - id: systemlens.rest.java.call-put
     languages: [java]
     severity: INFO
     message: Appel REST client (PUT).
@@ -129,7 +129,7 @@ rules:
     patterns:
       - pattern: $REST.put(...)
 
-  - id: codeatlas.rest.java.call-delete
+  - id: systemlens.rest.java.call-delete
     languages: [java]
     severity: INFO
     message: Appel REST client (DELETE).
@@ -144,7 +144,7 @@ rules:
   # Feign : interfaces déclaratives (@FeignClient) dont les méthodes portent
   # les mêmes annotations que des routes Spring MVC, mais sont des sites
   # d'appel (pas de corps de méthode : signature suivie de `;`).
-  - id: codeatlas.rest.java.feign-get
+  - id: systemlens.rest.java.feign-get
     languages: [java]
     severity: INFO
     message: Appel REST client (Feign, GET).
@@ -167,7 +167,7 @@ rules:
               @RequestMapping(..., method = RequestMethod.GET, ...)
               $RET $METHOD(...);
 
-  - id: codeatlas.rest.java.feign-post
+  - id: systemlens.rest.java.feign-post
     languages: [java]
     severity: INFO
     message: Appel REST client (Feign, POST).
@@ -190,7 +190,7 @@ rules:
               @RequestMapping(..., method = RequestMethod.POST, ...)
               $RET $METHOD(...);
 
-  - id: codeatlas.rest.java.feign-put
+  - id: systemlens.rest.java.feign-put
     languages: [java]
     severity: INFO
     message: Appel REST client (Feign, PUT).
@@ -213,7 +213,7 @@ rules:
               @RequestMapping(..., method = RequestMethod.PUT, ...)
               $RET $METHOD(...);
 
-  - id: codeatlas.rest.java.feign-delete
+  - id: systemlens.rest.java.feign-delete
     languages: [java]
     severity: INFO
     message: Appel REST client (Feign, DELETE).
@@ -236,7 +236,7 @@ rules:
               @RequestMapping(..., method = RequestMethod.DELETE, ...)
               $RET $METHOD(...);
 
-  - id: codeatlas.rest.java.feign-patch
+  - id: systemlens.rest.java.feign-patch
     languages: [java]
     severity: INFO
     message: Appel REST client (Feign, PATCH).
@@ -261,7 +261,7 @@ rules:
 
   # WebClient : builder fluent (Spring WebFlux), une méthode HTTP par
   # entrée de chaîne (`.get()`, `.post()`, ...) suivie de `.uri(...)`.
-  - id: codeatlas.rest.java.webclient-get
+  - id: systemlens.rest.java.webclient-get
     languages: [java]
     severity: INFO
     message: Appel REST client (WebClient, GET).
@@ -273,7 +273,7 @@ rules:
     patterns:
       - pattern: $WC.get().uri(...)
 
-  - id: codeatlas.rest.java.webclient-post
+  - id: systemlens.rest.java.webclient-post
     languages: [java]
     severity: INFO
     message: Appel REST client (WebClient, POST).
@@ -285,7 +285,7 @@ rules:
     patterns:
       - pattern: $WC.post().uri(...)
 
-  - id: codeatlas.rest.java.webclient-put
+  - id: systemlens.rest.java.webclient-put
     languages: [java]
     severity: INFO
     message: Appel REST client (WebClient, PUT).
@@ -297,7 +297,7 @@ rules:
     patterns:
       - pattern: $WC.put().uri(...)
 
-  - id: codeatlas.rest.java.webclient-delete
+  - id: systemlens.rest.java.webclient-delete
     languages: [java]
     severity: INFO
     message: Appel REST client (WebClient, DELETE).
@@ -309,7 +309,7 @@ rules:
     patterns:
       - pattern: $WC.delete().uri(...)
 
-  - id: codeatlas.rest.java.webclient-patch
+  - id: systemlens.rest.java.webclient-patch
     languages: [java]
     severity: INFO
     message: Appel REST client (WebClient, PATCH).

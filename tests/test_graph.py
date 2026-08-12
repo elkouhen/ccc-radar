@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from codeatlas.graph import (
+from systemlens.graph import (
     build_graph,
     find_outbound_calls_in_consumers,
     graph_edge_rest_resource,
@@ -10,8 +10,8 @@ from codeatlas.graph import (
 )
 from dataclasses import replace
 
-from codeatlas.models import MessageEndpoint, compute_endpoint_id
-from codeatlas.store import Store
+from systemlens.models import MessageEndpoint, compute_endpoint_id
+from systemlens.store import Store
 
 
 def make_endpoint(
@@ -260,7 +260,7 @@ def test_build_graph_uses_domain_from_rest_configuration_to_disambiguate_targets
             "call",
             "GET <dynamic>",
             "gateway/DirectoryClient.java",
-            snippet="directoryClient.getForObject(\"/directory/{id}\", Object.class)\ncodeatlas-api-domain:domain-annuaire",
+            snippet="directoryClient.getForObject(\"/directory/{id}\", Object.class)\nsystemlens-api-domain:domain-annuaire",
         ),
         topic_dynamic=True,
     )
@@ -293,7 +293,7 @@ def test_build_graph_keeps_configured_client_dependency_without_target_resource(
         "call",
         "ANY <dynamic>",
         "caller/RestClientConfig.java",
-        snippet="codeatlas-api-domain:domain-annuaire",
+        snippet="systemlens-api-domain:domain-annuaire",
     )
 
     edges = build_graph({"caller-service": [call], "domain-annuaire": []})

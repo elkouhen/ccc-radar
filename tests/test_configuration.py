@@ -1,8 +1,8 @@
 from pathlib import Path
 
-from codeatlas.configuration import service_configuration_example
-from codeatlas.render import render_workspace_json
-from codeatlas.workspace import DiscoveredService, FederationResult
+from systemlens.configuration import service_configuration_example
+from systemlens.render import render_workspace_json
+from systemlens.workspace import DiscoveredService, FederationResult
 
 
 def test_service_configuration_example_builds_structure_from_production_code(

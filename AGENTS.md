@@ -1,6 +1,6 @@
 # AGENT.md — How to navigate and maintain this project's documentation
 
-This file is for any agent working on `codeatlas`. It points to the right
+This file is for any agent working on `systemlens`. It points to the right
 documents and summarizes the documentation hygiene expected in this repository.
 
 ## Document map
@@ -10,9 +10,9 @@ documents and summarizes the documentation hygiene expected in this repository.
 | [`README.md`](README.md) | Entry point: positioning, installation, quickstart, MCP setup | First stop for onboarding or user-facing repo updates |
 | [`docs/PRD.md`](docs/PRD.md) | Problem, vision, personas, scope, success metrics | When you need product intent and scope boundaries |
 | [`docs/SPEC-FONC.md`](docs/SPEC-FONC.md) | Observable behavior: CLI commands, flags, error messages, MCP tools, skill workflows | Before changing anything a user or agent sees |
-| [`docs/SPEC-TECH.md`](docs/SPEC-TECH.md) | Modules, data model, SQLite schema, algorithms, JSON contract | Before changing internal architecture in `src/codeatlas/` |
+| [`docs/SPEC-TECH.md`](docs/SPEC-TECH.md) | Modules, data model, SQLite schema, algorithms, JSON contract | Before changing internal architecture in `src/systemlens/` |
 | [`docs/ADR.md`](docs/ADR.md) | Architecture decisions: context, choice, consequences | Before revisiting an existing technical choice |
-| [`../ccc-radar-skill/`](../ccc-radar-skill/) | Companion skill repo: agent workflow, bundled rule packs, operational guidance | Whenever an CodeAtlas change can affect the skill or its docs |
+| [`../ccc-radar-skill/`](../ccc-radar-skill/) | Companion skill repo: agent workflow, bundled rule packs, operational guidance | Whenever an SystemLens change can affect the skill or its docs |
 
 `README.md` stays intentionally short. The specifications and ADRs hold the
 authoritative detail.
@@ -28,7 +28,7 @@ authoritative detail.
    model change.
 5. Record durable design decisions in `docs/ADR.md` instead of leaving them only
    in commit messages.
-6. If a change in CodeAtlas affects the companion skill, update
+6. If a change in SystemLens affects the companion skill, update
    `../ccc-radar-skill/` in the same pass.
 7. Keep changes consistent with the existing codebase and ensure the code is
    correct, including its behavior, contracts, and edge cases.
@@ -67,5 +67,5 @@ env -u SSL_CERT_FILE uvx --from huggingface_hub hf download \
   --local-dir ~/models/jina-code-embeddings-1.5b
 ```
 
-The local path expected by default on the `codeatlas` side is
+The local path expected by default on the `systemlens` side is
 `~/models/jina-code-embeddings-1.5b`.

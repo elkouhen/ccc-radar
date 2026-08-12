@@ -5,7 +5,7 @@ import re
 
 import yaml
 
-_IGNORED_PARTS = {".git", ".codeatlas", "build", "target"}
+_IGNORED_PARTS = {".git", ".systemlens", "build", "target"}
 _SENSITIVE_KEY_RE = re.compile(
     r"(?:password|passwd|secret|token|credential|api[-_.]?key|private[-_.]?key)", re.IGNORECASE
 )

@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import TypedDict
 
-from codeatlas.audit import assess_architecture, render_audit_json
-from codeatlas.graph import (
+from systemlens.audit import assess_architecture, render_audit_json
+from systemlens.graph import (
     build_graph,
     configured_api_client_domain,
     external_microservice_name,
@@ -13,8 +13,8 @@ from codeatlas.graph import (
     graph_edge_rest_resource,
     qualified_rest_resource,
 )
-from codeatlas.models import MessageEndpoint
-from codeatlas.modules import DiscoveredModule
+from systemlens.models import MessageEndpoint
+from systemlens.modules import DiscoveredModule
 
 
 _MONGO_WRITE_OPERATIONS = frozenset({
@@ -166,7 +166,7 @@ def build_dependency_graph(
             label = f"consumes {endpoint.message_type}" if endpoint.message_type else "consumes"
             add_edge(topic_id, service_id, "consumes", label, confidence)
 
-    # Paires (appelant, domaine) tirées du tampon codeatlas-api-domain: présent sur
+    # Paires (appelant, domaine) tirées du tampon systemlens-api-domain: présent sur
     # les sites d'appel — y compris ceux non matchés à un serve (pour diagnostic).
     configured_clients: dict[str, set[str]] = {}
     known_services = _known_microservices(endpoints_by_service, modules_by_service)

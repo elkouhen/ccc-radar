@@ -5,12 +5,12 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from codeatlas.cli import app
-from codeatlas.config import Config
-from codeatlas.indexer import index_repo
-from codeatlas.models import MessageEndpoint
-from codeatlas.modules import ModuleDependency, discover_module_dependencies, discover_modules
-from codeatlas.store import Store
+from systemlens.cli import app
+from systemlens.config import Config
+from systemlens.indexer import index_repo
+from systemlens.models import MessageEndpoint
+from systemlens.modules import ModuleDependency, discover_module_dependencies, discover_modules
+from systemlens.store import Store
 
 runner = CliRunner()
 
@@ -245,7 +245,7 @@ class OrdersApplication {
 """
     )
     monkeypatch.setattr(
-        "codeatlas.modules._starts_application",
+        "systemlens.modules._starts_application",
         lambda *_args, **_kwargs: pytest.fail("Tree-sitter entrypoint detection must stay disabled"),
     )
 

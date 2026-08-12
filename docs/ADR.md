@@ -1,4 +1,4 @@
-# Architecture Decision Records — codeatlas (`codeatlas`)
+# Architecture Decision Records — systemlens (`systemlens`)
 
 ## ADR-1 — Local AST extraction is the sole analysis source
 
@@ -22,7 +22,7 @@ being guessed.
 portable local state.
 
 **Decision:** Persist files, endpoints, modules, dependencies and architecture
-relations in `.codeatlas/findings.db`. The filename is retained for compatibility
+relations in `.systemlens/findings.db`. The filename is retained for compatibility
 with existing installations.
 
 **Consequences:** The database is private implementation state; clients use CLI
@@ -67,20 +67,21 @@ default AST extractor.
 **Consequences:** Default indexing remains framework-oriented and portable;
 Strategy1 facts are explicitly identified as convention-derived.
 
-## ADR-6 — CodeAtlas is the public product and state namespace
+## ADR-6 — SystemLens is the public product and state namespace
 
 **Status:** Accepted.
 
-**Context:** The former product names and commands (`cccr` and `archlens`) were
+**Context:** The former product names and commands (`cccr`, `archlens`, and
+`codeatlas`) were
 not suitable for users, while the tool's purpose is to make a local
 architecture view easier to read.
 
 **Decision:** Rename the distribution, Python package, CLI command, MCP server
-name, generated-export labels and state directory to `CodeAtlas` / `codeatlas`.
-The project state is now stored in `.codeatlas/`.
+name, generated-export labels and state directory to `SystemLens` / `systemlens`.
+The project state is now stored in `.systemlens/`.
 
-**Consequences:** This is a breaking rename. Existing `.cccr/` and
-`.archlens/` configuration and index data are not read by CodeAtlas: run
-`codeatlas init` and `codeatlas index` in each repository to create a fresh
-`.codeatlas/` inventory. Trace environment variables use the `CODEATLAS_`
+**Consequences:** This is a breaking rename. Existing `.cccr/`, `.archlens/`,
+and `.codeatlas/` configuration and index data are not read by SystemLens: run
+`systemlens init` and `systemlens index` in each repository to create a fresh
+`.systemlens/` inventory. Trace environment variables use the `SYSTEMLENS_`
 prefix.

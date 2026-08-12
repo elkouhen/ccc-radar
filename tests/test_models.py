@@ -1,4 +1,4 @@
-from codeatlas.models import compute_finding_id
+from systemlens.models import compute_finding_id
 
 
 def test_compute_finding_id_ignores_indentation_differences() -> None:

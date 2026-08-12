@@ -2,8 +2,8 @@
 
 from pathlib import Path
 
-from codeatlas.modules import discover_rest_controllers, discover_modules
-from codeatlas.maven import (
+from systemlens.modules import discover_rest_controllers, discover_modules
+from systemlens.maven import (
     _has_openapi_generator_plugin,
     detect_openapi_generated_clients,
     detect_openapi_generator_input_specs,

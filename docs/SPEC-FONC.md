@@ -1,22 +1,23 @@
-# Functional specification — codeatlas (`codeatlas`)
+# Functional specification — systemlens (`systemlens`)
 
-`codeatlas` builds a local architecture inventory from Java/Spring source ASTs.
+`systemlens` builds a local architecture inventory from Java/Spring source ASTs.
 All commands operate on the current repository unless an explicit workspace
 root is accepted. There is no external code-analysis process in this workflow.
 
 ## Configuration
 
-`codeatlas init` creates `.codeatlas/config.yml`:
+`systemlens init` creates `.systemlens/config.yml`:
 
 ```yaml
 include: ["**/*"]
-exclude: [".git/**", ".venv/**", "node_modules/**", ".codeatlas/**"]
+exclude: [".git/**", ".venv/**", "node_modules/**", ".systemlens/**"]
 min_severity: INFO
 ```
 
-This is a breaking rename from `cccr` and `archlens`: CodeAtlas does not read
-an existing `.cccr/` or `.archlens/` directory. Run `codeatlas init` and
-`codeatlas index` to create a new local inventory in `.codeatlas/`.
+This is a breaking rename from `cccr`, `archlens`, and `codeatlas`: SystemLens
+does not read an existing `.cccr/`, `.archlens/`, or `.codeatlas/` directory.
+Run `systemlens init` and
+`systemlens index` to create a new local inventory in `.systemlens/`.
 
 `include` and `exclude` control source inventory. Maven/Gradle test source
 sets (`src/test`, `src/componentTest`, and names ending in `Test`) are always
@@ -27,19 +28,19 @@ but does not alter AST endpoint extraction.
 
 | Command | Behaviour |
 |---|---|
-| `codeatlas init` | Creates `.codeatlas/config.yml`; it never overwrites an existing file. |
-| `codeatlas doctor [--json]` | Read-only check of configuration, local AST readiness and index state. |
-| `codeatlas index [--full] [--topic-strategy default\|strategy1] [--manifest FILE]...` | Incrementally extracts and persists architecture facts. |
-| `codeatlas microservices`, `topics`, `apis`, `dtos`, `mongodb`, `modules` | Browse the indexed catalog; `microservices`, `topics` and `mongodb` list the corresponding architecture objects directly, each with a `kind` and `name`, and support the documented list/show/neighbors actions and JSON output where applicable. |
-| `codeatlas analyze audit` | Reports static architecture risks. |
-| `codeatlas analyze indexing-issues [--json]` | Lists unresolved indexing facts. JSON includes source evidence suitable for reviewing proposed heuristics. |
-| `codeatlas analyze microservices impact NAME` | Lists direct and transitive impact paths. |
-| `codeatlas analyze microservices path FROM TO` | Lists bounded paths between services. |
-| `codeatlas analyze request-reply` | Lists Strategy1 Kafka request/reply candidates. |
-| `codeatlas export microservices` / `codeatlas export modules` | Emits JSON, HTML or LikeC4 views. |
-| `codeatlas mcp` | Starts the stdio MCP server. |
+| `systemlens init` | Creates `.systemlens/config.yml`; it never overwrites an existing file. |
+| `systemlens doctor [--json]` | Read-only check of configuration, local AST readiness and index state. |
+| `systemlens index [--full] [--topic-strategy default\|strategy1] [--manifest FILE]...` | Incrementally extracts and persists architecture facts. |
+| `systemlens microservices`, `topics`, `apis`, `dtos`, `mongodb`, `modules` | Browse the indexed catalog; `microservices`, `topics` and `mongodb` list the corresponding architecture objects directly, each with a `kind` and `name`, and support the documented list/show/neighbors actions and JSON output where applicable. |
+| `systemlens analyze audit` | Reports static architecture risks. |
+| `systemlens analyze indexing-issues [--json]` | Lists unresolved indexing facts. JSON includes source evidence suitable for reviewing proposed heuristics. |
+| `systemlens analyze microservices impact NAME` | Lists direct and transitive impact paths. |
+| `systemlens analyze microservices path FROM TO` | Lists bounded paths between services. |
+| `systemlens analyze request-reply` | Lists Strategy1 Kafka request/reply candidates. |
+| `systemlens export microservices` / `systemlens export modules` | Emits JSON, HTML or LikeC4 views. |
+| `systemlens mcp` | Starts the stdio MCP server. |
 
-`codeatlas index` reports its file delta, AST analysis stage, persisted endpoint
+`systemlens index` reports its file delta, AST analysis stage, persisted endpoint
 count and materialized relations. It then prints a next-step hint towards the
 interactive microservice HTML export. Its result line is:
 
@@ -111,7 +112,7 @@ the endpoint extractor signature, analysis configuration signature or selected
 topic strategy changes. Explicit manifests are included even when otherwise
 excluded.
 
-The index is `.codeatlas/findings.db` for compatibility with prior releases. It is a
+The index is `.systemlens/findings.db` for compatibility with prior releases. It is a
 local implementation detail, not a contract for direct SQL writes.
 
 ## MCP

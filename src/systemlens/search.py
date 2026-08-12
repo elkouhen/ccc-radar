@@ -2,9 +2,9 @@ from dataclasses import dataclass
 from pathlib import Path
 import re
 
-from codeatlas.config import VALID_SEVERITIES
-from codeatlas.models import Finding
-from codeatlas.store import Store
+from systemlens.config import VALID_SEVERITIES
+from systemlens.models import Finding
+from systemlens.store import Store
 
 _WORD_RE = re.compile(r"\w+")
 
@@ -129,7 +129,7 @@ def search_findings(
     if not candidates:
         return []
 
-    # `codeatlas findings` without a query is an inventory view. Keep the same
+    # `systemlens findings` without a query is an inventory view. Keep the same
     # deterministic severity/location ordering as a searched result while
     # preserving all filters and pagination.
     if query is None or not query.strip():

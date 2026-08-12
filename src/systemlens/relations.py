@@ -3,8 +3,8 @@
 import re
 from typing import TypedDict
 
-from codeatlas.models import ArchitectureRelation, MessageEndpoint, compute_architecture_relation_id
-from codeatlas.modules import DiscoveredModule, ModuleDependency
+from systemlens.models import ArchitectureRelation, MessageEndpoint, compute_architecture_relation_id
+from systemlens.modules import DiscoveredModule, ModuleDependency
 
 
 class _RelationEvidence(TypedDict):

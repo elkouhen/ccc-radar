@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 EXAMPLES = Path.home() / "examples"
 REPORTS = ROOT / "reports"
 ASSETS = REPORTS / "assets"
-CODEATLAS = ROOT / ".venv" / "bin" / "codeatlas"
+SYSTEMLENS = ROOT / ".venv" / "bin" / "systemlens"
 
 
 def run(cmd: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
@@ -142,8 +142,8 @@ def main() -> int:
 
     if not EXAMPLES.is_dir():
         raise SystemExit(f"Examples directory not found: {EXAMPLES}")
-    if not CODEATLAS.exists():
-        raise SystemExit(f"codeatlas executable not found: {CODEATLAS}")
+    if not SYSTEMLENS.exists():
+        raise SystemExit(f"systemlens executable not found: {SYSTEMLENS}")
 
     results: list[dict[str, object]] = []
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%SZ")
@@ -168,39 +168,39 @@ def main() -> int:
         pom_count = str(len(list(repo.rglob("pom.xml"))))
 
         init_state = "already initialized"
-        if not (repo / ".codeatlas" / "config.yml").exists():
-            proc = run([str(CODEATLAS), "init"], repo)
+        if not (repo / ".systemlens" / "config.yml").exists():
+            proc = run([str(SYSTEMLENS), "init"], repo)
             if proc.returncode != 0:
                 raise SystemExit(
-                    f"codeatlas init failed for {repo.name}:\nSTDOUT:\n{proc.stdout}\nSTDERR:\n{proc.stderr}"
+                    f"systemlens init failed for {repo.name}:\nSTDOUT:\n{proc.stdout}\nSTDERR:\n{proc.stderr}"
                 )
             init_state = "initialized during report generation"
 
-        index_proc = run([str(CODEATLAS), "index"], repo)
+        index_proc = run([str(SYSTEMLENS), "index"], repo)
         if index_proc.returncode != 0:
             raise SystemExit(
-                f"codeatlas index failed for {repo.name}:\nSTDOUT:\n{index_proc.stdout}\nSTDERR:\n{index_proc.stderr}"
+                f"systemlens index failed for {repo.name}:\nSTDOUT:\n{index_proc.stdout}\nSTDERR:\n{index_proc.stderr}"
             )
 
-        graph_proc = run([str(CODEATLAS), "graph", "--json"], repo)
+        graph_proc = run([str(SYSTEMLENS), "graph", "--json"], repo)
         if graph_proc.returncode != 0:
             raise SystemExit(
-                f"codeatlas graph --json failed for {repo.name}:\nSTDOUT:\n{graph_proc.stdout}\nSTDERR:\n{graph_proc.stderr}"
+                f"systemlens graph --json failed for {repo.name}:\nSTDOUT:\n{graph_proc.stdout}\nSTDERR:\n{graph_proc.stderr}"
             )
         graph = json.loads(graph_proc.stdout)
 
-        micro_proc = run([str(CODEATLAS), "microservices", "--json"], repo)
+        micro_proc = run([str(SYSTEMLENS), "microservices", "--json"], repo)
         if micro_proc.returncode != 0:
             raise SystemExit(
-                f"codeatlas microservices --json failed for {repo.name}:\nSTDOUT:\n{micro_proc.stdout}\nSTDERR:\n{micro_proc.stderr}"
+                f"systemlens microservices --json failed for {repo.name}:\nSTDOUT:\n{micro_proc.stdout}\nSTDERR:\n{micro_proc.stderr}"
             )
         micro = json.loads(micro_proc.stdout)
 
         for output in (d2_path, svg_path):
-            proc = run([str(CODEATLAS), "graph", "--d2", str(output)], repo)
+            proc = run([str(SYSTEMLENS), "graph", "--d2", str(output)], repo)
             if proc.returncode != 0:
                 raise SystemExit(
-                    f"codeatlas graph --d2 {output.name} failed for {repo.name}:\nSTDOUT:\n{proc.stdout}\nSTDERR:\n{proc.stderr}"
+                    f"systemlens graph --d2 {output.name} failed for {repo.name}:\nSTDOUT:\n{proc.stdout}\nSTDERR:\n{proc.stderr}"
                 )
 
         warnings = []
@@ -238,7 +238,7 @@ def main() -> int:
                 ("Working tree clean", clean),
                 ("Tracked files", tracked_count),
                 ("pom.xml files", pom_count),
-                ("codeatlas init state", init_state),
+                ("systemlens init state", init_state),
                 ("Report generated", now),
             ]
         )
@@ -274,7 +274,7 @@ def main() -> int:
                     "",
                     git_table,
                     "",
-                    "## codeatlas graph",
+                    "## systemlens graph",
                     "",
                     graph_table,
                     "",
@@ -322,7 +322,7 @@ def main() -> int:
     index_lines = [
         "# Example reports",
         "",
-        "Generated pages for each directory in `~/examples`, with the `codeatlas` graph rendered from D2 to SVG, flow summaries, and basic Git repository metadata.",
+        "Generated pages for each directory in `~/examples`, with the `systemlens` graph rendered from D2 to SVG, flow summaries, and basic Git repository metadata.",
         "",
         "| Repository | Branch | Commit | Services | Edges | HTTP flows | Kafka flows | Warnings | Page |",
         "|---|---|---|---:|---:|---:|---:|---:|---|",

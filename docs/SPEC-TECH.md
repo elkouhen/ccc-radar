@@ -1,4 +1,4 @@
-# Technical specification — codeatlas (`codeatlas`)
+# Technical specification — systemlens (`systemlens`)
 
 ## Architecture
 
@@ -77,7 +77,7 @@ argument is used to derive the payload type from its method parameter, local
 variable declaration or enclosing class field.
 
 Strategy1 also enables the `getXxxServiceUrl()` REST target-name convention;
-without it, CodeAtlas uses only an explicit URL or `lb://` service target.
+without it, SystemLens uses only an explicit URL or `lb://` service target.
 
 `render_graph_html` resolves the Java DTOs and enums rooted at those Kafka
 payload types from production source roots. It follows declared field types
@@ -99,7 +99,7 @@ The manifest extractors add explicitly declared Kafka facts from Markdown and
 JSON. Strategy1 is separate and opt-in because it embeds repository-specific
 naming conventions.
 
-`codeatlas analyze indexing-issues --json` exposes unresolved facts as a structured
+`systemlens analyze indexing-issues --json` exposes unresolved facts as a structured
 remediation review payload. Each endpoint-backed issue has a stable code,
 severity, service, framework, topic/API, extracted message type and its source
 path, line range and snippet. The command does not infer or apply a heuristic;
@@ -113,10 +113,10 @@ dependencies and relations. The database filename remains `findings.db` for
 backward compatibility; new AST-only behavior must not infer that it contains
 security findings.
 
-CodeAtlas stores this database under `.codeatlas/`. It intentionally does not
-load the former `.cccr/` or `.archlens/` state directory: the product rename
-requires a fresh `codeatlas init` and `codeatlas index` so the configuration
-and index namespace remain unambiguous.
+SystemLens stores this database under `.systemlens/`. It intentionally does not
+load the former `.cccr/`, `.archlens/`, or `.codeatlas/` state directory: the
+product rename requires a fresh `systemlens init` and `systemlens index` so the
+configuration and index namespace remain unambiguous.
 
 The endpoint-inventory signature in `meta` is bumped whenever extractor
 behaviour changes. This forces a complete refresh before new facts are served.

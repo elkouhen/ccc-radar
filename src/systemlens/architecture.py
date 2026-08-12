@@ -9,9 +9,9 @@ from collections import deque
 from dataclasses import dataclass
 from typing import cast
 
-from codeatlas.graph import GraphEdge, build_graph, graph_edge_rest_resource
-from codeatlas.models import ArchitectureRelation, MessageEndpoint
-from codeatlas.modules import DiscoveredModule
+from systemlens.graph import GraphEdge, build_graph, graph_edge_rest_resource
+from systemlens.models import ArchitectureRelation, MessageEndpoint
+from systemlens.modules import DiscoveredModule
 
 
 _KINDS = {

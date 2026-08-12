@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 
-from codeatlas.graph import GraphEdge
-from codeatlas.models import MessageEndpoint
-from codeatlas.modules import DiscoveredModule
+from systemlens.graph import GraphEdge
+from systemlens.models import MessageEndpoint
+from systemlens.modules import DiscoveredModule
 
 
 _MONGO_WRITE_OPERATIONS = frozenset({

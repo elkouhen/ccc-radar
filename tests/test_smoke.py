@@ -1,5 +1,5 @@
-import codeatlas
+import systemlens
 
 
 def test_version() -> None:
-    assert codeatlas.__version__ == "0.1.0"
+    assert systemlens.__version__ == "0.1.0"

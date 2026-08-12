@@ -3,13 +3,13 @@
 ## ✅ Fonctionnalités Implémentées
 
 ### 1. Détection des classes @RestController
-- **Fichier** : `src/codeatlas/modules.py`
+- **Fichier** : `src/systemlens/modules.py`
 - **Fonction** : `_has_rest_controllers()`
 - **Détection** : Classes Java annotées avec `@RestController` (forme simple et pleinement qualifiée)
 - **Sortie** : Tuple de chaînes au format "ClassName (relative/path.java)"
 
 ### 2. Détection des clients générés par openapi-generator-maven-plugin
-- **Fichier** : `src/codeatlas/maven.py`
+- **Fichier** : `src/systemlens/maven.py`
 - **Fonctions** : 
   - `_has_openapi_generator_plugin()` - Détection du plugin dans pom.xml
   - `detect_openapi_generated_clients()` - Liste des fichiers générés
@@ -22,7 +22,7 @@
 
 ### Modèles de données
 ```python
-# src/codeatlas/modules.py - DiscoveredModule
+# src/systemlens/modules.py - DiscoveredModule
 @dataclass(frozen=True)
 class DiscoveredModule:
     # ... champs existants ...
@@ -32,7 +32,7 @@ class DiscoveredModule:
 
 ### Base de données
 ```python
-# src/codeatlas/store.py
+# src/systemlens/store.py
 SCHEMA_VERSION = "15"  # Mis à jour de "14" à "15"
 
 # Nouvelles colonnes dans la table modules
@@ -42,7 +42,7 @@ ALTER TABLE modules ADD COLUMN openapi_generated_clients TEXT NOT NULL DEFAULT '
 
 ### Fonctions de rendu
 ```python
-# src/codeatlas/render.py
+# src/systemlens/render.py
 class ModuleSummary(TypedDict):
     # ... champs existants ...
     rest_controllers: list[str]            # NOUVEAU
@@ -78,32 +78,32 @@ Pytest: 48 passed (test_rest_detection.py + test_modules.py + test_store.py)
 ### Exemples d'utilisation
 ```bash
 # Lister les modules avec leurs contrôleurs REST
-codeatlas modules list
+systemlens modules list
 
 # Voir les détails d'un module spécifique
-codeatlas modules show my-service
+systemlens modules show my-service
 
 # Format JSON pour l'intégration
-codeatlas modules --json | jq '.[] | select(.rest_controllers | length > 0)'
+systemlens modules --json | jq '.[] | select(.rest_controllers | length > 0)'
 
 # Générer un rapport d'architecture
-codeatlas export microservices --html architecture.html
+systemlens export microservices --html architecture.html
 ```
 
 ## 🔄 Migration
 
 ### Depuis la version 14
-- **Automatique** : La migration du schéma se fait automatiquement au prochain `codeatlas index`
+- **Automatique** : La migration du schéma se fait automatiquement au prochain `systemlens index`
 - **Compatibilité** : Les anciennes bases sont migrées automatiquement vers la version 15
 - **Données préservées** : Toutes les données existantes sont conservées
 
 ### Commande de migration
 ```bash
 # La migration est automatique
-codeatlas index
+systemlens index
 
 # Vérifier la version du schéma
-sqlite3 .codeatlas/findings.db "SELECT value FROM meta WHERE key = 'schema_version';"
+sqlite3 .systemlens/findings.db "SELECT value FROM meta WHERE key = 'schema_version';"
 # Output: 15
 ```
 
@@ -185,10 +185,10 @@ public class OrderController { }
 ## 📈 Statistiques
 
 - **Fichiers modifiés** : 5
-  - `src/codeatlas/modules.py`
-  - `src/codeatlas/maven.py`
-  - `src/codeatlas/store.py`
-  - `src/codeatlas/render.py`
+  - `src/systemlens/modules.py`
+  - `src/systemlens/maven.py`
+  - `src/systemlens/store.py`
+  - `src/systemlens/render.py`
   - `tests/test_modules.py`
   - `tests/test_store.py`
 

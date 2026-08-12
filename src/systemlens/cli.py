@@ -9,8 +9,8 @@ from typing import Literal, Optional, cast
 import click
 import typer
 
-from codeatlas import __version__
-from codeatlas.architecture import (
+from systemlens import __version__
+from systemlens.architecture import (
     analyze as analyze_architecture,
     build_catalog,
     endpoint_implementation,
@@ -24,20 +24,20 @@ from codeatlas.architecture import (
     show_object as show_architecture_object,
     trace_topic_flows,
 )
-from codeatlas.architecture_inventory import load_architecture_inventory
-from codeatlas.audit import assess_architecture, render_audit_json, render_audit_text
-from codeatlas.config import ConfigError, init_config, load_config
-from codeatlas.flow import resolve_topic
-from codeatlas.graph import (
+from systemlens.architecture_inventory import load_architecture_inventory
+from systemlens.audit import assess_architecture, render_audit_json, render_audit_text
+from systemlens.config import ConfigError, init_config, load_config
+from systemlens.flow import resolve_topic
+from systemlens.graph import (
     GraphEdge,
     build_graph,
     find_outbound_calls_in_consumers,
 )
-from codeatlas.indexer import index_repo
-from codeatlas.inventory_freshness import endpoint_inventory_warning
-from codeatlas.models import MessageEndpoint
-from codeatlas.modules import DiscoveredModule, ModuleDependency, discover_modules
-from codeatlas.render import (
+from systemlens.indexer import index_repo
+from systemlens.inventory_freshness import endpoint_inventory_warning
+from systemlens.models import MessageEndpoint
+from systemlens.modules import DiscoveredModule, ModuleDependency, discover_modules
+from systemlens.render import (
     GraphResult,
     render_endpoints_json,
     render_endpoints_text,
@@ -53,51 +53,51 @@ from codeatlas.render import (
     render_modules_list_json,
     render_modules_list_text,
 )
-from codeatlas.paths import config_path, db_path
-from codeatlas.store import Store, StoreError
-from codeatlas.workspace import (
+from systemlens.paths import config_path, db_path
+from systemlens.store import Store, StoreError
+from systemlens.workspace import (
     discover_maven_services,
     load_federation,
 )
-from codeatlas.doctor import has_errors, run_doctor
+from systemlens.doctor import has_errors, run_doctor
 
 app = typer.Typer(
     help=(
         "Explorer l'architecture d'un projet indexé.\n\n"
-        "Exemples : `codeatlas microservices`, `codeatlas analyze audit`, "
-        "`codeatlas export microservices --html graph.html`."
+        "Exemples : `systemlens microservices`, `systemlens analyze audit`, "
+        "`systemlens export microservices --html graph.html`."
     )
 )
 export_app = typer.Typer(
     help=(
         "Exporter les graphes de dépendances d'architecture.\n\n"
-        "Exemples : `codeatlas export microservices --html graph.html`, "
-        "`codeatlas export modules --html modules.html`."
+        "Exemples : `systemlens export microservices --html graph.html`, "
+        "`systemlens export modules --html modules.html`."
     )
 )
 topics_app = typer.Typer(
-    help="Explorer les topics Kafka indexés.\n\nExemples : `codeatlas topics`, `codeatlas topics consumers orders.created`."
+    help="Explorer les topics Kafka indexés.\n\nExemples : `systemlens topics`, `systemlens topics consumers orders.created`."
 )
 dtos_app = typer.Typer(
-    help="Explorer les DTOs Java échangés via Kafka.\n\nExemples : `codeatlas dtos`, `codeatlas dtos consumers OrderCreated`."
+    help="Explorer les DTOs Java échangés via Kafka.\n\nExemples : `systemlens dtos`, `systemlens dtos consumers OrderCreated`."
 )
 apis_app = typer.Typer(
-    help="Explorer les APIs HTTP indexées.\n\nExemples : `codeatlas apis`, `codeatlas apis consumers 'POST /payments'`."
+    help="Explorer les APIs HTTP indexées.\n\nExemples : `systemlens apis`, `systemlens apis consumers 'POST /payments'`."
 )
 mongodb_app = typer.Typer(
-    help="Explorer les collections MongoDB indexées.\n\nExemples : `codeatlas mongodb`, `codeatlas mongodb services orders`."
+    help="Explorer les collections MongoDB indexées.\n\nExemples : `systemlens mongodb`, `systemlens mongodb services orders`."
 )
 microservices_app = typer.Typer(
-    help="Explorer les microservices indexés.\n\nExemples : `codeatlas microservices`, `codeatlas microservices show orders`."
+    help="Explorer les microservices indexés.\n\nExemples : `systemlens microservices`, `systemlens microservices show orders`."
 )
 modules_app = typer.Typer(
-    help="Explorer les modules Maven ou Gradle indexés.\n\nExemples : `codeatlas modules`, `codeatlas modules show orders-api`."
+    help="Explorer les modules Maven ou Gradle indexés.\n\nExemples : `systemlens modules`, `systemlens modules show orders-api`."
 )
 analyze_app = typer.Typer(
-    help="Analyser les impacts et les chemins d'architecture.\n\nExemples : `codeatlas analyze audit`, `codeatlas analyze microservices impact orders`."
+    help="Analyser les impacts et les chemins d'architecture.\n\nExemples : `systemlens analyze audit`, `systemlens analyze microservices impact orders`."
 )
 analyze_microservices_app = typer.Typer(
-    help="Analyser les relations entre microservices.\n\nExemples : `codeatlas analyze microservices impact orders`, `codeatlas analyze microservices path orders payments`."
+    help="Analyser les relations entre microservices.\n\nExemples : `systemlens analyze microservices impact orders`, `systemlens analyze microservices path orders payments`."
 )
 app.add_typer(export_app, name="export")
 app.add_typer(topics_app, name="topics")
@@ -124,10 +124,10 @@ def _echo_index_progress(message: str) -> None:
 
 
 def _trace_index(stage: str, **fields: object) -> None:
-    if os.environ.get("CODEATLAS_TRACE") != "1":
+    if os.environ.get("SYSTEMLENS_TRACE") != "1":
         return
     details = " ".join(f"{name}={value}" for name, value in fields.items())
-    print(f"CODEATLAS_TRACE ts={time.monotonic():.6f} stage={stage} {details}".rstrip(), file=sys.stderr, flush=True)
+    print(f"SYSTEMLENS_TRACE ts={time.monotonic():.6f} stage={stage} {details}".rstrip(), file=sys.stderr, flush=True)
 
 
 def _manifest_rel_paths(repo_root: Path, paths: list[Path]) -> list[str]:
@@ -157,7 +157,7 @@ def _manifest_rel_paths(repo_root: Path, paths: list[Path]) -> list[str]:
 
 @app.callback()
 def main() -> None:
-    """codeatlas: indexe les signaux d'architecture extraits par AST."""
+    """systemlens: indexe les signaux d'architecture extraits par AST."""
 
 
 def _emit_architecture(result: object, json_output: bool) -> None:
@@ -181,8 +181,8 @@ def topics_cmd(
 ) -> None:
     """Parcourir les topics Kafka et les services qui les publient ou consomment.
 
-    Exemples : `codeatlas topics`, `codeatlas topics show orders.created`,
-    `codeatlas topics neighbors orders.created`.
+    Exemples : `systemlens topics`, `systemlens topics show orders.created`,
+    `systemlens topics neighbors orders.created`.
     """
     arguments = arguments or []
     json_output = _option_json(json_output)
@@ -190,14 +190,14 @@ def topics_cmd(
     catalog = _microservice_catalog(workspace_root)
     if not arguments or arguments[0] == "list":
         if len(arguments) > 1:
-            typer.echo("Usage : `codeatlas topics [list] --root <workspace>`.", err=True)
+            typer.echo("Usage : `systemlens topics [list] --root <workspace>`.", err=True)
             raise typer.Exit(code=2)
         _emit_architecture(list_architecture_objects(catalog, "topic"), json_output)
         return
     command = arguments[0]
     if command in {"show", "neighbors", "consumers", "producers", "search", "trace"}:
         if len(arguments) != 2:
-            typer.echo(f"`codeatlas topics {command}` requiert un topic.", err=True)
+            typer.echo(f"`systemlens topics {command}` requiert un topic.", err=True)
             raise typer.Exit(code=2)
         topic = arguments[1]
         result: object
@@ -216,7 +216,7 @@ def topics_cmd(
             raise typer.Exit(code=2)
         _emit_architecture(result, json_output)
         return
-    typer.echo("Usage : `codeatlas topics [list|show|neighbors|search] [topic]`.", err=True)
+    typer.echo("Usage : `systemlens topics [list|show|neighbors|search] [topic]`.", err=True)
     raise typer.Exit(code=2)
 
 
@@ -231,8 +231,8 @@ def dtos_cmd(
 ) -> None:
     """Parcourir les DTOs Java utilisés par les producers et consumers Kafka.
 
-    Exemples : `codeatlas dtos`, `codeatlas dtos show OrderCreated`,
-    `codeatlas dtos consumers OrderCreated`.
+    Exemples : `systemlens dtos`, `systemlens dtos show OrderCreated`,
+    `systemlens dtos consumers OrderCreated`.
     """
     arguments = arguments or []
     json_output = _option_json(json_output)
@@ -240,14 +240,14 @@ def dtos_cmd(
     catalog = _microservice_catalog(workspace_root)
     if not arguments or arguments[0] == "list":
         if len(arguments) > 1:
-            typer.echo("Usage : `codeatlas dtos [list] --root <workspace>`.", err=True)
+            typer.echo("Usage : `systemlens dtos [list] --root <workspace>`.", err=True)
             raise typer.Exit(code=2)
         _emit_architecture(list_architecture_objects(catalog, "dto"), json_output)
         return
     command = arguments[0]
     if command in {"show", "neighbors", "consumers", "producers", "search"}:
         if len(arguments) != 2:
-            typer.echo(f"`codeatlas dtos {command}` requiert un DTO.", err=True)
+            typer.echo(f"`systemlens dtos {command}` requiert un DTO.", err=True)
             raise typer.Exit(code=2)
         dto = arguments[1]
         result: object
@@ -266,7 +266,7 @@ def dtos_cmd(
             raise typer.Exit(code=2)
         _emit_architecture(result, json_output)
         return
-    typer.echo("Usage : `codeatlas dtos [list|show|neighbors|producers|consumers|search] [dto]`.", err=True)
+    typer.echo("Usage : `systemlens dtos [list|show|neighbors|producers|consumers|search] [dto]`.", err=True)
     raise typer.Exit(code=2)
 
 
@@ -281,8 +281,8 @@ def apis_cmd(
 ) -> None:
     """Parcourir les APIs HTTP et les services qui les exposent ou appellent.
 
-    Exemples : `codeatlas apis`, `codeatlas apis show "POST /payments"`,
-    `codeatlas apis search payments`.
+    Exemples : `systemlens apis`, `systemlens apis show "POST /payments"`,
+    `systemlens apis search payments`.
     """
     arguments = arguments or []
     json_output = _option_json(json_output)
@@ -290,14 +290,14 @@ def apis_cmd(
     catalog = _microservice_catalog(workspace_root)
     if not arguments or arguments[0] == "list":
         if len(arguments) > 1:
-            typer.echo("Usage : `codeatlas apis [list] --root <workspace>`.", err=True)
+            typer.echo("Usage : `systemlens apis [list] --root <workspace>`.", err=True)
             raise typer.Exit(code=2)
         _emit_architecture(list_architecture_objects(catalog, "api"), json_output)
         return
     command = arguments[0]
     if command in {"show", "neighbors", "providers", "consumers", "search"}:
         if len(arguments) != 2:
-            typer.echo(f"`codeatlas apis {command}` requiert une API HTTP.", err=True)
+            typer.echo(f"`systemlens apis {command}` requiert une API HTTP.", err=True)
             raise typer.Exit(code=2)
         api = arguments[1]
         result: object
@@ -319,7 +319,7 @@ def apis_cmd(
             raise typer.Exit(code=2)
         _emit_architecture(result, json_output)
         return
-    typer.echo("Usage : `codeatlas apis [list|show|neighbors|search] [api]`.", err=True)
+    typer.echo("Usage : `systemlens apis [list|show|neighbors|search] [api]`.", err=True)
     raise typer.Exit(code=2)
 
 
@@ -334,21 +334,21 @@ def mongodb_cmd(
 ) -> None:
     """Parcourir les collections MongoDB et les microservices qui les utilisent.
 
-    Exemples : `codeatlas mongodb`, `codeatlas mongodb show orders`,
-    `codeatlas mongodb neighbors orders`.
+    Exemples : `systemlens mongodb`, `systemlens mongodb show orders`,
+    `systemlens mongodb neighbors orders`.
     """
     arguments = arguments or []
     json_output = _option_json(json_output)
     catalog = _microservice_catalog(_option_root(root))
     if not arguments or arguments[0] == "list":
         if len(arguments) > 1:
-            typer.echo("Usage : `codeatlas mongodb [list] --root <workspace>`.", err=True)
+            typer.echo("Usage : `systemlens mongodb [list] --root <workspace>`.", err=True)
             raise typer.Exit(code=2)
         _emit_architecture(list_architecture_objects(catalog, "collection"), json_output)
         return
     command = arguments[0]
     if command not in {"show", "neighbors", "services", "search"} or len(arguments) != 2:
-        typer.echo("Usage : `codeatlas mongodb [list|show|neighbors|search] [collection]`.", err=True)
+        typer.echo("Usage : `systemlens mongodb [list|show|neighbors|search] [collection]`.", err=True)
         raise typer.Exit(code=2)
     collection = arguments[1]
     result: object
@@ -387,42 +387,42 @@ def analyze_cmd(
     """Répondre aux questions d'architecture à partir du graphe indexé.
 
     Exemples :
-    `codeatlas analyze microservices path order-service shipping-service`
-    `codeatlas analyze microservices impact order-service`
-    `codeatlas analyze topics consumers orders.created`
-    `codeatlas analyze topics trace orders.created`
-    `codeatlas analyze apis providers "POST /payments"`
-    `codeatlas analyze mongodb services orders`
-    `codeatlas analyze request-reply`
-    `codeatlas analyze audit`
-    `codeatlas analyze coverage`
+    `systemlens analyze microservices path order-service shipping-service`
+    `systemlens analyze microservices impact order-service`
+    `systemlens analyze topics consumers orders.created`
+    `systemlens analyze topics trace orders.created`
+    `systemlens analyze apis providers "POST /payments"`
+    `systemlens analyze mongodb services orders`
+    `systemlens analyze request-reply`
+    `systemlens analyze audit`
+    `systemlens analyze coverage`
     """
     arguments = arguments or []
     if not arguments:
         typer.echo(
-            "Usage : `codeatlas analyze <microservices|topics|apis|mongodb|request-reply|audit|coverage> ...`.", err=True
+            "Usage : `systemlens analyze <microservices|topics|apis|mongodb|request-reply|audit|coverage> ...`.", err=True
         )
         raise typer.Exit(code=2)
     subject = arguments[0]
     workspace_root = (root or Path.cwd()).resolve()
     if subject == "microservices":
         if len(arguments) < 2:
-            typer.echo("Usage : `codeatlas analyze microservices <calls|external-apis|orphan-integrations|impact|path> ...`.", err=True)
+            typer.echo("Usage : `systemlens analyze microservices <calls|external-apis|orphan-integrations|impact|path> ...`.", err=True)
             raise typer.Exit(code=2)
         query = arguments[1]
         if query == "path":
             if len(arguments) != 4:
-                typer.echo("`codeatlas analyze microservices path` requiert une source et une cible.", err=True)
+                typer.echo("`systemlens analyze microservices path` requiert une source et une cible.", err=True)
                 raise typer.Exit(code=2)
             _render_microservice_path(
                 arguments[2], arguments[3], workspace_root, json_output, max_depth=max_depth, limit=limit
             )
             return
         if query in {"calls", "dependencies", "impact"} and len(arguments) != 3:
-            typer.echo(f"`codeatlas analyze microservices {query}` requiert une cible.", err=True)
+            typer.echo(f"`systemlens analyze microservices {query}` requiert une cible.", err=True)
             raise typer.Exit(code=2)
         if len(arguments) not in {2, 3}:
-            typer.echo(f"`codeatlas analyze microservices {query}` accepte une cible optionnelle.", err=True)
+            typer.echo(f"`systemlens analyze microservices {query}` accepte une cible optionnelle.", err=True)
             raise typer.Exit(code=2)
         _render_microservice_analysis(
             query, arguments[2] if len(arguments) == 3 else None, workspace_root, json_output
@@ -430,7 +430,7 @@ def analyze_cmd(
         return
     if subject == "topics":
         if len(arguments) != 3 or arguments[1] not in {"consumers", "producers", "trace"}:
-            typer.echo("Usage : `codeatlas analyze topics <consumers|producers|trace> <topic>`.", err=True)
+            typer.echo("Usage : `systemlens analyze topics <consumers|producers|trace> <topic>`.", err=True)
             raise typer.Exit(code=2)
         catalog = _microservice_catalog(workspace_root)
         query, topic = arguments[1], arguments[2]
@@ -446,7 +446,7 @@ def analyze_cmd(
         return
     if subject == "apis":
         if len(arguments) != 3 or arguments[1] not in {"providers", "consumers"}:
-            typer.echo("Usage : `codeatlas analyze apis <providers|consumers> <api>`.", err=True)
+            typer.echo("Usage : `systemlens analyze apis <providers|consumers> <api>`.", err=True)
             raise typer.Exit(code=2)
         query, api = arguments[1], arguments[2]
         summary = show_architecture_object(_microservice_catalog(workspace_root), "api", api)
@@ -457,7 +457,7 @@ def analyze_cmd(
         return
     if subject == "mongodb":
         if len(arguments) != 3 or arguments[1] != "services":
-            typer.echo("Usage : `codeatlas analyze mongodb services <collection>`.", err=True)
+            typer.echo("Usage : `systemlens analyze mongodb services <collection>`.", err=True)
             raise typer.Exit(code=2)
         collection = arguments[2]
         result = _mongodb_services(_microservice_catalog(workspace_root), collection)
@@ -476,7 +476,7 @@ def analyze_cmd(
         _render_inventory_coverage(workspace_root, json_output)
         return
     typer.echo(
-        "Usage : `codeatlas analyze <microservices|topics|apis|mongodb|request-reply|audit|coverage> ...`.", err=True
+        "Usage : `systemlens analyze <microservices|topics|apis|mongodb|request-reply|audit|coverage> ...`.", err=True
     )
     raise typer.Exit(code=2)
 
@@ -783,7 +783,7 @@ def analyze_microservices_path(
 def version() -> None:
     """Affiche la version du package.
 
-    Exemple : `codeatlas version`.
+    Exemple : `systemlens version`.
     """
     typer.echo(__version__)
 
@@ -792,7 +792,7 @@ def version() -> None:
 def doctor_cmd(json_output: bool = typer.Option(False, "--json")) -> None:
     """Vérifie les prérequis d'un audit d'architecture, sans modifier le projet.
 
-    Exemples : `codeatlas doctor`, `codeatlas doctor --json`.
+    Exemples : `systemlens doctor`, `systemlens doctor --json`.
     """
     checks = run_doctor(Path.cwd())
     result = [
@@ -811,7 +811,7 @@ def doctor_cmd(json_output: bool = typer.Option(False, "--json")) -> None:
 
 @app.command()
 def init() -> None:
-    """Initialise la configuration .codeatlas/config.yml du projet.
+    """Initialise la configuration .systemlens/config.yml du projet.
 
     L'analyse des sources Java/Spring est entièrement locale et fondée sur AST.
     """
@@ -854,10 +854,10 @@ def index_cmd(
 ) -> None:
     """Indexe le code avec les extracteurs AST (incrémental par défaut).
 
-    Exemples : `codeatlas index`, `codeatlas index --full`,
-    `codeatlas index --topic-strategy strategy1`,
-    `codeatlas index --manifest TOPICS.md`,
-    `codeatlas index --manifest kafka-flow-graph-anonymous.json`.
+    Exemples : `systemlens index`, `systemlens index --full`,
+    `systemlens index --topic-strategy strategy1`,
+    `systemlens index --manifest TOPICS.md`,
+    `systemlens index --manifest kafka-flow-graph-anonymous.json`.
     """
     repo_root = Path.cwd()
     _trace_index(
@@ -895,7 +895,7 @@ def index_cmd(
         f"+integrations={report.endpoints_added} -integrations={report.endpoints_removed}"
     )
     typer.echo(
-        "Prochaine étape : codeatlas export microservices --html architecture.html "
+        "Prochaine étape : systemlens export microservices --html architecture.html "
         "pour explorer le graphe."
     )
     _trace_index("cli.index.end")
@@ -904,7 +904,7 @@ def index_cmd(
 def _require_index(repo_root: Path) -> None:
     index_path = db_path(repo_root)
     if not index_path.is_file():
-        typer.echo("Index absent. Lancez d'abord: codeatlas index", err=True)
+        typer.echo("Index absent. Lancez d'abord: systemlens index", err=True)
         raise typer.Exit(code=2)
 
 
@@ -992,12 +992,12 @@ def _write_likec4_project(destination: Path, model: str) -> None:
     destination.mkdir(parents=True, exist_ok=True)
     config = {
         "$schema": "https://likec4.dev/schemas/config.json",
-        "name": "codeatlas-architecture",
-        "title": "CodeAtlas architecture",
+        "name": "systemlens-architecture",
+        "title": "SystemLens architecture",
         "implicitViews": True,
     }
     package = {
-        "name": "codeatlas-likec4-architecture",
+        "name": "systemlens-likec4-architecture",
         "private": True,
         "version": "0.0.0",
         "scripts": {
@@ -1011,7 +1011,7 @@ def _write_likec4_project(destination: Path, model: str) -> None:
     }
     readme = """# LikeC4 Architecture
 
-Generated by `codeatlas export microservices --c4`.
+Generated by `systemlens export microservices --c4`.
 
 ## Start the site
 
@@ -1067,9 +1067,9 @@ def export_microservices_cmd(
 ) -> None:
     """Exporter les dépendances microservices, topics Kafka et collections MongoDB.
 
-    Exemples : `codeatlas export microservices --html graph.html`,
-    `codeatlas export microservices --c4 architecture-likec4`,
-    `codeatlas export microservices --json`.
+    Exemples : `systemlens export microservices --html graph.html`,
+    `systemlens export microservices --c4 architecture-likec4`,
+    `systemlens export microservices --json`.
     """
     outputs = [output for output in (html, c4) if output is not None]
     if len(outputs) + int(json_output) != 1:
@@ -1136,14 +1136,14 @@ def export_modules_cmd(
 ) -> None:
     """Exporter les dépendances de build entre modules indexés.
 
-    Exemple : `codeatlas export modules --html modules.html`.
+    Exemple : `systemlens export modules --html modules.html`.
     """
     if html is None:
-        typer.echo("`codeatlas export modules` requiert --html FILE.", err=True)
+        typer.echo("`systemlens export modules` requiert --html FILE.", err=True)
         raise typer.Exit(code=2)
     repo_root = Path.cwd()
     if not db_path(repo_root).is_file():
-        typer.echo("Index absent : lancez d'abord `codeatlas index` dans ce répertoire.", err=True)
+        typer.echo("Index absent : lancez d'abord `systemlens index` dans ce répertoire.", err=True)
         raise typer.Exit(code=2)
     with Store(repo_root, readonly=True) as store:
         modules = store.all_modules()
@@ -1162,10 +1162,10 @@ def export_request_reply_cmd(
 ) -> None:
     """Exporter une vue dédiée des patterns Kafka request/reply Strategy1.
 
-    Exemple : `codeatlas export request-reply --html request-reply.html`.
+    Exemple : `systemlens export request-reply --html request-reply.html`.
     """
     if html is None:
-        typer.echo("`codeatlas export request-reply` requiert --html FILE.", err=True)
+        typer.echo("`systemlens export request-reply` requiert --html FILE.", err=True)
         raise typer.Exit(code=2)
     repo_root = Path.cwd()
     _require_index(repo_root)
@@ -1239,9 +1239,9 @@ def microservices_cmd(
 ) -> None:
     """Lister les microservices ou résumer un microservice.
 
-    Exemples : `codeatlas microservices`, `codeatlas microservices orders`,
-    `codeatlas microservices topics orders`, `codeatlas microservices apis orders`,
-    `codeatlas microservices mongodb orders`, `codeatlas microservices neighbors orders`.
+    Exemples : `systemlens microservices`, `systemlens microservices orders`,
+    `systemlens microservices topics orders`, `systemlens microservices apis orders`,
+    `systemlens microservices mongodb orders`, `systemlens microservices neighbors orders`.
     """
     arguments = arguments or []
     json_output = _option_json(json_output)
@@ -1306,7 +1306,7 @@ def microservices_cmd(
             _render_microservice_summary(argument, root, json_output)
             return
     if len(arguments) > 1:
-        typer.echo("Usage : `codeatlas microservices [--root <root>]` ou `codeatlas microservices <service> --root <root>`.", err=True)
+        typer.echo("Usage : `systemlens microservices [--root <root>]` ou `systemlens microservices <service> --root <root>`.", err=True)
         raise typer.Exit(code=2)
     _emit_architecture(
         list_architecture_objects(_microservice_catalog(root), "microservice"),
@@ -1436,8 +1436,8 @@ def _render_microservice_analysis(
 ) -> None:
     if query.casefold() in {"consumers", "consumer", "producers", "producer"}:
         typer.echo(
-            "Utilisez `codeatlas analyze topics consumers <topic>` ou "
-            "`codeatlas analyze topics producers <topic>`.",
+            "Utilisez `systemlens analyze topics consumers <topic>` ou "
+            "`systemlens analyze topics producers <topic>`.",
             err=True,
         )
         raise typer.Exit(code=2)
@@ -1445,7 +1445,7 @@ def _render_microservice_analysis(
     if result is None:
         typer.echo(
             "Analyse impossible : vérifiez la question et sa cible (calls/"
-            "external-apis/orphan-integrations/impact), ou utilisez `codeatlas analyze`.",
+            "external-apis/orphan-integrations/impact), ou utilisez `systemlens analyze`.",
             err=True,
         )
         raise typer.Exit(code=2)
@@ -1518,7 +1518,7 @@ def _render_microservice_mongodb(service: str, root: Path, json_output: bool) ->
 def _render_microservice_properties(service: str, root: Path, json_output: bool) -> None:
     """Affiche l'exemple YAML de propriétés Spring d'un microservice."""
     selected, _ = _selected_microservice(service, root)
-    from codeatlas.configuration import service_configuration_example
+    from systemlens.configuration import service_configuration_example
 
     properties = service_configuration_example(selected.path)
     result = {"name": selected.name, "properties_example": properties}
@@ -1561,13 +1561,13 @@ def modules_cmd(
 ) -> None:
     """Liste les modules indexés ou détaille l'un d'eux.
 
-    `codeatlas modules` liste. `codeatlas modules <module>` détaille. Les sous-commandes
+    `systemlens modules` liste. `systemlens modules <module>` détaille. Les sous-commandes
     `integrations`, `properties` et `openapi` prennent un module dans le
     répertoire courant déjà indexé. `graph` affiche les dépendances de build
-    entre modules. Utilisez `codeatlas export modules` pour générer le rendu HTML.
+    entre modules. Utilisez `systemlens export modules` pour générer le rendu HTML.
 
-    Exemples : `codeatlas modules`, `codeatlas modules order-service`,
-    `codeatlas modules integrations order-service`, `codeatlas modules graph`.
+    Exemples : `systemlens modules`, `systemlens modules order-service`,
+    `systemlens modules integrations order-service`, `systemlens modules graph`.
     """
     arguments = arguments or []
     commands = {"integrations", "properties", "openapi", "graph"}
@@ -1594,12 +1594,12 @@ def modules_cmd(
                 _render_openapi_contracts(selected.name, selected.path, json_output)
         return
     if len(arguments) > 1:
-        typer.echo("Usage : `codeatlas modules [module]` ou `codeatlas modules <integrations|properties|openapi> <module>` ou `codeatlas modules graph`.", err=True)
+        typer.echo("Usage : `systemlens modules [module]` ou `systemlens modules <integrations|properties|openapi> <module>` ou `systemlens modules graph`.", err=True)
         raise typer.Exit(code=2)
     module = arguments[0] if arguments else None
     repo_root = Path.cwd().resolve()
     if not db_path(repo_root).is_file():
-        typer.echo("Index absent : lancez d'abord `codeatlas index` dans ce répertoire.", err=True)
+        typer.echo("Index absent : lancez d'abord `systemlens index` dans ce répertoire.", err=True)
         raise typer.Exit(code=2)
     try:
         with Store(repo_root, readonly=True) as store:
@@ -1628,7 +1628,7 @@ def _render_module_graph(
     repo_root: Path, json_output: bool, html: Path | None
 ) -> None:
     if not db_path(repo_root).is_file():
-        typer.echo("Index absent : lancez d'abord `codeatlas index` dans ce répertoire.", err=True)
+        typer.echo("Index absent : lancez d'abord `systemlens index` dans ce répertoire.", err=True)
         raise typer.Exit(code=2)
     try:
         with Store(repo_root, readonly=True) as store:
@@ -1761,7 +1761,7 @@ def modules_graph(json_output: bool = typer.Option(False, "--json")) -> None:
 
 def _selected_indexed_module(name: str, repo_root: Path):
     if not db_path(repo_root).is_file():
-        typer.echo("Index absent : lancez d'abord `codeatlas index` dans ce répertoire.", err=True)
+        typer.echo("Index absent : lancez d'abord `systemlens index` dans ce répertoire.", err=True)
         raise typer.Exit(code=2)
     try:
         with Store(repo_root, readonly=True) as store:
@@ -1783,11 +1783,11 @@ def mcp_cmd() -> None:
 
     Enregistrement client (ex. Claude Code), à ajouter à la config MCP :
 
-    {"mcpServers": {"codeatlas": {"command": "codeatlas", "args": ["mcp"]}}}
+    {"mcpServers": {"systemlens": {"command": "systemlens", "args": ["mcp"]}}}
 
-    Exemple : `codeatlas mcp`.
+    Exemple : `systemlens mcp`.
     """
-    from codeatlas.mcp_server import mcp as fastmcp_app
+    from systemlens.mcp_server import mcp as fastmcp_app
 
     fastmcp_app.run()
 

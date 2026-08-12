@@ -1,5 +1,5 @@
 rules:
-  - id: codeatlas.liveness.java.new-resttemplate-no-timeout
+  - id: systemlens.liveness.java.new-resttemplate-no-timeout
     languages: [java]
     severity: WARNING
     message: >-
@@ -11,7 +11,7 @@ rules:
     patterns:
       - pattern: new RestTemplate()
 
-  - id: codeatlas.liveness.java.blocking-join-no-timeout
+  - id: systemlens.liveness.java.blocking-join-no-timeout
     languages: [java]
     severity: WARNING
     message: >-
@@ -22,7 +22,7 @@ rules:
     patterns:
       - pattern: $X.join()
 
-  - id: codeatlas.liveness.java.blocking-future-get-no-timeout
+  - id: systemlens.liveness.java.blocking-future-get-no-timeout
     languages: [java]
     severity: WARNING
     message: >-
@@ -42,7 +42,7 @@ rules:
                   ...
               - pattern: $F.get()
 
-  - id: codeatlas.liveness.java.rest-call-in-kafka-listener
+  - id: systemlens.liveness.java.rest-call-in-kafka-listener
     languages: [java]
     severity: ERROR
     message: >-
@@ -66,7 +66,7 @@ rules:
           - pattern: $REST.delete(...)
           - pattern: $REST.patchForObject(...)
 
-  - id: codeatlas.liveness.java.network-call-inside-synchronized
+  - id: systemlens.liveness.java.network-call-inside-synchronized
     languages: [java]
     severity: ERROR
     message: >-
@@ -86,7 +86,7 @@ rules:
           - pattern: $REST.postForEntity(...)
           - pattern: $REST.exchange(...)
 
-  - id: codeatlas.liveness.java.mongo-lock-busy-wait-poll
+  - id: systemlens.liveness.java.mongo-lock-busy-wait-poll
     languages: [java]
     severity: ERROR
     message: >-
@@ -114,7 +114,7 @@ rules:
           - pattern: $MONGO.findAndModify(...)
           - pattern: $COLLECTION.findOneAndUpdate(...)
 
-  - id: codeatlas.liveness.java.mongo-lock-inside-synchronized
+  - id: systemlens.liveness.java.mongo-lock-inside-synchronized
     languages: [java]
     severity: ERROR
     message: >-
