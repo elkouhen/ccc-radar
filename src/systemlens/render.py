@@ -951,23 +951,26 @@ def render_graph_html(
             if reply_topic.casefold().startswith("retour_")
             if (request_topic := reply_topic[len("retour_"):]) in known_topics
         ]
-    # Complexity is the number of direct, distinct clients/dependencies of a
-    # resource. Multiple HTTP routes from the same client service to the same
-    # target service are one client relation; Kafka and MongoDB keep their
-    # resource identity (service/topic or service/collection).
+    # Complexity is derived from the links exported to the browser, rather
+    # than from a parallel graph projection. A microservice score is exactly:
+    # inbound HTTP clients + outbound HTTP targets + Kafka relations + MongoDB
+    # relations. Routes between the same directed pair are deduplicated.
     complexity_relations = {
-        (f"{source_kind}:{source_name}", f"{target_kind}:{target_name}", kind)
-        for source_kind, source_name, target_kind, target_name, _label, kind in _visual_graph_edges(edges)
-    } | {
-        (f"{source_kind}:{source_name}", f"{target_kind}:{target_name}", kind)
-        for source_kind, source_name, target_kind, target_name, _label, kind in _mongodb_visual_graph_edges(
-            collections_by_service
-        )
+        (str(link["source"]), str(link["target"]), str(link["kind"]))
+        for link in links
+        if link["kind"] in {"rest", "kafka", "mongodb"}
     }
     relation_counts: dict[str, int] = {str(node["id"]): 0 for node in nodes}
-    for source, target, _kind in complexity_relations:
+    relation_breakdowns: dict[str, dict[str, int]] = {
+        str(node["id"]): {"http": 0, "kafka": 0, "mongodb": 0}
+        for node in nodes
+    }
+    for source, target, kind in complexity_relations:
         relation_counts[source] += 1
         relation_counts[target] += 1
+        bucket = "http" if kind == "rest" else kind
+        relation_breakdowns[source][bucket] += 1
+        relation_breakdowns[target][bucket] += 1
     complexity_levels_by_kind = {
         kind: _complexity_levels({
             str(node["id"]): relation_counts[str(node["id"])]
@@ -989,6 +992,7 @@ def render_graph_html(
             "score": score,
             "level": level,
             "relations": relation_counts[node_id],
+            "breakdown": relation_breakdowns[node_id],
         }
         node["color"] = {"low": "#2563eb", "medium": "#d97706", "high": "#dc2626"}[level]
         node["size"] = base_size + {"low": 0, "medium": 2, "high": 4}[level]
@@ -3401,6 +3405,8 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
         const scoreBadge = document.createElement("span");
         scoreBadge.className = `detail-badge complexity ${complexity.level}`;
         scoreBadge.textContent = `Connectivite : ${complexity.level} (${complexity.score})`;
+        const breakdown = complexity.breakdown || {};
+        scoreBadge.title = `HTTP : ${breakdown.http || 0} · Kafka : ${breakdown.kafka || 0} · MongoDB : ${breakdown.mongodb || 0}`;
         meta.append(scoreBadge);
       }
       header.append(kicker, title, meta);

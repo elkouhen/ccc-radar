@@ -80,7 +80,8 @@ and MongoDB dependencies, while low/medium/high tiers are calculated separately
 for each resource type. For a microservice, the count is its distinct direct
 HTTP clients and targets, Kafka producer/consumer topic relations, and MongoDB
 collection relations; multiple HTTP routes between the same client and target
-are counted once.
+are counted once. The HTML complexity badge exposes the HTTP, Kafka, and
+MongoDB breakdown as a tooltip.
 The Explore search accepts either one exact, unambiguous graph-node name or a
 Kafka itinerary written with `->`. An itinerary starts and ends with a
 microservice and follows only directed Kafka relations through Kafka topics;

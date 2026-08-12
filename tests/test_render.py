@@ -219,9 +219,19 @@ def test_graph_html_colours_topics_and_mongodb_collections_by_connectivity() -> 
 
     topic = nodes["kafka_topic:orders.created"]
     collection = nodes["mongodb_collection:orders:orders"]
-    assert topic["complexity"] == {"score": 2, "level": "low", "relations": 2}
+    assert topic["complexity"] == {
+        "score": 2,
+        "level": "low",
+        "relations": 2,
+        "breakdown": {"http": 0, "kafka": 2, "mongodb": 0},
+    }
     assert topic["color"] == "#2563eb"
-    assert collection["complexity"] == {"score": 1, "level": "low", "relations": 1}
+    assert collection["complexity"] == {
+        "score": 1,
+        "level": "low",
+        "relations": 1,
+        "breakdown": {"http": 0, "kafka": 0, "mongodb": 1},
+    }
     assert collection["color"] == "#2563eb"
 
 
@@ -246,4 +256,10 @@ def test_graph_html_microservice_complexity_counts_distinct_direct_clients() -> 
 
     # orders -> payments is one HTTP client relation despite two called routes.
     assert nodes["microservice:orders"]["complexity"]["score"] == 3
+    assert nodes["microservice:orders"]["complexity"]["breakdown"] == {
+        "http": 1, "kafka": 1, "mongodb": 1
+    }
     assert nodes["microservice:payments"]["complexity"]["score"] == 2
+    assert nodes["microservice:payments"]["complexity"]["breakdown"] == {
+        "http": 1, "kafka": 1, "mongodb": 0
+    }
