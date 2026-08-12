@@ -96,6 +96,15 @@ def test_html_export_resources_are_usable_in_a_constrained_browser_viewport(tmp_
         page.on("pageerror", lambda error: errors.append(str(error)))
         page.set_content(document, wait_until="load")
 
+        graph = page.locator("#graph")
+        assert graph.get_attribute("data-relation-count") == "3"
+        page.locator("#relation-http").uncheck()
+        assert graph.get_attribute("data-relation-count") == "2"
+        page.locator("#relation-kafka").uncheck()
+        assert graph.get_attribute("data-relation-count") == "0"
+        page.locator("#relation-http").check()
+        assert graph.get_attribute("data-relation-count") == "1"
+
         page.get_by_role("tab", name="Ressources").click()
         page.locator("#resources-panel").wait_for(state="visible")
         dto_filter = page.locator("#dto-reference-filter")

@@ -71,7 +71,9 @@ allows navigation through recursively referenced project DTO fields and enums.
 Its initial view foregrounds task-oriented entry points (Kafka topic, service
 dependencies, service-to-service path and Kafka messages). Relation/resource
 filters, graph layouts, specialized reference views and build dependencies are
-available as advanced controls.
+available as advanced controls. Changing a relation-type filter rebuilds and
+relayouts the graph from only the selected dependency types; excluded relations
+do not influence the resulting graph layout.
 The Explore search accepts either one exact, unambiguous graph-node name or a
 Kafka itinerary written with `->`. An itinerary starts and ends with a
 microservice and follows only directed Kafka relations through Kafka topics;

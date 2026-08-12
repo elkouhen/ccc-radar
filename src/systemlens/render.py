@@ -1874,44 +1874,6 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
       item.textContent = `${summaryCounts.requestReplies} pattern${summaryCounts.requestReplies > 1 ? "s" : ""} request/reply`;
       graphSummary.append(item);
     }
-    const layoutNodes = graphData.nodes.map((node, index) => {
-      const angle = (Math.PI * 2 * index) / Math.max(1, graphData.nodes.length);
-      return { ...node, x: Math.cos(angle), y: Math.sin(angle), vx: 0, vy: 0 };
-    });
-    const layoutById = new Map(layoutNodes.map(node => [node.id, node]));
-
-    // A deterministic spring layout keeps connected services and topics close
-    // before Sigma uploads the resulting graph to WebGL.
-    for (let iteration = 0; iteration < 720; iteration += 1) {
-      const cooling = .14 * (1 - iteration / 720) + .015;
-      for (let i = 0; i < layoutNodes.length; i += 1) {
-        for (let j = i + 1; j < layoutNodes.length; j += 1) {
-          const a = layoutNodes[i], b = layoutNodes[j];
-          const dx = b.x - a.x || (i < j ? .001 : -.001);
-          const dy = b.y - a.y || .001;
-          const distance2 = dx * dx + dy * dy + .012;
-          const strength = 1.25 / distance2;
-          a.vx -= dx * strength; a.vy -= dy * strength;
-          b.vx += dx * strength; b.vy += dy * strength;
-        }
-      }
-      graphData.links.forEach(link => {
-        const source = layoutById.get(link.source), target = layoutById.get(link.target);
-        if (!source || !target) return;
-        const dx = target.x - source.x, dy = target.y - source.y;
-        const distance = Math.hypot(dx, dy) || .001;
-        const desired = ["kafka", "request_reply"].includes(link.kind) ? 1.05 : link.kind === "mongodb" ? .68 : .82;
-        const pull = (distance - desired) * .035;
-        const ux = dx / distance, uy = dy / distance;
-        source.vx += ux * pull; source.vy += uy * pull;
-        target.vx -= ux * pull; target.vy -= uy * pull;
-      });
-      layoutNodes.forEach(node => {
-        node.vx += -node.x * .008; node.vy += -node.y * .008;
-        node.x += node.vx * cooling; node.y += node.vy * cooling;
-        node.vx *= .72; node.vy *= .72;
-      });
-    }
     const RELATION_COLORS = Object.freeze({
       http: "#D55E00",
       kafkaPublish: "#009E73",
@@ -1990,26 +1952,9 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
       });
       return positions;
     }
-    const network = new graphology.MultiDirectedGraph();
-    layoutNodes.forEach(node => network.addNode(node.id, {
-      label: node.label,
-      x: node.x,
-      y: node.y,
-      size: node.size,
-      color: node.color,
-      type: node.external ? "external_microservice" : node.kind,
-    }));
-    graphData.links.forEach((link, index) => network.addEdgeWithKey(`edge-${index}`, link.source, link.target, {
-      label: link.label,
-      size: 1.2,
-      color: relationColor(link),
-      kind: link.kind,
-      type: "arrow",
-    }));
-    const initialNodePositions = new Map();
-    network.forEachNode((node, attributes) => {
-      initialNodePositions.set(node, { x: attributes.x, y: attributes.y });
-    });
+    let network;
+    let renderer;
+    let initialNodePositions = new Map();
     const layoutLibraries = Promise.all([
       import("https://esm.sh/graphology-layout-forceatlas2@0.10.1"),
       import("https://esm.sh/graphology-layout-noverlap@0.4.2"),
@@ -2198,35 +2143,91 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
         }
       };
     }
-    const renderer = new Sigma(network, document.getElementById("graph"), {
-      nodeProgramClasses: {
-        microservice: createNodeProgram(MICROSERVICE_FRAGMENT_SHADER),
-        external_microservice: createNodeProgram(EXTERNAL_MICROSERVICE_FRAGMENT_SHADER),
-        kafka_topic: createNodeProgram(KAFKA_TOPIC_FRAGMENT_SHADER),
-        mongodb_collection: createNodeProgram(MONGODB_COLLECTION_FRAGMENT_SHADER),
-      },
-      renderEdgeLabels: false,
-      labelDensity: .08,
-      labelGridCellSize: 110,
-      labelRenderedSizeThreshold: 8,
-      nodeReducer: (node, data) => {
-        if (!isVisibleNodeId(node)) return { ...data, hidden: true, label: "" };
-        if (!selectedId || relatedNodes.has(node)) {
-          const order = pathMicroserviceOrder.get(node);
-          return order ? { ...data, label: `${order}. ${data.label}` } : data;
+    function layoutGraphNodes(nodes, links) {
+      const layoutNodes = nodes.map((node, index) => {
+        const angle = (Math.PI * 2 * index) / Math.max(1, nodes.length);
+        return { ...node, x: Math.cos(angle), y: Math.sin(angle), vx: 0, vy: 0 };
+      });
+      const layoutById = new Map(layoutNodes.map(node => [node.id, node]));
+      // The layout is deliberately recomputed from the visible dependencies.
+      // This prevents hidden relation types from influencing node positions.
+      for (let iteration = 0; iteration < 720; iteration += 1) {
+        const cooling = .14 * (1 - iteration / 720) + .015;
+        for (let i = 0; i < layoutNodes.length; i += 1) {
+          for (let j = i + 1; j < layoutNodes.length; j += 1) {
+            const a = layoutNodes[i], b = layoutNodes[j];
+            const dx = b.x - a.x || (i < j ? .001 : -.001);
+            const dy = b.y - a.y || .001;
+            const distance2 = dx * dx + dy * dy + .012;
+            const strength = 1.25 / distance2;
+            a.vx -= dx * strength; a.vy -= dy * strength;
+            b.vx += dx * strength; b.vy += dy * strength;
+          }
         }
-        return { ...data, color: "#d8e0ea", label: "" };
-      },
-      edgeReducer: (edge, data) => {
-        if (
-          !isVisibleRelation(data.kind)
-          || !isVisibleNodeId(network.source(edge))
-          || !isVisibleNodeId(network.target(edge))
-        ) return { ...data, hidden: true };
-        if (!selectedId || relatedEdges.has(edge)) return data;
-        return { ...data, color: "#e5eaf0", size: .35 };
-      },
-    });
+        links.forEach(link => {
+          const source = layoutById.get(link.source), target = layoutById.get(link.target);
+          if (!source || !target) return;
+          const dx = target.x - source.x, dy = target.y - source.y;
+          const distance = Math.hypot(dx, dy) || .001;
+          const desired = ["kafka", "request_reply"].includes(link.kind) ? 1.05 : link.kind === "mongodb" ? .68 : .82;
+          const pull = (distance - desired) * .035;
+          const ux = dx / distance, uy = dy / distance;
+          source.vx += ux * pull; source.vy += uy * pull;
+          target.vx -= ux * pull; target.vy -= uy * pull;
+        });
+        layoutNodes.forEach(node => {
+          node.vx += -node.x * .008; node.vy += -node.y * .008;
+          node.x += node.vx * cooling; node.y += node.vy * cooling;
+          node.vx *= .72; node.vy *= .72;
+        });
+      }
+      return layoutNodes;
+    }
+    function rebuildGraph() {
+      const visibleLinks = graphData.links.filter(link => isVisibleRelation(link.kind));
+      const visibleNodeIds = new Set(visibleLinks.flatMap(link => [link.source, link.target]));
+      const visibleNodes = graphData.nodes.filter(node => visibleNodeIds.has(node.id));
+      const layoutNodes = layoutGraphNodes(visibleNodes, visibleLinks);
+      renderer?.kill();
+      network = new graphology.MultiDirectedGraph();
+      layoutNodes.forEach(node => network.addNode(node.id, {
+        label: node.label, x: node.x, y: node.y, size: node.size, color: node.color,
+        type: node.external ? "external_microservice" : node.kind,
+      }));
+      visibleLinks.forEach((link, index) => network.addEdgeWithKey(`edge-${index}`, link.source, link.target, {
+        label: link.label, size: 1.2, color: relationColor(link), kind: link.kind, type: "arrow",
+      }));
+      initialNodePositions = new Map();
+      network.forEachNode((node, attributes) => initialNodePositions.set(node, { x: attributes.x, y: attributes.y }));
+      renderer = new Sigma(network, document.getElementById("graph"), {
+        nodeProgramClasses: {
+          microservice: createNodeProgram(MICROSERVICE_FRAGMENT_SHADER),
+          external_microservice: createNodeProgram(EXTERNAL_MICROSERVICE_FRAGMENT_SHADER),
+          kafka_topic: createNodeProgram(KAFKA_TOPIC_FRAGMENT_SHADER),
+          mongodb_collection: createNodeProgram(MONGODB_COLLECTION_FRAGMENT_SHADER),
+        },
+        renderEdgeLabels: false, labelDensity: .08, labelGridCellSize: 110, labelRenderedSizeThreshold: 8,
+        nodeReducer: (node, data) => {
+          if (!isVisibleNodeId(node)) return { ...data, hidden: true, label: "" };
+          if (!selectedId || relatedNodes.has(node)) {
+            const order = pathMicroserviceOrder.get(node);
+            return order ? { ...data, label: `${order}. ${data.label}` } : data;
+          }
+          return { ...data, color: "#d8e0ea", label: "" };
+        },
+        edgeReducer: (edge, data) => {
+          if (!isVisibleNodeId(network.source(edge)) || !isVisibleNodeId(network.target(edge))) return { ...data, hidden: true };
+          if (!selectedId || relatedEdges.has(edge)) return data;
+          return { ...data, color: "#e5eaf0", size: .35 };
+        },
+      });
+      renderer.on("clickNode", ({ node }) => selectNode(node));
+      renderer.on("clickStage", reset);
+      const graphCanvas = document.getElementById("graph");
+      graphCanvas.dataset.relationCount = String(visibleLinks.length);
+      graphCanvas.setAttribute("aria-label", `Graphe des interactions : ${visibleLinks.length} relations`);
+    }
+    rebuildGraph();
     let dependencyRenderer = null;
     const details = document.getElementById("details");
     const search = document.getElementById("search");
@@ -2463,6 +2464,7 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
     function applyRelationPreset(preset) {
       if (preset === "selection") {
         setRelationFilters(true, true, true);
+        rebuildGraph();
         if (!selectedId) {
           layoutStatus.textContent = "Selectionnez d'abord un noeud pour isoler ses relations.";
           setActiveRelationPreset("all");
@@ -2490,6 +2492,7 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
       if (!selected) return;
       setRelationFilters(...selected);
       setActiveRelationPreset(preset);
+      rebuildGraph();
       reset();
     }
     function renderIndexingIssues() {
@@ -3554,8 +3557,6 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
       const selectedIdFromUrl = params.get("selected");
       if (selectedIdFromUrl && nodeDataById.has(selectedIdFromUrl)) selectNode(selectedIdFromUrl);
     }
-    renderer.on("clickNode", ({ node }) => selectNode(node));
-    renderer.on("clickStage", reset);
     function activeRenderer() {
       return dependencyCanvas.hidden ? renderer : ensureDependencyRenderer();
     }
@@ -3606,6 +3607,7 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
       nodeMongodbCollection,
     ].forEach(control => control.addEventListener("change", () => {
       setActiveRelationPreset(null);
+      if ([relationHttp, relationKafka, relationMongodb].includes(control)) rebuildGraph();
       reset();
       dependencyRenderer?.refresh();
     }));

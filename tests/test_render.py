@@ -130,6 +130,10 @@ enum PaymentStatus { AUTHORIZED, DECLINED }
     assert 'appendRelationList("APIs consommees"' in document
     assert 'appendServiceKafkaActivities(node, "produce", "Topics publies"' in document
     assert 'appendList("Stockee par", [node.owner], relationsGroup)' in document
+    assert "function rebuildGraph()" in document
+    assert "const visibleLinks = graphData.links.filter(link => isVisibleRelation(link.kind));" in document
+    assert "const visibleNodes = graphData.nodes.filter(node => visibleNodeIds.has(node.id));" in document
+    assert "const layoutNodes = layoutGraphNodes(visibleNodes, visibleLinks);" in document
 
 
 def test_graph_html_distinguishes_dtos_with_the_same_simple_name_by_package(tmp_path: Path) -> None:
