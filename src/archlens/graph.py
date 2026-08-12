@@ -7,7 +7,7 @@ import re
 import sys
 import time
 
-from ccc_radar.models import MessageEndpoint
+from archlens.models import MessageEndpoint
 
 
 @dataclass(frozen=True)
@@ -48,11 +48,11 @@ def graph_edge_rest_resource(edge: GraphEdge) -> str:
 
 
 def _trace(stage: str, **fields: object) -> None:
-    if os.environ.get("CCCR_TRACE") != "1":
+    if os.environ.get("ARCHLENS_TRACE") != "1":
         return
     details = " ".join(f"{name}={value}" for name, value in fields.items())
     print(
-        f"CCCR_TRACE ts={time.monotonic():.6f} stage={stage} {details}".rstrip(),
+        f"ARCHLENS_TRACE ts={time.monotonic():.6f} stage={stage} {details}".rstrip(),
         file=sys.stderr,
         flush=True,
     )
@@ -107,9 +107,9 @@ def _segment_matches(call_segment: str, serve_segment: str) -> bool:
 _SERVICE_URL_GETTER_RE = re.compile(r"\.get([A-Z][A-Za-z0-9]*)ServiceUrl\(")
 _SERVICE_URL_HOST_RE = re.compile(r"https?://([a-z0-9](?:[a-z0-9-]*[a-z0-9])?)\b", re.IGNORECASE)
 _LOAD_BALANCED_URI_RE = re.compile(r"lb://([a-z0-9](?:[a-z0-9-]*[a-z0-9])?)\b", re.IGNORECASE)
-_CONFIGURED_API_DOMAIN_RE = re.compile(r"\bcccr-api-domain:([a-z0-9][a-z0-9-]*)\b", re.IGNORECASE)
+_CONFIGURED_API_DOMAIN_RE = re.compile(r"\barchlens-api-domain:([a-z0-9][a-z0-9-]*)\b", re.IGNORECASE)
 _EXTERNAL_MICROSERVICE_RE = re.compile(
-    r"\bcccr-external-microservice:([a-z0-9][a-z0-9-]*)\b", re.IGNORECASE
+    r"\barchlens-external-microservice:([a-z0-9][a-z0-9-]*)\b", re.IGNORECASE
 )
 
 
@@ -118,7 +118,7 @@ def _camel_to_kebab(name: str) -> str:
 
 
 def configured_api_client_domain(endpoint: MessageEndpoint) -> str | None:
-    """Domaine ``cccr-api-domain:`` tamponné sur un endpoint, normalisé en minuscules.
+    """Domaine ``archlens-api-domain:`` tamponné sur un endpoint, normalisé en minuscules.
 
     Preuve injectée par le scanner pour les clients créés via
     ``createInternalClientApi`` : la route HTTP n'est pas au site d'appel, mais
@@ -145,10 +145,13 @@ def external_microservice_names(edges: list[GraphEdge]) -> set[str]:
     }
 
 
-def _rest_target_service_hint(call: MessageEndpoint) -> str | None:
-    getter_match = _SERVICE_URL_GETTER_RE.search(call.snippet)
-    if getter_match is not None:
-        return f"{_camel_to_kebab(getter_match.group(1))}-service"
+def _rest_target_service_hint(
+    call: MessageEndpoint, *, strategy1: bool = False
+) -> str | None:
+    if strategy1:
+        getter_match = _SERVICE_URL_GETTER_RE.search(call.snippet)
+        if getter_match is not None:
+            return f"{_camel_to_kebab(getter_match.group(1))}-service"
     host_match = _SERVICE_URL_HOST_RE.search(call.snippet)
     if host_match is not None:
         return host_match.group(1).lower()
@@ -180,7 +183,7 @@ def _resolved_configured_api_call(
     """Projette un client d'API typé sur une ressource de son hôte.
 
     Cette résolution est délibérément réservée aux appels portant l'évidence
-    `cccr-api-domain:` : un appel HTTP dynamique ordinaire ne doit jamais être
+    `archlens-api-domain:` : un appel HTTP dynamique ordinaire ne doit jamais être
     relié aveuglément à toutes les routes d'un service.
     """
     if (
@@ -229,12 +232,16 @@ def paths_match(call_topic: str, serve_topic: str) -> bool:
     return False
 
 
-def build_graph(endpoints_by_service: dict[str, list[MessageEndpoint]]) -> list[GraphEdge]:
+def build_graph(
+    endpoints_by_service: dict[str, list[MessageEndpoint]], *, strategy1: bool = False
+) -> list[GraphEdge]:
     """Construit les arêtes REST et Kafka entre services distincts.
 
     Une arête REST associe un appel à une route exposée compatible. Lorsqu'une
-    cible de service est présente dans le site d'appel (URL de service,
-    ``lb://`` ou getter de configuration), elle restreint cet appariement.
+    cible de service est présente dans le site d'appel (URL de service ou
+    ``lb://``), elle restreint cet appariement. Le getter de configuration
+    ``getXxxServiceUrl()`` est une convention Strategy1 et n'est considéré que
+    lorsque ``strategy1=True``.
     Pas d'auto-arête : un service qui s'appelle lui-même n'entre pas dans le
     graphe inter-services.
 
@@ -268,7 +275,7 @@ def build_graph(endpoints_by_service: dict[str, list[MessageEndpoint]]) -> list[
     seen: set[tuple[str, str, str, str, str]] = set()
     gateway_proxy_targets: set[tuple[str, str]] = set()
     for call_service, call in calls:
-        target_hint = _rest_target_service_hint(call)
+        target_hint = _rest_target_service_hint(call, strategy1=strategy1)
         for serve_service, serve in serves:
             if call_service == serve_service:
                 continue

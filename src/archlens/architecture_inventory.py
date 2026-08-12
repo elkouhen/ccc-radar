@@ -9,13 +9,13 @@ slightly different view of modules, endpoints and warnings.
 from dataclasses import dataclass
 from pathlib import Path
 
-from ccc_radar.graph import group_endpoints_by_module
-from ccc_radar.inventory_freshness import endpoint_inventory_warning
-from ccc_radar.models import Finding, MessageEndpoint
-from ccc_radar.modules import DiscoveredModule, ModuleDependency
-from ccc_radar.paths import db_path
-from ccc_radar.store import Store
-from ccc_radar.workspace import (
+from archlens.graph import group_endpoints_by_module
+from archlens.inventory_freshness import endpoint_inventory_warning
+from archlens.models import Finding, MessageEndpoint
+from archlens.modules import DiscoveredModule, ModuleDependency
+from archlens.paths import db_path
+from archlens.store import Store
+from archlens.workspace import (
     dependency_federation_warning,
     discover_workspace_services,
     load_federation,
@@ -40,6 +40,7 @@ class ArchitectureInventory:
     module_dependencies: list[ModuleDependency]
     warnings: list[str]
     source_roots: list[Path]
+    strategy1: bool
 
 def load_architecture_inventory(
     repo_root: Path,
@@ -95,10 +96,11 @@ def load_architecture_inventory(
             module_dependencies=federation.module_dependencies,
             warnings=warnings,
             source_roots=[workspace_root, *(service.path.resolve() for service in services)],
+            strategy1=False,
         )
 
     if not db_path(repo_root).is_file():
-        raise ArchitectureInventoryError("Index absent. Lancez d'abord: cccr index")
+        raise ArchitectureInventoryError("Index absent. Lancez d'abord: archlens index")
     with Store(repo_root, readonly=True) as store:
         endpoints = store.all_endpoints()
         findings = store.all_findings()
@@ -109,6 +111,7 @@ def load_architecture_inventory(
             scope="ce projet",
             inventory_indexed=store.get_meta("endpoint_inventory_indexed") == "1",
         )
+        strategy1 = store.get_meta("topic_strategy") == "strategy1"
     endpoints_by_module = group_endpoints_by_module(endpoints)
     endpoints_by_service = dict(endpoints_by_module)
     modules_by_service = {
@@ -134,4 +137,5 @@ def load_architecture_inventory(
         module_dependencies=dependencies,
         warnings=[warning] if warning else [],
         source_roots=[repo_root],
+        strategy1=strategy1,
     )

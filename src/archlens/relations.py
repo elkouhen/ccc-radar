@@ -3,8 +3,8 @@
 import re
 from typing import TypedDict
 
-from ccc_radar.models import ArchitectureRelation, MessageEndpoint, compute_architecture_relation_id
-from ccc_radar.modules import DiscoveredModule, ModuleDependency
+from archlens.models import ArchitectureRelation, MessageEndpoint, compute_architecture_relation_id
+from archlens.modules import DiscoveredModule, ModuleDependency
 
 
 class _RelationEvidence(TypedDict):

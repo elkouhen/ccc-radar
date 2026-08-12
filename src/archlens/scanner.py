@@ -10,24 +10,24 @@ from urllib.parse import urlsplit
 
 import yaml
 
-from ccc_radar import gradle as gradle_module
-from ccc_radar import java_parser
-from ccc_radar import maven as maven_module
-from ccc_radar.gradle import gradle_service_for_path
-from ccc_radar.maven import module_name_for_path
-from ccc_radar.modules import discover_rest_controllers, maven_module_dependencies
-from ccc_radar.models import MessageEndpoint, compute_endpoint_id
-from ccc_radar.topic_expressions import spring_topic_reference
+from archlens import gradle as gradle_module
+from archlens import java_parser
+from archlens import maven as maven_module
+from archlens.gradle import gradle_service_for_path
+from archlens.maven import module_name_for_path
+from archlens.modules import discover_rest_controllers, maven_module_dependencies
+from archlens.models import MessageEndpoint, compute_endpoint_id
+from archlens.topic_expressions import spring_topic_reference
 
 SEVERITY_ORDER = ["INFO", "WARNING", "ERROR"]
 
 def _trace(stage: str, **fields: object) -> None:
-    """Émet des traces opt-in de l'inventaire REST (`CCCR_TRACE=1`)."""
-    if os.environ.get("CCCR_TRACE") != "1":
+    """Émet des traces opt-in de l'inventaire REST (`ARCHLENS_TRACE=1`)."""
+    if os.environ.get("ARCHLENS_TRACE") != "1":
         return
     details = " ".join(f"{name}={value}" for name, value in fields.items())
     print(
-        f"CCCR_TRACE ts={time.monotonic():.6f} stage={stage} {details}".rstrip(),
+        f"ARCHLENS_TRACE ts={time.monotonic():.6f} stage={stage} {details}".rstrip(),
         file=sys.stderr,
         flush=True,
     )
@@ -36,14 +36,14 @@ def _trace(stage: str, **fields: object) -> None:
 def _trace_rest_client(stage: str, **fields: object) -> None:
     """Trace exhaustive de la recherche de clients API.
 
-    Activée séparément avec `CCCR_TRACE_REST_CLIENTS=1`, afin d'éviter le
-    volume des fichiers Java parcourus dans la trace générale `CCCR_TRACE`.
+    Activée séparément avec `ARCHLENS_TRACE_REST_CLIENTS=1`, afin d'éviter le
+    volume des fichiers Java parcourus dans la trace générale `ARCHLENS_TRACE`.
     """
-    if os.environ.get("CCCR_TRACE_REST_CLIENTS") != "1":
+    if os.environ.get("ARCHLENS_TRACE_REST_CLIENTS") != "1":
         return
     details = " ".join(f"{name}={value}" for name, value in fields.items())
     print(
-        f"CCCR_TRACE_REST_CLIENTS ts={time.monotonic():.6f} stage={stage} {details}".rstrip(),
+        f"ARCHLENS_TRACE_REST_CLIENTS ts={time.monotonic():.6f} stage={stage} {details}".rstrip(),
         file=sys.stderr,
         flush=True,
     )
@@ -1326,7 +1326,7 @@ def _infer_strategy1_declared_openapi_publications(
                     end_line=1,
                     snippet=(
                         f"Publication OpenAPI declaree par {declaration_rel_path}\n"
-                        f"cccr-openapi-contract:{contract_rel_path}\n"
+                        f"archlens-openapi-contract:{contract_rel_path}\n"
                         f"{contract_endpoint.snippet}"
                     ),
                     module=publisher_module,
@@ -1568,7 +1568,7 @@ def _infer_configured_api_client_endpoints(
                 "rest",
                 "ANY <dynamic>",
                 "configured-api-client-configuration",
-                f"{configuration}\ncccr-api-domain:{domain}",
+                f"{configuration}\narchlens-api-domain:{domain}",
                 topic_dynamic=True,
             )
             endpoints[endpoint.id] = endpoint
@@ -1588,7 +1588,7 @@ def _infer_configured_api_client_endpoints(
                 "rest",
                 "ANY <dynamic>",
                 "configured-external-rest-api-properties",
-                f"{configuration}\ncccr-external-microservice:{service}",
+                f"{configuration}\narchlens-external-microservice:{service}",
                 topic_dynamic=True,
             )
             endpoints[endpoint.id] = endpoint
@@ -2297,6 +2297,7 @@ _STRATEGY1_PRODUCER_RE = re.compile(r"\bgetTopics\s*\(\s*\)\s*\.\s*get([A-Z]\w*)
 _STRATEGY1_KAFKA_KEY_RE = re.compile(
     r"\$\{\s*kafka\.topics\.([A-Za-z_]\w*)\.[^}:]+(?:\s*:[^}]*)?\s*\}"
 )
+_STRATEGY1_SEND_METHOD_PREFIX = "envoyerMessageKafka"
 
 
 def _strategy1_topic_name(value: str) -> str:
@@ -2337,8 +2338,10 @@ def infer_kafka_topic_strategy1_endpoints(
 ) -> list[MessageEndpoint]:
     """Infer logical Kafka topics from project conventions selected by strategy1.
 
-    Producers use `getTopics().getXxx()` or `envoyerMessageKafka(topic, payload)`
-    and listeners use a Spring key shaped as `kafka.topics.xxx.<property>`.
+    Producers use `getTopics().getXxx()` or an `envoyerMessageKafka` method
+    family call (`envoyerMessageKafka(topic, payload)`,
+    `envoyerMessageKafkaRequest(...)`, `envoyerMessageKafkaReply(...)`, etc.).
+    Listeners use a Spring key shaped as `kafka.topics.xxx.<property>`.
     Accessor and property conventions are normalized to the physical Kafka
     name in `SCREAMING_SNAKE_CASE`.
     """
@@ -2392,7 +2395,11 @@ def infer_kafka_topic_strategy1_endpoints(
             if node.type != "method_invocation":
                 continue
             _object_node, method_name, args = java_parser.invocation_parts(node, source_bytes)
-            if method_name != "envoyerMessageKafka" or len(args) < 2:
+            if (
+                method_name is None
+                or not method_name.startswith(_STRATEGY1_SEND_METHOD_PREFIX)
+                or len(args) < 2
+            ):
                 continue
             topic, dynamic = _strategy1_topic_from_value(args[0], source_bytes, repo_root, rel_path)
             endpoint = _kafka_endpoint(

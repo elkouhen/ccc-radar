@@ -7,17 +7,17 @@ from pathlib import Path
 
 from typer.testing import CliRunner
 
-from ccc_radar.cli import app
-from ccc_radar.config import Config
-from ccc_radar.flow import group_endpoints_by_module_for_flow, trace_flow
-from ccc_radar.graph import build_graph
-from ccc_radar.indexer import index_repo
-from ccc_radar.scanner import (
+from archlens.cli import app
+from archlens.config import Config
+from archlens.flow import group_endpoints_by_module_for_flow, trace_flow
+from archlens.graph import build_graph
+from archlens.indexer import index_repo
+from archlens.scanner import (
     infer_framework_endpoints,
     infer_kafka_endpoints,
     infer_kafka_topic_strategy1_endpoints,
 )
-from ccc_radar.store import Store
+from archlens.store import Store
 
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -30,7 +30,7 @@ def test_init_writes_ast_only_configuration(tmp_path: Path, monkeypatch) -> None
     result = RUNNER.invoke(app, ["init"])
 
     assert result.exit_code == 0
-    content = (tmp_path / ".cccr" / "config.yml").read_text()
+    content = (tmp_path / ".archlens" / "config.yml").read_text()
     assert "include:" in content
     assert "rules:" not in content
     assert "embedding_model:" not in content
@@ -46,7 +46,7 @@ def test_ast_extractors_find_rest_and_kafka_facts() -> None:
     assert any(endpoint.role == "consume" and endpoint.message_type for endpoint in kafka)
 
 
-def test_strategy1_recognizes_envoyer_message_kafka_as_a_producer(tmp_path: Path) -> None:
+def test_strategy1_recognizes_envoyer_message_kafka_method_family_as_producers(tmp_path: Path) -> None:
     source = tmp_path / "src" / "main" / "java" / "com" / "example" / "Publisher.java"
     source.parent.mkdir(parents=True)
     source.write_text(
@@ -55,9 +55,15 @@ class Publisher {
   void publish() {
     OrderCreated event = new OrderCreated("42");
     kafkaService.envoyerMessageKafka(kafkaProperties.getTopics().getOrdersCreated(), event);
+    RequestCreated request = new RequestCreated("43");
+    kafkaService.envoyerMessageKafkaRequest(kafkaProperties.getTopics().getRequestsCreated(), request);
+    ReplyCreated reply = new ReplyCreated("44");
+    kafkaService.envoyerMessageKafkaReply(kafkaProperties.getTopics().getRepliesCreated(), reply);
   }
 }
 record OrderCreated(String orderId) {}
+record RequestCreated(String requestId) {}
+record ReplyCreated(String replyId) {}
 """,
         encoding="utf-8",
     )
@@ -66,8 +72,13 @@ record OrderCreated(String orderId) {}
         tmp_path, ["src/main/java/com/example/Publisher.java"]
     )
 
-    assert [(endpoint.role, endpoint.topic, endpoint.message_type, endpoint.framework) for endpoint in endpoints] == [
-        ("produce", "ORDERS_CREATED", "OrderCreated", "kafka-topic-strategy1")
+    assert sorted(
+        (endpoint.role, endpoint.topic, endpoint.message_type, endpoint.framework)
+        for endpoint in endpoints
+    ) == [
+        ("produce", "ORDERS_CREATED", "OrderCreated", "kafka-topic-strategy1"),
+        ("produce", "REPLIES_CREATED", "ReplyCreated", "kafka-topic-strategy1"),
+        ("produce", "REQUESTS_CREATED", "RequestCreated", "kafka-topic-strategy1"),
     ]
 
 
@@ -95,7 +106,7 @@ def test_cli_index_does_not_require_an_embedding_model(tmp_path: Path, monkeypat
 
     assert result.exit_code == 0
     assert "+integrations=2" in result.output
-    assert "cccr export microservices --html architecture.html" in result.output
+    assert "archlens export microservices --html architecture.html" in result.output
 
 
 def test_cli_indexing_issues_emits_ai_ready_json(tmp_path: Path, monkeypatch) -> None:

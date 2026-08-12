@@ -1,5 +1,5 @@
 rules:
-  - id: cccr.kafka.java.consume
+  - id: archlens.kafka.java.consume
     languages: [java]
     severity: INFO
     message: Consommation Kafka (@KafkaListener).
@@ -13,7 +13,7 @@ rules:
           @KafkaListener(...)
           $RET $METHOD(...) { ... }
 
-  - id: cccr.kafka.java.produce-template
+  - id: archlens.kafka.java.produce-template
     languages: [java]
     severity: INFO
     message: Production Kafka (KafkaTemplate).
@@ -29,7 +29,7 @@ rules:
           - pattern: $KAFKA.send($TOPIC, $VAL, ...)
           - pattern: $KAFKA.sendDefault(...)  # topic implicite (config du template), toujours dynamique
 
-  - id: cccr.kafka.java.produce-record
+  - id: archlens.kafka.java.produce-record
     languages: [java]
     severity: INFO
     message: Production Kafka (ProducerRecord).
@@ -48,7 +48,7 @@ rules:
   # usuelles pour éviter tout faux positif avec un .subscribe(...) non-Kafka
   # (RxJava/Reactor prennent un lambda/Observer, jamais une Collection<String>
   # construite par ces trois helpers).
-  - id: cccr.kafka.java.consume-raw
+  - id: archlens.kafka.java.consume-raw
     languages: [java]
     severity: INFO
     message: Consommation Kafka (API bas niveau, KafkaConsumer.subscribe).
@@ -71,7 +71,7 @@ rules:
   # `$X.stream($TOPIC)` collisionnerait avec `Arrays.stream(x)`/
   # `Collection.stream()`, même logique que consume-raw ci-dessus (restreint
   # pour éviter les faux positifs RxJava/Reactor).
-  - id: cccr.kafka.java.streams-consume
+  - id: archlens.kafka.java.streams-consume
     languages: [java]
     severity: INFO
     message: Consommation Kafka (Kafka Streams, StreamsBuilder.stream).
@@ -92,7 +92,7 @@ rules:
   # dans les exemples réels) — un `.to(...)` isolé sans l'un de ces deux
   # marqueurs n'est volontairement pas capté (collision possible avec
   # Reactor `Mono/Flux.to(...)`, des mappers `.to(Class)`, etc.).
-  - id: cccr.kafka.java.streams-produce
+  - id: archlens.kafka.java.streams-produce
     languages: [java]
     severity: INFO
     message: Production Kafka (Kafka Streams, KStream.to).

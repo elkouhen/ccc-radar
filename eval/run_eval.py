@@ -6,11 +6,11 @@ from pathlib import Path
 
 import yaml
 
-from ccc_radar.config import Config
-from ccc_radar.embedder import Embedder
-from ccc_radar.indexer import index_repo
-from ccc_radar.search import search_findings
-from ccc_radar.store import Store
+from archlens.config import Config
+from archlens.embedder import Embedder
+from archlens.indexer import index_repo
+from archlens.search import search_findings
+from archlens.store import Store
 
 FIXTURE_REPO = Path(__file__).resolve().parent.parent / "tests" / "fixtures" / "vuln_repo"
 QUERIES_PATH = Path(__file__).resolve().parent / "queries.yml"
@@ -29,7 +29,7 @@ def main() -> int:
     queries = load_queries()
 
     rows = []
-    # copie temporaire : ne jamais laisser de .cccr/findings.db dans le fixture committée
+    # copie temporaire : ne jamais laisser de .archlens/findings.db dans le fixture committée
     with tempfile.TemporaryDirectory() as tmp_dir:
         repo_root = Path(tmp_dir) / "vuln_repo"
         shutil.copytree(FIXTURE_REPO, repo_root)

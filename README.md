@@ -1,15 +1,15 @@
-# ccc-radar (`cccr`)
+# ArchLens (`archlens`)
 
 Local Java/Spring architecture discovery from source ASTs.
 
-`cccr` indexes REST and Kafka integrations, Maven/Gradle modules, OpenAPI
+`archlens` indexes REST and Kafka integrations, Maven/Gradle modules, OpenAPI
 contracts, MongoDB collections and derived architecture relations in a local
 SQLite database. It does not invoke an external code-analysis engine.
 
 ## Install
 
 ```bash
-uv tool install ccc-radar
+uv tool install archlens
 ```
 
 ## Quick start
@@ -19,19 +19,19 @@ is the recommended first result: it provides an interactive view of the
 services, APIs, Kafka topics and DTOs.
 
 ```bash
-cccr init
-cccr doctor
-cccr index
-cccr export microservices --html architecture.html
+archlens init
+archlens doctor
+archlens index
+archlens export microservices --html architecture.html
 ```
 
 Open `architecture.html` in a browser. From there, start with a question such
 as “who produces this Kafka topic?” or “what depends on this service?”. Use
-`cccr microservices`, `cccr topics`, `cccr apis`, and `cccr analyze audit` for
+`archlens microservices`, `archlens topics`, `archlens apis`, and `archlens analyze audit` for
 terminal-oriented exploration.
 
-Indexing is incremental. Use `cccr index --full` after a broad change, and
-`cccr index --topic-strategy strategy1` only for repositories that follow the
+Indexing is incremental. Use `archlens index --full` after a broad change, and
+`archlens index --topic-strategy strategy1` only for repositories that follow the
 documented Strategy1 Kafka and REST conventions.
 
 ## What is extracted
@@ -52,7 +52,7 @@ guess a concrete dependency.
 Start the stdio server from an initialized repository:
 
 ```bash
-cccr mcp
+archlens mcp
 ```
 
 The main tools are `list_endpoints`, `architecture_catalog`, `graph`,

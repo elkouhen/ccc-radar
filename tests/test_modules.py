@@ -5,12 +5,12 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from ccc_radar.cli import app
-from ccc_radar.config import Config
-from ccc_radar.indexer import index_repo
-from ccc_radar.models import MessageEndpoint
-from ccc_radar.modules import ModuleDependency, discover_module_dependencies, discover_modules
-from ccc_radar.store import Store
+from archlens.cli import app
+from archlens.config import Config
+from archlens.indexer import index_repo
+from archlens.models import MessageEndpoint
+from archlens.modules import ModuleDependency, discover_module_dependencies, discover_modules
+from archlens.store import Store
 
 runner = CliRunner()
 
@@ -245,7 +245,7 @@ class OrdersApplication {
 """
     )
     monkeypatch.setattr(
-        "ccc_radar.modules._starts_application",
+        "archlens.modules._starts_application",
         lambda *_args, **_kwargs: pytest.fail("Tree-sitter entrypoint detection must stay disabled"),
     )
 

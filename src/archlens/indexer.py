@@ -7,16 +7,16 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
-from ccc_radar.config import Config
-from ccc_radar.inventory_freshness import current_endpoint_inventory_signature
-from ccc_radar.models import MessageEndpoint
-from ccc_radar.modules import (
+from archlens.config import Config
+from archlens.inventory_freshness import current_endpoint_inventory_signature
+from archlens.models import MessageEndpoint
+from archlens.modules import (
     discover_module_dependencies,
     discover_modules,
     discover_excluded_module_paths,
 )
-from ccc_radar.relations import build_architecture_relations
-from ccc_radar.scanner import (
+from archlens.relations import build_architecture_relations
+from archlens.scanner import (
     clear_analysis_caches,
     infer_framework_endpoints,
     infer_kafka_endpoints,
@@ -25,7 +25,7 @@ from ccc_radar.scanner import (
     infer_markdown_topic_manifest_endpoints,
     apply_kafka_topic_strategy1,
 )
-from ccc_radar.store import Store
+from archlens.store import Store
 
 
 ProgressCallback = Callable[[str], None]
@@ -184,7 +184,7 @@ def _list_repo_files(
 def _analysis_inputs_signature(repo_root: Path, config: Config) -> str:
     """Fingerprint local configuration that changes AST analysis facts."""
     digest = hashlib.sha256()
-    config_file = repo_root / ".cccr" / "config.yml"
+    config_file = repo_root / ".archlens" / "config.yml"
     if config_file.is_file():
         digest.update(_sha256_file(config_file).encode())
     return digest.hexdigest()
@@ -197,10 +197,10 @@ def _report_progress(progress: ProgressCallback | None, message: str) -> None:
 
 def _trace(stage: str, **fields: object) -> None:
     """Emit an opt-in, flush-on-write checkpoint for native crash diagnosis."""
-    if os.environ.get("CCCR_TRACE") != "1":
+    if os.environ.get("ARCHLENS_TRACE") != "1":
         return
     details = " ".join(f"{name}={value}" for name, value in fields.items())
-    print(f"CCCR_TRACE ts={time.monotonic():.6f} stage={stage} {details}".rstrip(), file=sys.stderr, flush=True)
+    print(f"ARCHLENS_TRACE ts={time.monotonic():.6f} stage={stage} {details}".rstrip(), file=sys.stderr, flush=True)
 
 
 def index_repo(
@@ -217,7 +217,7 @@ def index_repo(
     # Java, propriétés Spring, module Maven/Gradle) avant de relire le
     # repo — nécessaire dans un process long-vivant (serveur MCP) où
     # `reindex_findings` doit voir les fichiers tels qu'ils sont maintenant,
-    # pas tels qu'un `cccr index` précédent les avait mémorisés.
+    # pas tels qu'un `archlens index` précédent les avait mémorisés.
     clear_analysis_caches()
     _trace(
         "index_repo.begin", root=repo_root, full=full, disabled=",".join(sorted(disabled)),
@@ -269,7 +269,7 @@ def index_repo(
     _trace("files.end", current=len(current_hashes), previous=len(previous_hashes))
 
     # The module inventory is intentionally materialized with the index rather
-    # than reconstructed by `cccr modules`: its configuration examples describe
+    # than reconstructed by `archlens modules`: its configuration examples describe
     # the exact repository state that was audited.
     current_paths = set(current_hashes)
     previous_paths = set(previous_hashes)

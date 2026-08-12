@@ -1,18 +1,22 @@
-# Functional specification — ccc-radar (`cccr`)
+# Functional specification — archlens (`archlens`)
 
-`cccr` builds a local architecture inventory from Java/Spring source ASTs.
+`archlens` builds a local architecture inventory from Java/Spring source ASTs.
 All commands operate on the current repository unless an explicit workspace
 root is accepted. There is no external code-analysis process in this workflow.
 
 ## Configuration
 
-`cccr init` creates `.cccr/config.yml`:
+`archlens init` creates `.archlens/config.yml`:
 
 ```yaml
 include: ["**/*"]
-exclude: [".git/**", ".venv/**", "node_modules/**", ".cccr/**"]
+exclude: [".git/**", ".venv/**", "node_modules/**", ".archlens/**"]
 min_severity: INFO
 ```
+
+This is a breaking rename from `cccr`: ArchLens does not read an existing
+`.cccr/` directory. Run `archlens init` and `archlens index` to create a new
+local inventory in `.archlens/`.
 
 `include` and `exclude` control source inventory. Maven/Gradle test source
 sets (`src/test`, `src/componentTest`, and names ending in `Test`) are always
@@ -23,19 +27,19 @@ but does not alter AST endpoint extraction.
 
 | Command | Behaviour |
 |---|---|
-| `cccr init` | Creates `.cccr/config.yml`; it never overwrites an existing file. |
-| `cccr doctor [--json]` | Read-only check of configuration, local AST readiness and index state. |
-| `cccr index [--full] [--topic-strategy default\|strategy1] [--manifest FILE]...` | Incrementally extracts and persists architecture facts. |
-| `cccr microservices`, `topics`, `apis`, `dtos`, `mongodb`, `modules` | Browse the indexed catalog; `microservices`, `topics` and `mongodb` list the corresponding architecture objects directly, each with a `kind` and `name`, and support the documented list/show/neighbors actions and JSON output where applicable. |
-| `cccr analyze audit` | Reports static architecture risks. |
-| `cccr analyze indexing-issues [--json]` | Lists unresolved indexing facts. JSON includes source evidence suitable for reviewing proposed heuristics. |
-| `cccr analyze microservices impact NAME` | Lists direct and transitive impact paths. |
-| `cccr analyze microservices path FROM TO` | Lists bounded paths between services. |
-| `cccr analyze request-reply` | Lists Strategy1 Kafka request/reply candidates. |
-| `cccr export microservices` / `cccr export modules` | Emits JSON, HTML or LikeC4 views. |
-| `cccr mcp` | Starts the stdio MCP server. |
+| `archlens init` | Creates `.archlens/config.yml`; it never overwrites an existing file. |
+| `archlens doctor [--json]` | Read-only check of configuration, local AST readiness and index state. |
+| `archlens index [--full] [--topic-strategy default\|strategy1] [--manifest FILE]...` | Incrementally extracts and persists architecture facts. |
+| `archlens microservices`, `topics`, `apis`, `dtos`, `mongodb`, `modules` | Browse the indexed catalog; `microservices`, `topics` and `mongodb` list the corresponding architecture objects directly, each with a `kind` and `name`, and support the documented list/show/neighbors actions and JSON output where applicable. |
+| `archlens analyze audit` | Reports static architecture risks. |
+| `archlens analyze indexing-issues [--json]` | Lists unresolved indexing facts. JSON includes source evidence suitable for reviewing proposed heuristics. |
+| `archlens analyze microservices impact NAME` | Lists direct and transitive impact paths. |
+| `archlens analyze microservices path FROM TO` | Lists bounded paths between services. |
+| `archlens analyze request-reply` | Lists Strategy1 Kafka request/reply candidates. |
+| `archlens export microservices` / `archlens export modules` | Emits JSON, HTML or LikeC4 views. |
+| `archlens mcp` | Starts the stdio MCP server. |
 
-`cccr index` reports its file delta, AST analysis stage, persisted endpoint
+`archlens index` reports its file delta, AST analysis stage, persisted endpoint
 count and materialized relations. It then prints a next-step hint towards the
 interactive microservice HTML export. Its result line is:
 
@@ -92,9 +96,11 @@ path or service, DTOs by simple name or package). Request/reply and build
 dependencies remain available as complementary analyses from that view.
 
 `--topic-strategy strategy1` adds opt-in convention extraction for selected
-`getTopics()` accessors, `envoyerMessageKafka(kafkaProperties.getTopics().getXxx(), payload)` calls,
+`getTopics()` accessors and `envoyerMessageKafka*(kafkaProperties.getTopics().getXxx(), payload)` calls
+(including `envoyerMessageKafkaRequest` and `envoyerMessageKafkaReply`),
 `${kafka.topics.*.name}` expressions and configured REST client constants. It
-may also derive a high-confidence request/reply pair
+also enables the `getXxxServiceUrl()` REST target-name convention.
+It may also derive a high-confidence request/reply pair
 when both sides follow the `retour_<request-topic>` convention.
 
 ## Incrementality and freshness
@@ -105,7 +111,7 @@ the endpoint extractor signature, analysis configuration signature or selected
 topic strategy changes. Explicit manifests are included even when otherwise
 excluded.
 
-The index is `.cccr/findings.db` for compatibility with prior releases. It is a
+The index is `.archlens/findings.db` for compatibility with prior releases. It is a
 local implementation detail, not a contract for direct SQL writes.
 
 ## MCP

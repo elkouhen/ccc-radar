@@ -4,7 +4,7 @@ import re
 from functools import lru_cache
 from pathlib import Path
 
-from ccc_radar import java_parser
+from archlens import java_parser
 
 _GRADLE_ARTIFACT_RE = re.compile(
     r"(?:archiveBaseName|archivesBaseName|archivesName)\s*(?:\.set\s*\()?\s*=\s*['\"]([^'\"]+)['\"]"

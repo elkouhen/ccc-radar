@@ -1,10 +1,10 @@
 from dataclasses import replace
 from pathlib import Path
 
-from ccc_radar.architecture import build_catalog, indexing_issues
-from ccc_radar.models import MessageEndpoint, compute_endpoint_id
-from ccc_radar.modules import DiscoveredModule, ModuleDependency, MongoMethod
-from ccc_radar.relations import build_architecture_relations
+from archlens.architecture import build_catalog, indexing_issues
+from archlens.models import MessageEndpoint, compute_endpoint_id
+from archlens.modules import DiscoveredModule, ModuleDependency, MongoMethod
+from archlens.relations import build_architecture_relations
 
 
 def _endpoint(

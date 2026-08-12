@@ -2,9 +2,9 @@ from dataclasses import dataclass
 from pathlib import Path
 import re
 
-from ccc_radar.config import VALID_SEVERITIES
-from ccc_radar.models import Finding
-from ccc_radar.store import Store
+from archlens.config import VALID_SEVERITIES
+from archlens.models import Finding
+from archlens.store import Store
 
 _WORD_RE = re.compile(r"\w+")
 
@@ -129,7 +129,7 @@ def search_findings(
     if not candidates:
         return []
 
-    # `cccr findings` without a query is an inventory view. Keep the same
+    # `archlens findings` without a query is an inventory view. Keep the same
     # deterministic severity/location ordering as a searched result while
     # preserving all filters and pagination.
     if query is None or not query.strip():

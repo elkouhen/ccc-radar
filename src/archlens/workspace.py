@@ -2,7 +2,7 @@
 
 Découvre les services d'un répertoire parent : modules Maven (`pom.xml`) ou
 microservices Gradle détectés via leur classe Spring Boot principale. Puis
-lit — en lecture seule, jamais d'écriture (ADR-30) — les `.cccr/findings.db`
+lit — en lecture seule, jamais d'écriture (ADR-30) — les `.archlens/findings.db`
 déjà indexés pour construire une vue fédérée
 (`endpoints_by_service`/`findings_by_service`) consommable par `graph.py`.
 """
@@ -11,11 +11,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TypeVar
 
-from ccc_radar.inventory_freshness import endpoint_inventory_warning
-from ccc_radar.models import Finding, MessageEndpoint
-from ccc_radar.modules import DiscoveredModule, ModuleDependency, discover_modules
-from ccc_radar.paths import db_path
-from ccc_radar.store import Store, StoreError
+from archlens.inventory_freshness import endpoint_inventory_warning
+from archlens.models import Finding, MessageEndpoint
+from archlens.modules import DiscoveredModule, ModuleDependency, discover_modules
+from archlens.paths import db_path
+from archlens.store import Store, StoreError
 
 _ItemT = TypeVar("_ItemT", Finding, MessageEndpoint)
 
@@ -140,7 +140,7 @@ def load_federation(services: list[DiscoveredService]) -> FederationResult:
         if not service.indexed:
             warnings.append(
                 f"{service.name} : non indexé, ignoré "
-                "(lancez cccr index sur ce projet)."
+                "(lancez archlens index sur ce projet)."
             )
             continue
         try:

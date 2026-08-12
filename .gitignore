@@ -1,6 +1,6 @@
 .venv/
 __pycache__/
-.cccr/
+.archlens/
 *.db
 .idea/
 .mcp.json

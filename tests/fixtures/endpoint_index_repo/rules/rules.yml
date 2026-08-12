@@ -6,7 +6,7 @@ rules:
     patterns:
       - pattern: System.out.println(...)
 
-  - id: cccr.kafka.java.consume
+  - id: archlens.kafka.java.consume
     languages: [java]
     severity: INFO
     message: Consommation Kafka (@KafkaListener).
@@ -20,7 +20,7 @@ rules:
           @KafkaListener(...)
           $RET $METHOD(...) { ... }
 
-  - id: cccr.rest.java.call-post
+  - id: archlens.rest.java.call-post
     languages: [java]
     severity: INFO
     message: Appel REST client (POST).

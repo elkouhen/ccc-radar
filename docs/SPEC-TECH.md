@@ -1,4 +1,4 @@
-# Technical specification — ccc-radar (`cccr`)
+# Technical specification — archlens (`archlens`)
 
 ## Architecture
 
@@ -67,12 +67,17 @@ KafkaTemplate/ProducerRecord usage and Spring Cloud Stream StreamBridge calls.
 It preserves dynamic topic expressions and derives a payload type only from an
 explicit listener parameter or client generic signature.
 
-With `--topic-strategy strategy1`, `envoyerMessageKafka(topic, payload)` is an
-additional producer convention. A first argument shaped as
+With `--topic-strategy strategy1`, every method whose name starts with
+`envoyerMessageKafka` is an additional producer convention, including
+`envoyerMessageKafkaRequest(topic, payload)` and
+`envoyerMessageKafkaReply(topic, payload)`. A first argument shaped as
 `kafkaProperties.getTopics().getXxx()` resolves to the normalized Strategy1
 topic name; other values use the conservative topic resolver. The second
 argument is used to derive the payload type from its method parameter, local
 variable declaration or enclosing class field.
+
+Strategy1 also enables the `getXxxServiceUrl()` REST target-name convention;
+without it, ArchLens uses only an explicit URL or `lb://` service target.
 
 `render_graph_html` resolves the Java DTOs and enums rooted at those Kafka
 payload types from production source roots. It follows declared field types
@@ -94,7 +99,7 @@ The manifest extractors add explicitly declared Kafka facts from Markdown and
 JSON. Strategy1 is separate and opt-in because it embeds repository-specific
 naming conventions.
 
-`cccr analyze indexing-issues --json` exposes unresolved facts as a structured
+`archlens analyze indexing-issues --json` exposes unresolved facts as a structured
 remediation review payload. Each endpoint-backed issue has a stable code,
 severity, service, framework, topic/API, extracted message type and its source
 path, line range and snippet. The command does not infer or apply a heuristic;
@@ -107,6 +112,11 @@ SQLite schema migration is additive where possible. `files` stores hash state,
 dependencies and relations. The database filename remains `findings.db` for
 backward compatibility; new AST-only behavior must not infer that it contains
 security findings.
+
+ArchLens stores this database under `.archlens/`. It intentionally does not
+load the former `.cccr/` state directory: the product rename requires a fresh
+`archlens init` and `archlens index` so the configuration and index namespace
+remain unambiguous.
 
 The endpoint-inventory signature in `meta` is bumped whenever extractor
 behaviour changes. This forces a complete refresh before new facts are served.

@@ -1,9 +1,9 @@
 from pathlib import Path
 
-from ccc_radar.dependency_analysis import build_dependency_graph
-from ccc_radar.models import MessageEndpoint, compute_endpoint_id
-from ccc_radar.modules import DiscoveredModule
-from ccc_radar.scanner import infer_framework_endpoints
+from archlens.dependency_analysis import build_dependency_graph
+from archlens.models import MessageEndpoint, compute_endpoint_id
+from archlens.modules import DiscoveredModule
+from archlens.scanner import infer_framework_endpoints
 
 
 def make_endpoint(
@@ -56,7 +56,7 @@ def test_configured_client_relation_emitted_when_host_in_endpoints() -> None:
         "ANY <dynamic>",
         "caller/Client.java",
         module="caller-service",
-        snippet="annuaireApi.getDirectory()\ncccr-api-domain:annuaire",
+        snippet="annuaireApi.getDirectory()\narchlens-api-domain:annuaire",
         topic_dynamic=True,
     )
     host = make_endpoint("serve", "GET /annuaire", "annuaire/Controller.java", module="annuaire")
@@ -91,7 +91,7 @@ def test_configured_client_dependency_from_bean_declaration_without_resolved_typ
         snippet=(
             "return webClientHelper.createInternalClientApi("
             "ApiDomains.DOMAIN_ANNUAIRE, AnnuaireApi.class);"
-            "\ncccr-api-domain:domain-annuaire"
+            "\narchlens-api-domain:domain-annuaire"
         ),
         topic_dynamic=True,
     )
@@ -112,7 +112,7 @@ def test_rest_configuration_bean_links_to_the_normalized_host_microservice(tmp_p
     """Le domaine `DOMAIN_ANNUAIRE` désigne bien `domain-annuaire`.
 
     Ce test couvre la chaîne réelle scanner → fédération → dépendance, plutôt
-    qu'un marqueur `cccr-api-domain` construit à la main.
+    qu'un marqueur `archlens-api-domain` construit à la main.
     """
     (tmp_path / "pom.xml").write_text(
         "<project><artifactId>caller-service</artifactId><version>1</version></project>"
@@ -173,7 +173,7 @@ def test_rest_configuration_bean_resolves_domain_key_in_uri_path(tmp_path: Path)
     )
 
     assert len(endpoints) == 1
-    assert "cccr-api-domain:domain-annuaire" in endpoints[0].snippet
+    assert "archlens-api-domain:domain-annuaire" in endpoints[0].snippet
     assert [(edge["source"], edge["target"], edge["label"]) for edge in _client_calls(result["edges"])] == [
         ("microservice:caller-service", "microservice:domain-annuaire", "domain-annuaire: API")
     ]
@@ -185,7 +185,7 @@ def test_configured_client_relation_when_host_known_via_modules_only() -> None:
         "ANY <dynamic>",
         "caller/Client.java",
         module="caller-service",
-        snippet="annuaireApi.get()\ncccr-api-domain:annuaire",
+        snippet="annuaireApi.get()\narchlens-api-domain:annuaire",
         topic_dynamic=True,
     )
 
@@ -209,7 +209,7 @@ def test_configured_client_relation_does_not_require_a_detected_published_resour
         "ANY <dynamic>",
         "caller/Client.java",
         module="caller-service",
-        snippet="annuaireApi.get()\ncccr-api-domain:domain-annuaire",
+        snippet="annuaireApi.get()\narchlens-api-domain:domain-annuaire",
         topic_dynamic=True,
     )
 
@@ -230,7 +230,7 @@ def test_unresolved_configured_client_domain_emits_warning() -> None:
         "ANY <dynamic>",
         "caller/Client.java",
         module="caller-service",
-        snippet="ghostApi.get()\ncccr-api-domain:ghost",
+        snippet="ghostApi.get()\narchlens-api-domain:ghost",
         topic_dynamic=True,
     )
 
@@ -267,7 +267,7 @@ def test_external_rest_api_properties_client_creates_an_annotated_microservice()
         "ANY <dynamic>",
         "caller/RestPartnerConfig.java",
         module="caller-service",
-        snippet="cccr-external-microservice:partner-catalog",
+        snippet="archlens-external-microservice:partner-catalog",
         topic_dynamic=True,
     )
 
@@ -289,7 +289,7 @@ def test_multiple_configured_call_sites_collapse_to_single_relation() -> None:
         5,
         5,
         module="caller-service",
-        snippet="annuaireApi.a()\ncccr-api-domain:annuaire",
+        snippet="annuaireApi.a()\narchlens-api-domain:annuaire",
         topic_dynamic=True,
     )
     call_b = make_endpoint(
@@ -299,7 +299,7 @@ def test_multiple_configured_call_sites_collapse_to_single_relation() -> None:
         9,
         9,
         module="caller-service",
-        snippet="annuaireApi.b()\ncccr-api-domain:annuaire",
+        snippet="annuaireApi.b()\narchlens-api-domain:annuaire",
         topic_dynamic=True,
     )
     host = make_endpoint("serve", "GET /annuaire", "annuaire/Controller.java", module="annuaire")

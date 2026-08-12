@@ -34,11 +34,11 @@ _ESCAPE_RE = re.compile(r"\\(.)")
 
 
 def _trace(stage: str, **fields: object) -> None:
-    if os.environ.get("CCCR_TRACE") != "1":
+    if os.environ.get("ARCHLENS_TRACE") != "1":
         return
     details = " ".join(f"{name}={value}" for name, value in fields.items())
     print(
-        f"CCCR_TRACE ts={time.monotonic():.6f} stage={stage} {details}".rstrip(),
+        f"ARCHLENS_TRACE ts={time.monotonic():.6f} stage={stage} {details}".rstrip(),
         file=sys.stderr,
         flush=True,
     )

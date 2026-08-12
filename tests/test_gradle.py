@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from ccc_radar.gradle import discover_gradle_service_roots, gradle_service_for_path
+from archlens.gradle import discover_gradle_service_roots, gradle_service_for_path
 
 
 def test_gradle_service_for_path_groups_all_submodules_under_the_top_level_dir(

@@ -1,8 +1,8 @@
 from pathlib import Path
 
-from ccc_radar.configuration import service_configuration_example
-from ccc_radar.render import render_workspace_json
-from ccc_radar.workspace import DiscoveredService, FederationResult
+from archlens.configuration import service_configuration_example
+from archlens.render import render_workspace_json
+from archlens.workspace import DiscoveredService, FederationResult
 
 
 def test_service_configuration_example_builds_structure_from_production_code(

@@ -1,5 +1,5 @@
 rules:
-  - id: cccr.kafka-security.sasl-plaintext-credentials
+  - id: archlens.kafka-security.sasl-plaintext-credentials
     languages: [java]
     severity: ERROR
     message: >-
@@ -14,7 +14,7 @@ rules:
           metavariable: $V
           regex: (?s).*password\s*=\s*\\"[^"]*\\".*
 
-  - id: cccr.kafka-security.plaintext-protocol
+  - id: archlens.kafka-security.plaintext-protocol
     languages: [java]
     severity: ERROR
     message: >-
@@ -26,7 +26,7 @@ rules:
           - pattern: $PROPS.setProperty("security.protocol", "PLAINTEXT")
           - pattern: $PROPS.put(CommonClientConfigs.SECURITY_PROTOCOL_CONFIG, "PLAINTEXT")
 
-  - id: cccr.kafka-security.json-deserializer-trusts-all-packages
+  - id: archlens.kafka-security.json-deserializer-trusts-all-packages
     languages: [java]
     severity: ERROR
     message: >-
@@ -40,7 +40,7 @@ rules:
           - pattern: $PROPS.put("spring.json.trusted.packages", "*")
           - pattern: $PROPS.setProperty("spring.json.trusted.packages", "*")
 
-  - id: cccr.kafka-security.unsafe-java-deserialization
+  - id: archlens.kafka-security.unsafe-java-deserialization
     languages: [java]
     severity: ERROR
     message: >-

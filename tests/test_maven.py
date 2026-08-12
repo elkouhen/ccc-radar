@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from ccc_radar.maven import module_name_for_path
+from archlens.maven import module_name_for_path
 
 
 def test_module_name_for_path_finds_nearest_pom(tmp_path: Path) -> None:

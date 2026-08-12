@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from ccc_radar.graph import (
+from archlens.graph import (
     build_graph,
     find_outbound_calls_in_consumers,
     graph_edge_rest_resource,
@@ -10,8 +10,8 @@ from ccc_radar.graph import (
 )
 from dataclasses import replace
 
-from ccc_radar.models import MessageEndpoint, compute_endpoint_id
-from ccc_radar.store import Store
+from archlens.models import MessageEndpoint, compute_endpoint_id
+from archlens.store import Store
 
 
 def make_endpoint(
@@ -219,7 +219,7 @@ def test_build_graph_deduplicates_duplicate_edges() -> None:
     assert len(edges) == 1
 
 
-def test_build_graph_uses_service_hint_from_call_snippet_to_disambiguate_targets() -> None:
+def test_build_graph_uses_service_url_getter_hint_only_with_strategy1() -> None:
     call = make_endpoint(
         "call",
         "GET /orders/{orderId}",
@@ -240,16 +240,18 @@ def test_build_graph_uses_service_hint_from_call_snippet_to_disambiguate_targets
         module="ftgo-order-history-service",
     )
 
-    edges = build_graph(
-        {
-            "ftgo-api-gateway": [call],
-            "ftgo-order-service": [order_service],
-            "ftgo-order-history-service": [order_history_service],
-        }
-    )
+    endpoints_by_service = {
+        "ftgo-api-gateway": [call],
+        "ftgo-order-service": [order_service],
+        "ftgo-order-history-service": [order_history_service],
+    }
 
-    assert len(edges) == 1
-    assert edges[0].to_service == "ftgo-order-service"
+    assert {edge.to_service for edge in build_graph(endpoints_by_service)} == {
+        "ftgo-order-service", "ftgo-order-history-service"
+    }
+    strategy1_edges = build_graph(endpoints_by_service, strategy1=True)
+    assert len(strategy1_edges) == 1
+    assert strategy1_edges[0].to_service == "ftgo-order-service"
 
 
 def test_build_graph_uses_domain_from_rest_configuration_to_disambiguate_targets() -> None:
@@ -258,7 +260,7 @@ def test_build_graph_uses_domain_from_rest_configuration_to_disambiguate_targets
             "call",
             "GET <dynamic>",
             "gateway/DirectoryClient.java",
-            snippet="directoryClient.getForObject(\"/directory/{id}\", Object.class)\ncccr-api-domain:domain-annuaire",
+            snippet="directoryClient.getForObject(\"/directory/{id}\", Object.class)\narchlens-api-domain:domain-annuaire",
         ),
         topic_dynamic=True,
     )
@@ -291,7 +293,7 @@ def test_build_graph_keeps_configured_client_dependency_without_target_resource(
         "call",
         "ANY <dynamic>",
         "caller/RestClientConfig.java",
-        snippet="cccr-api-domain:domain-annuaire",
+        snippet="archlens-api-domain:domain-annuaire",
     )
 
     edges = build_graph({"caller-service": [call], "domain-annuaire": []})

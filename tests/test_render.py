@@ -3,9 +3,9 @@ import re
 from dataclasses import replace
 from pathlib import Path
 
-from ccc_radar.models import MessageEndpoint, compute_endpoint_id
-from ccc_radar.modules import DiscoveredModule
-from ccc_radar.render import render_graph_html
+from archlens.models import MessageEndpoint, compute_endpoint_id
+from archlens.modules import DiscoveredModule
+from archlens.render import render_graph_html
 
 
 def _kafka_endpoint(

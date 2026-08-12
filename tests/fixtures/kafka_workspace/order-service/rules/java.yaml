@@ -1,5 +1,5 @@
 rules:
-  - id: cccr.kafka.java.consume
+  - id: archlens.kafka.java.consume
     languages: [java]
     severity: INFO
     message: Consommation Kafka (@KafkaListener).
@@ -13,7 +13,7 @@ rules:
           @KafkaListener(...)
           $RET $METHOD(...) { ... }
 
-  - id: cccr.kafka.java.produce-template
+  - id: archlens.kafka.java.produce-template
     languages: [java]
     severity: INFO
     message: Production Kafka (KafkaTemplate).
@@ -29,7 +29,7 @@ rules:
           - pattern: $KAFKA.send($TOPIC, $VAL, ...)
           - pattern: $KAFKA.sendDefault(...)  # topic implicite (config du template), toujours dynamique
 
-  - id: cccr.kafka.java.produce-record
+  - id: archlens.kafka.java.produce-record
     languages: [java]
     severity: INFO
     message: Production Kafka (ProducerRecord).
@@ -45,7 +45,7 @@ rules:
 
   # Règle de findings (pas d'inventaire) : sert à couvrir le recouvrement
   # finding/site utilisé par le traçage MCP (BACKLOG-10 K5).
-  - id: cccr.demo.kafka-send-fire-and-forget
+  - id: archlens.demo.kafka-send-fire-and-forget
     languages: [java]
     severity: WARNING
     message: Envoi Kafka sans vérification du futur retourné (fire-and-forget).

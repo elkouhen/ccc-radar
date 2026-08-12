@@ -9,11 +9,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
-from ccc_radar import java_parser
-from ccc_radar.gradle import discover_gradle_modules
-from ccc_radar.maven import parse_pom, pom_version
-from ccc_radar.configuration import service_configuration_example
-from ccc_radar.topic_expressions import spring_topic_reference
+from archlens import java_parser
+from archlens.gradle import discover_gradle_modules
+from archlens.maven import parse_pom, pom_version
+from archlens.configuration import service_configuration_example
+from archlens.topic_expressions import spring_topic_reference
 
 
 @dataclass(frozen=True)
@@ -162,10 +162,10 @@ def discover_excluded_module_paths(root: Path) -> tuple[Path, ...]:
 
 
 def _trace(stage: str, **fields: object) -> None:
-    if os.environ.get("CCCR_TRACE") != "1":
+    if os.environ.get("ARCHLENS_TRACE") != "1":
         return
     details = " ".join(f"{name}={value}" for name, value in fields.items())
-    print(f"CCCR_TRACE ts={time.monotonic():.6f} stage={stage} {details}".rstrip(), file=sys.stderr, flush=True)
+    print(f"ARCHLENS_TRACE ts={time.monotonic():.6f} stage={stage} {details}".rstrip(), file=sys.stderr, flush=True)
 
 
 def _starts_application(module_dir: Path) -> SourceEvidence | None:
@@ -595,7 +595,7 @@ def _discover_openapi_files(
     }
     pom_path = module_dir / "pom.xml"
     if build_system == "maven" and rest_controllers and pom_path.is_file():
-        from ccc_radar.maven import detect_openapi_generator_input_specs
+        from archlens.maven import detect_openapi_generator_input_specs
 
         contracts.update(detect_openapi_generator_input_specs(pom_path))
     return tuple(sorted(contracts))
@@ -668,7 +668,7 @@ def _enrich_module(
     # Détecter les clients OpenAPI générés (Maven uniquement)
     openapi_generated_clients: tuple[str, ...] = ()
     if module.build_system == "maven":
-        from ccc_radar.maven import detect_openapi_generated_clients
+        from archlens.maven import detect_openapi_generated_clients
         pom_path = module.path / "pom.xml"
         if pom_path.exists():
             openapi_generated_clients = detect_openapi_generated_clients(pom_path)

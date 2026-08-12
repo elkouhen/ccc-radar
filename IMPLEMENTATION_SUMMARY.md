@@ -3,13 +3,13 @@
 ## ✅ Fonctionnalités Implémentées
 
 ### 1. Détection des classes @RestController
-- **Fichier** : `src/ccc_radar/modules.py`
+- **Fichier** : `src/archlens/modules.py`
 - **Fonction** : `_has_rest_controllers()`
 - **Détection** : Classes Java annotées avec `@RestController` (forme simple et pleinement qualifiée)
 - **Sortie** : Tuple de chaînes au format "ClassName (relative/path.java)"
 
 ### 2. Détection des clients générés par openapi-generator-maven-plugin
-- **Fichier** : `src/ccc_radar/maven.py`
+- **Fichier** : `src/archlens/maven.py`
 - **Fonctions** : 
   - `_has_openapi_generator_plugin()` - Détection du plugin dans pom.xml
   - `detect_openapi_generated_clients()` - Liste des fichiers générés
@@ -22,7 +22,7 @@
 
 ### Modèles de données
 ```python
-# src/ccc_radar/modules.py - DiscoveredModule
+# src/archlens/modules.py - DiscoveredModule
 @dataclass(frozen=True)
 class DiscoveredModule:
     # ... champs existants ...
@@ -32,7 +32,7 @@ class DiscoveredModule:
 
 ### Base de données
 ```python
-# src/ccc_radar/store.py
+# src/archlens/store.py
 SCHEMA_VERSION = "15"  # Mis à jour de "14" à "15"
 
 # Nouvelles colonnes dans la table modules
@@ -42,7 +42,7 @@ ALTER TABLE modules ADD COLUMN openapi_generated_clients TEXT NOT NULL DEFAULT '
 
 ### Fonctions de rendu
 ```python
-# src/ccc_radar/render.py
+# src/archlens/render.py
 class ModuleSummary(TypedDict):
     # ... champs existants ...
     rest_controllers: list[str]            # NOUVEAU
@@ -78,32 +78,32 @@ Pytest: 48 passed (test_rest_detection.py + test_modules.py + test_store.py)
 ### Exemples d'utilisation
 ```bash
 # Lister les modules avec leurs contrôleurs REST
-cccr modules list
+archlens modules list
 
 # Voir les détails d'un module spécifique
-cccr modules show my-service
+archlens modules show my-service
 
 # Format JSON pour l'intégration
-cccr modules --json | jq '.[] | select(.rest_controllers | length > 0)'
+archlens modules --json | jq '.[] | select(.rest_controllers | length > 0)'
 
 # Générer un rapport d'architecture
-cccr export microservices --html architecture.html
+archlens export microservices --html architecture.html
 ```
 
 ## 🔄 Migration
 
 ### Depuis la version 14
-- **Automatique** : La migration du schéma se fait automatiquement au prochain `cccr index`
+- **Automatique** : La migration du schéma se fait automatiquement au prochain `archlens index`
 - **Compatibilité** : Les anciennes bases sont migrées automatiquement vers la version 15
 - **Données préservées** : Toutes les données existantes sont conservées
 
 ### Commande de migration
 ```bash
 # La migration est automatique
-cccr index
+archlens index
 
 # Vérifier la version du schéma
-sqlite3 .cccr/findings.db "SELECT value FROM meta WHERE key = 'schema_version';"
+sqlite3 .archlens/findings.db "SELECT value FROM meta WHERE key = 'schema_version';"
 # Output: 15
 ```
 
@@ -185,10 +185,10 @@ public class OrderController { }
 ## 📈 Statistiques
 
 - **Fichiers modifiés** : 5
-  - `src/ccc_radar/modules.py`
-  - `src/ccc_radar/maven.py`
-  - `src/ccc_radar/store.py`
-  - `src/ccc_radar/render.py`
+  - `src/archlens/modules.py`
+  - `src/archlens/maven.py`
+  - `src/archlens/store.py`
+  - `src/archlens/render.py`
   - `tests/test_modules.py`
   - `tests/test_store.py`
 

@@ -1,8 +1,8 @@
-# Product requirements — ccc-radar
+# Product requirements — archlens
 
 ## Purpose
 
-`cccr` gives developers and coding agents a local, queryable view of a
+`archlens` gives developers and coding agents a local, queryable view of a
 Java/Spring architecture. It derives facts directly from source ASTs, without
 starting an external rule engine or sending source code to a service.
 
@@ -22,7 +22,7 @@ The product answers questions such as:
 | Developer | Inspect one service, API, topic or module | CLI catalog commands |
 | Architect | Assess topology, dependencies and risks across services | `analyze`, graph export |
 
-The normal workflow is `cccr init`, `cccr index`, then one of `microservices`,
+The normal workflow is `archlens init`, `archlens index`, then one of `microservices`,
 `topics`, `apis`, `modules`, `analyze`, or the equivalent MCP tool. Indexing is
 incremental; `--full` refreshes every eligible source file.
 

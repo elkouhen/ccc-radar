@@ -7,7 +7,7 @@ from functools import lru_cache
 from pathlib import Path
 import re
 
-from ccc_radar import java_parser
+from archlens import java_parser
 
 _MAVEN_NS = "{http://maven.apache.org/POM/4.0.0}"
 _MAVEN_PROPERTY_RE = re.compile(r"\$\{([^}]+)\}")
@@ -318,7 +318,7 @@ def clear_caches() -> None:
     """BACKLOG-16 P2 : à appeler en tête de chaque indexation dans un
     process long-vivant (serveur MCP) — `_cached_module_name` est caché par
     chemin de pom.xml pour toute la durée du process, un artifactId modifié
-    entre deux `cccr index` resterait sinon périmé."""
+    entre deux `archlens index` resterait sinon périmé."""
     _cached_module_name.cache_clear()
     _module_has_spring_boot_main_class.cache_clear()
 

@@ -1,5 +1,5 @@
-import ccc_radar
+import archlens
 
 
 def test_version() -> None:
-    assert ccc_radar.__version__ == "0.1.0"
+    assert archlens.__version__ == "0.1.0"

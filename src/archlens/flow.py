@@ -6,7 +6,7 @@ substring. A missing or ambiguous match fails explicitly rather than guessing.
 
 from dataclasses import dataclass
 
-from ccc_radar.models import MessageEndpoint
+from archlens.models import MessageEndpoint
 
 
 class FlowError(Exception):

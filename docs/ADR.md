@@ -1,4 +1,4 @@
-# Architecture Decision Records — ccc-radar (`cccr`)
+# Architecture Decision Records — archlens (`archlens`)
 
 ## ADR-1 — Local AST extraction is the sole analysis source
 
@@ -22,7 +22,7 @@ being guessed.
 portable local state.
 
 **Decision:** Persist files, endpoints, modules, dependencies and architecture
-relations in `.cccr/findings.db`. The filename is retained for compatibility
+relations in `.archlens/findings.db`. The filename is retained for compatibility
 with existing installations.
 
 **Consequences:** The database is private implementation state; clients use CLI
@@ -66,3 +66,19 @@ default AST extractor.
 
 **Consequences:** Default indexing remains framework-oriented and portable;
 Strategy1 facts are explicitly identified as convention-derived.
+
+## ADR-6 — ArchLens is the public product and state namespace
+
+**Status:** Accepted.
+
+**Context:** The former product name and `cccr` command were opaque to users,
+while the tool's purpose is to make a local architecture view easier to read.
+
+**Decision:** Rename the distribution, Python package, CLI command, MCP server
+name, generated-export labels and state directory to `ArchLens` / `archlens`.
+The project state is now stored in `.archlens/`.
+
+**Consequences:** This is a breaking rename. Existing `.cccr/` configuration
+and index data are not read by ArchLens: run `archlens init` and `archlens
+index` in each repository to create a fresh `.archlens/` inventory. Trace
+environment variables use the `ARCHLENS_` prefix.

@@ -1,6 +1,6 @@
 from pathlib import Path
 
-PRIMARY_STATE_DIRNAME = ".cccr"
+PRIMARY_STATE_DIRNAME = ".archlens"
 
 
 def state_dir(repo_root: Path) -> Path:

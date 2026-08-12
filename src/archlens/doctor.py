@@ -5,8 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from ccc_radar.config import ConfigError, load_config
-from ccc_radar.paths import db_path
+from archlens.config import ConfigError, load_config
+from archlens.paths import db_path
 
 
 @dataclass(frozen=True)
@@ -19,7 +19,7 @@ class Check:
 def run_doctor(repo_root: Path) -> list[Check]:
     """Report local indexing readiness without mutating the repository."""
     checks = [
-        Check("cccr", "ok", "CLI disponible."),
+        Check("archlens", "ok", "CLI disponible."),
     ]
     try:
         load_config(repo_root)
@@ -27,13 +27,13 @@ def run_doctor(repo_root: Path) -> list[Check]:
         checks.append(Check("configuration", "error", str(exc)))
         return checks
 
-    checks.append(Check("configuration", "ok", "Configuration .cccr/config.yml chargée."))
+    checks.append(Check("configuration", "ok", "Configuration .archlens/config.yml chargée."))
     checks.append(Check("analyse AST", "ok", "Extracteurs Java/Spring locaux actifs."))
 
     checks.append(Check(
         "index",
         "ok" if db_path(repo_root).is_file() else "warning",
-        "Index présent." if db_path(repo_root).is_file() else "Index absent : lancez `cccr index` après le préflight.",
+        "Index présent." if db_path(repo_root).is_file() else "Index absent : lancez `archlens index` après le préflight.",
     ))
     return checks
 

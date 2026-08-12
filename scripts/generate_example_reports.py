@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 EXAMPLES = Path.home() / "examples"
 REPORTS = ROOT / "reports"
 ASSETS = REPORTS / "assets"
-CCCR = ROOT / ".venv" / "bin" / "cccr"
+ARCHLENS = ROOT / ".venv" / "bin" / "archlens"
 
 
 def run(cmd: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
@@ -142,8 +142,8 @@ def main() -> int:
 
     if not EXAMPLES.is_dir():
         raise SystemExit(f"Examples directory not found: {EXAMPLES}")
-    if not CCCR.exists():
-        raise SystemExit(f"cccr executable not found: {CCCR}")
+    if not ARCHLENS.exists():
+        raise SystemExit(f"archlens executable not found: {ARCHLENS}")
 
     results: list[dict[str, object]] = []
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%SZ")
@@ -168,39 +168,39 @@ def main() -> int:
         pom_count = str(len(list(repo.rglob("pom.xml"))))
 
         init_state = "already initialized"
-        if not (repo / ".cccr" / "config.yml").exists():
-            proc = run([str(CCCR), "init"], repo)
+        if not (repo / ".archlens" / "config.yml").exists():
+            proc = run([str(ARCHLENS), "init"], repo)
             if proc.returncode != 0:
                 raise SystemExit(
-                    f"cccr init failed for {repo.name}:\nSTDOUT:\n{proc.stdout}\nSTDERR:\n{proc.stderr}"
+                    f"archlens init failed for {repo.name}:\nSTDOUT:\n{proc.stdout}\nSTDERR:\n{proc.stderr}"
                 )
             init_state = "initialized during report generation"
 
-        index_proc = run([str(CCCR), "index"], repo)
+        index_proc = run([str(ARCHLENS), "index"], repo)
         if index_proc.returncode != 0:
             raise SystemExit(
-                f"cccr index failed for {repo.name}:\nSTDOUT:\n{index_proc.stdout}\nSTDERR:\n{index_proc.stderr}"
+                f"archlens index failed for {repo.name}:\nSTDOUT:\n{index_proc.stdout}\nSTDERR:\n{index_proc.stderr}"
             )
 
-        graph_proc = run([str(CCCR), "graph", "--json"], repo)
+        graph_proc = run([str(ARCHLENS), "graph", "--json"], repo)
         if graph_proc.returncode != 0:
             raise SystemExit(
-                f"cccr graph --json failed for {repo.name}:\nSTDOUT:\n{graph_proc.stdout}\nSTDERR:\n{graph_proc.stderr}"
+                f"archlens graph --json failed for {repo.name}:\nSTDOUT:\n{graph_proc.stdout}\nSTDERR:\n{graph_proc.stderr}"
             )
         graph = json.loads(graph_proc.stdout)
 
-        micro_proc = run([str(CCCR), "microservices", "--json"], repo)
+        micro_proc = run([str(ARCHLENS), "microservices", "--json"], repo)
         if micro_proc.returncode != 0:
             raise SystemExit(
-                f"cccr microservices --json failed for {repo.name}:\nSTDOUT:\n{micro_proc.stdout}\nSTDERR:\n{micro_proc.stderr}"
+                f"archlens microservices --json failed for {repo.name}:\nSTDOUT:\n{micro_proc.stdout}\nSTDERR:\n{micro_proc.stderr}"
             )
         micro = json.loads(micro_proc.stdout)
 
         for output in (d2_path, svg_path):
-            proc = run([str(CCCR), "graph", "--d2", str(output)], repo)
+            proc = run([str(ARCHLENS), "graph", "--d2", str(output)], repo)
             if proc.returncode != 0:
                 raise SystemExit(
-                    f"cccr graph --d2 {output.name} failed for {repo.name}:\nSTDOUT:\n{proc.stdout}\nSTDERR:\n{proc.stderr}"
+                    f"archlens graph --d2 {output.name} failed for {repo.name}:\nSTDOUT:\n{proc.stdout}\nSTDERR:\n{proc.stderr}"
                 )
 
         warnings = []
@@ -238,7 +238,7 @@ def main() -> int:
                 ("Working tree clean", clean),
                 ("Tracked files", tracked_count),
                 ("pom.xml files", pom_count),
-                ("cccr init state", init_state),
+                ("archlens init state", init_state),
                 ("Report generated", now),
             ]
         )
@@ -274,7 +274,7 @@ def main() -> int:
                     "",
                     git_table,
                     "",
-                    "## cccr graph",
+                    "## archlens graph",
                     "",
                     graph_table,
                     "",
@@ -322,7 +322,7 @@ def main() -> int:
     index_lines = [
         "# Example reports",
         "",
-        "Generated pages for each directory in `~/examples`, with the `cccr` graph rendered from D2 to SVG, flow summaries, and basic Git repository metadata.",
+        "Generated pages for each directory in `~/examples`, with the `archlens` graph rendered from D2 to SVG, flow summaries, and basic Git repository metadata.",
         "",
         "| Repository | Branch | Commit | Services | Edges | HTTP flows | Kafka flows | Warnings | Page |",
         "|---|---|---|---:|---:|---:|---:|---:|---|",

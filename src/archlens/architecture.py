@@ -9,9 +9,9 @@ from collections import deque
 from dataclasses import dataclass
 from typing import cast
 
-from ccc_radar.graph import GraphEdge, build_graph, graph_edge_rest_resource
-from ccc_radar.models import ArchitectureRelation, MessageEndpoint
-from ccc_radar.modules import DiscoveredModule
+from archlens.graph import GraphEdge, build_graph, graph_edge_rest_resource
+from archlens.models import ArchitectureRelation, MessageEndpoint
+from archlens.modules import DiscoveredModule
 
 
 _KINDS = {
@@ -50,7 +50,7 @@ def normalize_kind(kind: str) -> str | None:
 
 
 def build_catalog(
-    modules: list[DiscoveredModule], endpoints: list[MessageEndpoint]
+    modules: list[DiscoveredModule], endpoints: list[MessageEndpoint], *, strategy1: bool = False
 ) -> ArchitectureCatalog:
     endpoints_by_module: dict[str, list[MessageEndpoint]] = {}
     for endpoint in endpoints:
@@ -59,7 +59,7 @@ def build_catalog(
     return ArchitectureCatalog(
         modules=tuple(sorted(modules, key=lambda module: module.name)),
         endpoints=tuple(endpoints),
-        edges=tuple(build_graph(endpoints_by_module)),
+        edges=tuple(build_graph(endpoints_by_module, strategy1=strategy1)),
     )
 
 

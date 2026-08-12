@@ -9,8 +9,8 @@ from typing import Literal, Optional, cast
 import click
 import typer
 
-from ccc_radar import __version__
-from ccc_radar.architecture import (
+from archlens import __version__
+from archlens.architecture import (
     analyze as analyze_architecture,
     build_catalog,
     endpoint_implementation,
@@ -24,20 +24,20 @@ from ccc_radar.architecture import (
     show_object as show_architecture_object,
     trace_topic_flows,
 )
-from ccc_radar.architecture_inventory import load_architecture_inventory
-from ccc_radar.audit import assess_architecture, render_audit_json, render_audit_text
-from ccc_radar.config import ConfigError, init_config, load_config
-from ccc_radar.flow import resolve_topic
-from ccc_radar.graph import (
+from archlens.architecture_inventory import load_architecture_inventory
+from archlens.audit import assess_architecture, render_audit_json, render_audit_text
+from archlens.config import ConfigError, init_config, load_config
+from archlens.flow import resolve_topic
+from archlens.graph import (
     GraphEdge,
     build_graph,
     find_outbound_calls_in_consumers,
 )
-from ccc_radar.indexer import index_repo
-from ccc_radar.inventory_freshness import endpoint_inventory_warning
-from ccc_radar.models import MessageEndpoint
-from ccc_radar.modules import DiscoveredModule, ModuleDependency, discover_modules
-from ccc_radar.render import (
+from archlens.indexer import index_repo
+from archlens.inventory_freshness import endpoint_inventory_warning
+from archlens.models import MessageEndpoint
+from archlens.modules import DiscoveredModule, ModuleDependency, discover_modules
+from archlens.render import (
     GraphResult,
     render_endpoints_json,
     render_endpoints_text,
@@ -53,51 +53,51 @@ from ccc_radar.render import (
     render_modules_list_json,
     render_modules_list_text,
 )
-from ccc_radar.paths import config_path, db_path
-from ccc_radar.store import Store, StoreError
-from ccc_radar.workspace import (
+from archlens.paths import config_path, db_path
+from archlens.store import Store, StoreError
+from archlens.workspace import (
     discover_maven_services,
     load_federation,
 )
-from ccc_radar.doctor import has_errors, run_doctor
+from archlens.doctor import has_errors, run_doctor
 
 app = typer.Typer(
     help=(
         "Explorer l'architecture d'un projet indexé.\n\n"
-        "Exemples : `cccr microservices`, `cccr analyze audit`, "
-        "`cccr export microservices --html graph.html`."
+        "Exemples : `archlens microservices`, `archlens analyze audit`, "
+        "`archlens export microservices --html graph.html`."
     )
 )
 export_app = typer.Typer(
     help=(
         "Exporter les graphes de dépendances d'architecture.\n\n"
-        "Exemples : `cccr export microservices --html graph.html`, "
-        "`cccr export modules --html modules.html`."
+        "Exemples : `archlens export microservices --html graph.html`, "
+        "`archlens export modules --html modules.html`."
     )
 )
 topics_app = typer.Typer(
-    help="Explorer les topics Kafka indexés.\n\nExemples : `cccr topics`, `cccr topics consumers orders.created`."
+    help="Explorer les topics Kafka indexés.\n\nExemples : `archlens topics`, `archlens topics consumers orders.created`."
 )
 dtos_app = typer.Typer(
-    help="Explorer les DTOs Java échangés via Kafka.\n\nExemples : `cccr dtos`, `cccr dtos consumers OrderCreated`."
+    help="Explorer les DTOs Java échangés via Kafka.\n\nExemples : `archlens dtos`, `archlens dtos consumers OrderCreated`."
 )
 apis_app = typer.Typer(
-    help="Explorer les APIs HTTP indexées.\n\nExemples : `cccr apis`, `cccr apis consumers 'POST /payments'`."
+    help="Explorer les APIs HTTP indexées.\n\nExemples : `archlens apis`, `archlens apis consumers 'POST /payments'`."
 )
 mongodb_app = typer.Typer(
-    help="Explorer les collections MongoDB indexées.\n\nExemples : `cccr mongodb`, `cccr mongodb services orders`."
+    help="Explorer les collections MongoDB indexées.\n\nExemples : `archlens mongodb`, `archlens mongodb services orders`."
 )
 microservices_app = typer.Typer(
-    help="Explorer les microservices indexés.\n\nExemples : `cccr microservices`, `cccr microservices show orders`."
+    help="Explorer les microservices indexés.\n\nExemples : `archlens microservices`, `archlens microservices show orders`."
 )
 modules_app = typer.Typer(
-    help="Explorer les modules Maven ou Gradle indexés.\n\nExemples : `cccr modules`, `cccr modules show orders-api`."
+    help="Explorer les modules Maven ou Gradle indexés.\n\nExemples : `archlens modules`, `archlens modules show orders-api`."
 )
 analyze_app = typer.Typer(
-    help="Analyser les impacts et les chemins d'architecture.\n\nExemples : `cccr analyze audit`, `cccr analyze microservices impact orders`."
+    help="Analyser les impacts et les chemins d'architecture.\n\nExemples : `archlens analyze audit`, `archlens analyze microservices impact orders`."
 )
 analyze_microservices_app = typer.Typer(
-    help="Analyser les relations entre microservices.\n\nExemples : `cccr analyze microservices impact orders`, `cccr analyze microservices path orders payments`."
+    help="Analyser les relations entre microservices.\n\nExemples : `archlens analyze microservices impact orders`, `archlens analyze microservices path orders payments`."
 )
 app.add_typer(export_app, name="export")
 app.add_typer(topics_app, name="topics")
@@ -124,10 +124,10 @@ def _echo_index_progress(message: str) -> None:
 
 
 def _trace_index(stage: str, **fields: object) -> None:
-    if os.environ.get("CCCR_TRACE") != "1":
+    if os.environ.get("ARCHLENS_TRACE") != "1":
         return
     details = " ".join(f"{name}={value}" for name, value in fields.items())
-    print(f"CCCR_TRACE ts={time.monotonic():.6f} stage={stage} {details}".rstrip(), file=sys.stderr, flush=True)
+    print(f"ARCHLENS_TRACE ts={time.monotonic():.6f} stage={stage} {details}".rstrip(), file=sys.stderr, flush=True)
 
 
 def _manifest_rel_paths(repo_root: Path, paths: list[Path]) -> list[str]:
@@ -157,7 +157,7 @@ def _manifest_rel_paths(repo_root: Path, paths: list[Path]) -> list[str]:
 
 @app.callback()
 def main() -> None:
-    """ccc-radar: indexe les signaux d'architecture extraits par AST."""
+    """archlens: indexe les signaux d'architecture extraits par AST."""
 
 
 def _emit_architecture(result: object, json_output: bool) -> None:
@@ -181,8 +181,8 @@ def topics_cmd(
 ) -> None:
     """Parcourir les topics Kafka et les services qui les publient ou consomment.
 
-    Exemples : `cccr topics`, `cccr topics show orders.created`,
-    `cccr topics neighbors orders.created`.
+    Exemples : `archlens topics`, `archlens topics show orders.created`,
+    `archlens topics neighbors orders.created`.
     """
     arguments = arguments or []
     json_output = _option_json(json_output)
@@ -190,14 +190,14 @@ def topics_cmd(
     catalog = _microservice_catalog(workspace_root)
     if not arguments or arguments[0] == "list":
         if len(arguments) > 1:
-            typer.echo("Usage : `cccr topics [list] --root <workspace>`.", err=True)
+            typer.echo("Usage : `archlens topics [list] --root <workspace>`.", err=True)
             raise typer.Exit(code=2)
         _emit_architecture(list_architecture_objects(catalog, "topic"), json_output)
         return
     command = arguments[0]
     if command in {"show", "neighbors", "consumers", "producers", "search", "trace"}:
         if len(arguments) != 2:
-            typer.echo(f"`cccr topics {command}` requiert un topic.", err=True)
+            typer.echo(f"`archlens topics {command}` requiert un topic.", err=True)
             raise typer.Exit(code=2)
         topic = arguments[1]
         result: object
@@ -216,7 +216,7 @@ def topics_cmd(
             raise typer.Exit(code=2)
         _emit_architecture(result, json_output)
         return
-    typer.echo("Usage : `cccr topics [list|show|neighbors|search] [topic]`.", err=True)
+    typer.echo("Usage : `archlens topics [list|show|neighbors|search] [topic]`.", err=True)
     raise typer.Exit(code=2)
 
 
@@ -231,8 +231,8 @@ def dtos_cmd(
 ) -> None:
     """Parcourir les DTOs Java utilisés par les producers et consumers Kafka.
 
-    Exemples : `cccr dtos`, `cccr dtos show OrderCreated`,
-    `cccr dtos consumers OrderCreated`.
+    Exemples : `archlens dtos`, `archlens dtos show OrderCreated`,
+    `archlens dtos consumers OrderCreated`.
     """
     arguments = arguments or []
     json_output = _option_json(json_output)
@@ -240,14 +240,14 @@ def dtos_cmd(
     catalog = _microservice_catalog(workspace_root)
     if not arguments or arguments[0] == "list":
         if len(arguments) > 1:
-            typer.echo("Usage : `cccr dtos [list] --root <workspace>`.", err=True)
+            typer.echo("Usage : `archlens dtos [list] --root <workspace>`.", err=True)
             raise typer.Exit(code=2)
         _emit_architecture(list_architecture_objects(catalog, "dto"), json_output)
         return
     command = arguments[0]
     if command in {"show", "neighbors", "consumers", "producers", "search"}:
         if len(arguments) != 2:
-            typer.echo(f"`cccr dtos {command}` requiert un DTO.", err=True)
+            typer.echo(f"`archlens dtos {command}` requiert un DTO.", err=True)
             raise typer.Exit(code=2)
         dto = arguments[1]
         result: object
@@ -266,7 +266,7 @@ def dtos_cmd(
             raise typer.Exit(code=2)
         _emit_architecture(result, json_output)
         return
-    typer.echo("Usage : `cccr dtos [list|show|neighbors|producers|consumers|search] [dto]`.", err=True)
+    typer.echo("Usage : `archlens dtos [list|show|neighbors|producers|consumers|search] [dto]`.", err=True)
     raise typer.Exit(code=2)
 
 
@@ -281,8 +281,8 @@ def apis_cmd(
 ) -> None:
     """Parcourir les APIs HTTP et les services qui les exposent ou appellent.
 
-    Exemples : `cccr apis`, `cccr apis show "POST /payments"`,
-    `cccr apis search payments`.
+    Exemples : `archlens apis`, `archlens apis show "POST /payments"`,
+    `archlens apis search payments`.
     """
     arguments = arguments or []
     json_output = _option_json(json_output)
@@ -290,14 +290,14 @@ def apis_cmd(
     catalog = _microservice_catalog(workspace_root)
     if not arguments or arguments[0] == "list":
         if len(arguments) > 1:
-            typer.echo("Usage : `cccr apis [list] --root <workspace>`.", err=True)
+            typer.echo("Usage : `archlens apis [list] --root <workspace>`.", err=True)
             raise typer.Exit(code=2)
         _emit_architecture(list_architecture_objects(catalog, "api"), json_output)
         return
     command = arguments[0]
     if command in {"show", "neighbors", "providers", "consumers", "search"}:
         if len(arguments) != 2:
-            typer.echo(f"`cccr apis {command}` requiert une API HTTP.", err=True)
+            typer.echo(f"`archlens apis {command}` requiert une API HTTP.", err=True)
             raise typer.Exit(code=2)
         api = arguments[1]
         result: object
@@ -319,7 +319,7 @@ def apis_cmd(
             raise typer.Exit(code=2)
         _emit_architecture(result, json_output)
         return
-    typer.echo("Usage : `cccr apis [list|show|neighbors|search] [api]`.", err=True)
+    typer.echo("Usage : `archlens apis [list|show|neighbors|search] [api]`.", err=True)
     raise typer.Exit(code=2)
 
 
@@ -334,21 +334,21 @@ def mongodb_cmd(
 ) -> None:
     """Parcourir les collections MongoDB et les microservices qui les utilisent.
 
-    Exemples : `cccr mongodb`, `cccr mongodb show orders`,
-    `cccr mongodb neighbors orders`.
+    Exemples : `archlens mongodb`, `archlens mongodb show orders`,
+    `archlens mongodb neighbors orders`.
     """
     arguments = arguments or []
     json_output = _option_json(json_output)
     catalog = _microservice_catalog(_option_root(root))
     if not arguments or arguments[0] == "list":
         if len(arguments) > 1:
-            typer.echo("Usage : `cccr mongodb [list] --root <workspace>`.", err=True)
+            typer.echo("Usage : `archlens mongodb [list] --root <workspace>`.", err=True)
             raise typer.Exit(code=2)
         _emit_architecture(list_architecture_objects(catalog, "collection"), json_output)
         return
     command = arguments[0]
     if command not in {"show", "neighbors", "services", "search"} or len(arguments) != 2:
-        typer.echo("Usage : `cccr mongodb [list|show|neighbors|search] [collection]`.", err=True)
+        typer.echo("Usage : `archlens mongodb [list|show|neighbors|search] [collection]`.", err=True)
         raise typer.Exit(code=2)
     collection = arguments[1]
     result: object
@@ -387,42 +387,42 @@ def analyze_cmd(
     """Répondre aux questions d'architecture à partir du graphe indexé.
 
     Exemples :
-    `cccr analyze microservices path order-service shipping-service`
-    `cccr analyze microservices impact order-service`
-    `cccr analyze topics consumers orders.created`
-    `cccr analyze topics trace orders.created`
-    `cccr analyze apis providers "POST /payments"`
-    `cccr analyze mongodb services orders`
-    `cccr analyze request-reply`
-    `cccr analyze audit`
-    `cccr analyze coverage`
+    `archlens analyze microservices path order-service shipping-service`
+    `archlens analyze microservices impact order-service`
+    `archlens analyze topics consumers orders.created`
+    `archlens analyze topics trace orders.created`
+    `archlens analyze apis providers "POST /payments"`
+    `archlens analyze mongodb services orders`
+    `archlens analyze request-reply`
+    `archlens analyze audit`
+    `archlens analyze coverage`
     """
     arguments = arguments or []
     if not arguments:
         typer.echo(
-            "Usage : `cccr analyze <microservices|topics|apis|mongodb|request-reply|audit|coverage> ...`.", err=True
+            "Usage : `archlens analyze <microservices|topics|apis|mongodb|request-reply|audit|coverage> ...`.", err=True
         )
         raise typer.Exit(code=2)
     subject = arguments[0]
     workspace_root = (root or Path.cwd()).resolve()
     if subject == "microservices":
         if len(arguments) < 2:
-            typer.echo("Usage : `cccr analyze microservices <calls|external-apis|orphan-integrations|impact|path> ...`.", err=True)
+            typer.echo("Usage : `archlens analyze microservices <calls|external-apis|orphan-integrations|impact|path> ...`.", err=True)
             raise typer.Exit(code=2)
         query = arguments[1]
         if query == "path":
             if len(arguments) != 4:
-                typer.echo("`cccr analyze microservices path` requiert une source et une cible.", err=True)
+                typer.echo("`archlens analyze microservices path` requiert une source et une cible.", err=True)
                 raise typer.Exit(code=2)
             _render_microservice_path(
                 arguments[2], arguments[3], workspace_root, json_output, max_depth=max_depth, limit=limit
             )
             return
         if query in {"calls", "dependencies", "impact"} and len(arguments) != 3:
-            typer.echo(f"`cccr analyze microservices {query}` requiert une cible.", err=True)
+            typer.echo(f"`archlens analyze microservices {query}` requiert une cible.", err=True)
             raise typer.Exit(code=2)
         if len(arguments) not in {2, 3}:
-            typer.echo(f"`cccr analyze microservices {query}` accepte une cible optionnelle.", err=True)
+            typer.echo(f"`archlens analyze microservices {query}` accepte une cible optionnelle.", err=True)
             raise typer.Exit(code=2)
         _render_microservice_analysis(
             query, arguments[2] if len(arguments) == 3 else None, workspace_root, json_output
@@ -430,7 +430,7 @@ def analyze_cmd(
         return
     if subject == "topics":
         if len(arguments) != 3 or arguments[1] not in {"consumers", "producers", "trace"}:
-            typer.echo("Usage : `cccr analyze topics <consumers|producers|trace> <topic>`.", err=True)
+            typer.echo("Usage : `archlens analyze topics <consumers|producers|trace> <topic>`.", err=True)
             raise typer.Exit(code=2)
         catalog = _microservice_catalog(workspace_root)
         query, topic = arguments[1], arguments[2]
@@ -446,7 +446,7 @@ def analyze_cmd(
         return
     if subject == "apis":
         if len(arguments) != 3 or arguments[1] not in {"providers", "consumers"}:
-            typer.echo("Usage : `cccr analyze apis <providers|consumers> <api>`.", err=True)
+            typer.echo("Usage : `archlens analyze apis <providers|consumers> <api>`.", err=True)
             raise typer.Exit(code=2)
         query, api = arguments[1], arguments[2]
         summary = show_architecture_object(_microservice_catalog(workspace_root), "api", api)
@@ -457,7 +457,7 @@ def analyze_cmd(
         return
     if subject == "mongodb":
         if len(arguments) != 3 or arguments[1] != "services":
-            typer.echo("Usage : `cccr analyze mongodb services <collection>`.", err=True)
+            typer.echo("Usage : `archlens analyze mongodb services <collection>`.", err=True)
             raise typer.Exit(code=2)
         collection = arguments[2]
         result = _mongodb_services(_microservice_catalog(workspace_root), collection)
@@ -476,7 +476,7 @@ def analyze_cmd(
         _render_inventory_coverage(workspace_root, json_output)
         return
     typer.echo(
-        "Usage : `cccr analyze <microservices|topics|apis|mongodb|request-reply|audit|coverage> ...`.", err=True
+        "Usage : `archlens analyze <microservices|topics|apis|mongodb|request-reply|audit|coverage> ...`.", err=True
     )
     raise typer.Exit(code=2)
 
@@ -783,7 +783,7 @@ def analyze_microservices_path(
 def version() -> None:
     """Affiche la version du package.
 
-    Exemple : `cccr version`.
+    Exemple : `archlens version`.
     """
     typer.echo(__version__)
 
@@ -792,7 +792,7 @@ def version() -> None:
 def doctor_cmd(json_output: bool = typer.Option(False, "--json")) -> None:
     """Vérifie les prérequis d'un audit d'architecture, sans modifier le projet.
 
-    Exemples : `cccr doctor`, `cccr doctor --json`.
+    Exemples : `archlens doctor`, `archlens doctor --json`.
     """
     checks = run_doctor(Path.cwd())
     result = [
@@ -811,7 +811,7 @@ def doctor_cmd(json_output: bool = typer.Option(False, "--json")) -> None:
 
 @app.command()
 def init() -> None:
-    """Initialise la configuration .cccr/config.yml du projet.
+    """Initialise la configuration .archlens/config.yml du projet.
 
     L'analyse des sources Java/Spring est entièrement locale et fondée sur AST.
     """
@@ -854,10 +854,10 @@ def index_cmd(
 ) -> None:
     """Indexe le code avec les extracteurs AST (incrémental par défaut).
 
-    Exemples : `cccr index`, `cccr index --full`,
-    `cccr index --topic-strategy strategy1`,
-    `cccr index --manifest TOPICS.md`,
-    `cccr index --manifest kafka-flow-graph-anonymous.json`.
+    Exemples : `archlens index`, `archlens index --full`,
+    `archlens index --topic-strategy strategy1`,
+    `archlens index --manifest TOPICS.md`,
+    `archlens index --manifest kafka-flow-graph-anonymous.json`.
     """
     repo_root = Path.cwd()
     _trace_index(
@@ -895,7 +895,7 @@ def index_cmd(
         f"+integrations={report.endpoints_added} -integrations={report.endpoints_removed}"
     )
     typer.echo(
-        "Prochaine étape : cccr export microservices --html architecture.html "
+        "Prochaine étape : archlens export microservices --html architecture.html "
         "pour explorer le graphe."
     )
     _trace_index("cli.index.end")
@@ -904,7 +904,7 @@ def index_cmd(
 def _require_index(repo_root: Path) -> None:
     index_path = db_path(repo_root)
     if not index_path.is_file():
-        typer.echo("Index absent. Lancez d'abord: cccr index", err=True)
+        typer.echo("Index absent. Lancez d'abord: archlens index", err=True)
         raise typer.Exit(code=2)
 
 
@@ -944,7 +944,7 @@ def _load_microservice_graph(
     }
     edges = [
         edge
-        for edge in build_graph(services_by_name)
+        for edge in build_graph(services_by_name, strategy1=inventory.strategy1)
         if _is_exportable_microservice(edge.from_service)
         and _is_exportable_microservice(edge.to_service)
     ]
@@ -992,12 +992,12 @@ def _write_likec4_project(destination: Path, model: str) -> None:
     destination.mkdir(parents=True, exist_ok=True)
     config = {
         "$schema": "https://likec4.dev/schemas/config.json",
-        "name": "cccr-architecture",
-        "title": "CCC Radar architecture",
+        "name": "archlens-architecture",
+        "title": "ArchLens architecture",
         "implicitViews": True,
     }
     package = {
-        "name": "cccr-likec4-architecture",
+        "name": "archlens-likec4-architecture",
         "private": True,
         "version": "0.0.0",
         "scripts": {
@@ -1011,7 +1011,7 @@ def _write_likec4_project(destination: Path, model: str) -> None:
     }
     readme = """# LikeC4 Architecture
 
-Generated by `cccr export microservices --c4`.
+Generated by `archlens export microservices --c4`.
 
 ## Start the site
 
@@ -1067,9 +1067,9 @@ def export_microservices_cmd(
 ) -> None:
     """Exporter les dépendances microservices, topics Kafka et collections MongoDB.
 
-    Exemples : `cccr export microservices --html graph.html`,
-    `cccr export microservices --c4 architecture-likec4`,
-    `cccr export microservices --json`.
+    Exemples : `archlens export microservices --html graph.html`,
+    `archlens export microservices --c4 architecture-likec4`,
+    `archlens export microservices --json`.
     """
     outputs = [output for output in (html, c4) if output is not None]
     if len(outputs) + int(json_output) != 1:
@@ -1136,14 +1136,14 @@ def export_modules_cmd(
 ) -> None:
     """Exporter les dépendances de build entre modules indexés.
 
-    Exemple : `cccr export modules --html modules.html`.
+    Exemple : `archlens export modules --html modules.html`.
     """
     if html is None:
-        typer.echo("`cccr export modules` requiert --html FILE.", err=True)
+        typer.echo("`archlens export modules` requiert --html FILE.", err=True)
         raise typer.Exit(code=2)
     repo_root = Path.cwd()
     if not db_path(repo_root).is_file():
-        typer.echo("Index absent : lancez d'abord `cccr index` dans ce répertoire.", err=True)
+        typer.echo("Index absent : lancez d'abord `archlens index` dans ce répertoire.", err=True)
         raise typer.Exit(code=2)
     with Store(repo_root, readonly=True) as store:
         modules = store.all_modules()
@@ -1162,10 +1162,10 @@ def export_request_reply_cmd(
 ) -> None:
     """Exporter une vue dédiée des patterns Kafka request/reply Strategy1.
 
-    Exemple : `cccr export request-reply --html request-reply.html`.
+    Exemple : `archlens export request-reply --html request-reply.html`.
     """
     if html is None:
-        typer.echo("`cccr export request-reply` requiert --html FILE.", err=True)
+        typer.echo("`archlens export request-reply` requiert --html FILE.", err=True)
         raise typer.Exit(code=2)
     repo_root = Path.cwd()
     _require_index(repo_root)
@@ -1179,7 +1179,7 @@ def _render_audit(repo_root: Path, workspace: Path | None, json_output: bool) ->
     inventory = load_architecture_inventory(repo_root, workspace)
     risks = assess_architecture(
         inventory.endpoints_by_service,
-        build_graph(inventory.endpoints_by_service),
+        build_graph(inventory.endpoints_by_service, strategy1=inventory.strategy1),
         modules=inventory.modules,
         endpoints_by_module=inventory.endpoints_by_module,
     )
@@ -1239,9 +1239,9 @@ def microservices_cmd(
 ) -> None:
     """Lister les microservices ou résumer un microservice.
 
-    Exemples : `cccr microservices`, `cccr microservices orders`,
-    `cccr microservices topics orders`, `cccr microservices apis orders`,
-    `cccr microservices mongodb orders`, `cccr microservices neighbors orders`.
+    Exemples : `archlens microservices`, `archlens microservices orders`,
+    `archlens microservices topics orders`, `archlens microservices apis orders`,
+    `archlens microservices mongodb orders`, `archlens microservices neighbors orders`.
     """
     arguments = arguments or []
     json_output = _option_json(json_output)
@@ -1306,7 +1306,7 @@ def microservices_cmd(
             _render_microservice_summary(argument, root, json_output)
             return
     if len(arguments) > 1:
-        typer.echo("Usage : `cccr microservices [--root <root>]` ou `cccr microservices <service> --root <root>`.", err=True)
+        typer.echo("Usage : `archlens microservices [--root <root>]` ou `archlens microservices <service> --root <root>`.", err=True)
         raise typer.Exit(code=2)
     _emit_architecture(
         list_architecture_objects(_microservice_catalog(root), "microservice"),
@@ -1331,7 +1331,9 @@ def _microservice_catalog(root: Path):
     if db_path(root).is_file():
         inventory = load_architecture_inventory(root)
         if inventory.modules:
-            return build_catalog(inventory.modules, inventory.endpoints)
+            return build_catalog(
+                inventory.modules, inventory.endpoints, strategy1=inventory.strategy1
+            )
     services = discover_maven_services(root)
     federation = load_federation(services)
     modules = [module for module in discover_modules(root) if module.starts_application]
@@ -1434,8 +1436,8 @@ def _render_microservice_analysis(
 ) -> None:
     if query.casefold() in {"consumers", "consumer", "producers", "producer"}:
         typer.echo(
-            "Utilisez `cccr analyze topics consumers <topic>` ou "
-            "`cccr analyze topics producers <topic>`.",
+            "Utilisez `archlens analyze topics consumers <topic>` ou "
+            "`archlens analyze topics producers <topic>`.",
             err=True,
         )
         raise typer.Exit(code=2)
@@ -1443,7 +1445,7 @@ def _render_microservice_analysis(
     if result is None:
         typer.echo(
             "Analyse impossible : vérifiez la question et sa cible (calls/"
-            "external-apis/orphan-integrations/impact), ou utilisez `cccr analyze`.",
+            "external-apis/orphan-integrations/impact), ou utilisez `archlens analyze`.",
             err=True,
         )
         raise typer.Exit(code=2)
@@ -1516,7 +1518,7 @@ def _render_microservice_mongodb(service: str, root: Path, json_output: bool) ->
 def _render_microservice_properties(service: str, root: Path, json_output: bool) -> None:
     """Affiche l'exemple YAML de propriétés Spring d'un microservice."""
     selected, _ = _selected_microservice(service, root)
-    from ccc_radar.configuration import service_configuration_example
+    from archlens.configuration import service_configuration_example
 
     properties = service_configuration_example(selected.path)
     result = {"name": selected.name, "properties_example": properties}
@@ -1559,13 +1561,13 @@ def modules_cmd(
 ) -> None:
     """Liste les modules indexés ou détaille l'un d'eux.
 
-    `cccr modules` liste. `cccr modules <module>` détaille. Les sous-commandes
+    `archlens modules` liste. `archlens modules <module>` détaille. Les sous-commandes
     `integrations`, `properties` et `openapi` prennent un module dans le
     répertoire courant déjà indexé. `graph` affiche les dépendances de build
-    entre modules. Utilisez `cccr export modules` pour générer le rendu HTML.
+    entre modules. Utilisez `archlens export modules` pour générer le rendu HTML.
 
-    Exemples : `cccr modules`, `cccr modules order-service`,
-    `cccr modules integrations order-service`, `cccr modules graph`.
+    Exemples : `archlens modules`, `archlens modules order-service`,
+    `archlens modules integrations order-service`, `archlens modules graph`.
     """
     arguments = arguments or []
     commands = {"integrations", "properties", "openapi", "graph"}
@@ -1592,12 +1594,12 @@ def modules_cmd(
                 _render_openapi_contracts(selected.name, selected.path, json_output)
         return
     if len(arguments) > 1:
-        typer.echo("Usage : `cccr modules [module]` ou `cccr modules <integrations|properties|openapi> <module>` ou `cccr modules graph`.", err=True)
+        typer.echo("Usage : `archlens modules [module]` ou `archlens modules <integrations|properties|openapi> <module>` ou `archlens modules graph`.", err=True)
         raise typer.Exit(code=2)
     module = arguments[0] if arguments else None
     repo_root = Path.cwd().resolve()
     if not db_path(repo_root).is_file():
-        typer.echo("Index absent : lancez d'abord `cccr index` dans ce répertoire.", err=True)
+        typer.echo("Index absent : lancez d'abord `archlens index` dans ce répertoire.", err=True)
         raise typer.Exit(code=2)
     try:
         with Store(repo_root, readonly=True) as store:
@@ -1626,7 +1628,7 @@ def _render_module_graph(
     repo_root: Path, json_output: bool, html: Path | None
 ) -> None:
     if not db_path(repo_root).is_file():
-        typer.echo("Index absent : lancez d'abord `cccr index` dans ce répertoire.", err=True)
+        typer.echo("Index absent : lancez d'abord `archlens index` dans ce répertoire.", err=True)
         raise typer.Exit(code=2)
     try:
         with Store(repo_root, readonly=True) as store:
@@ -1759,7 +1761,7 @@ def modules_graph(json_output: bool = typer.Option(False, "--json")) -> None:
 
 def _selected_indexed_module(name: str, repo_root: Path):
     if not db_path(repo_root).is_file():
-        typer.echo("Index absent : lancez d'abord `cccr index` dans ce répertoire.", err=True)
+        typer.echo("Index absent : lancez d'abord `archlens index` dans ce répertoire.", err=True)
         raise typer.Exit(code=2)
     try:
         with Store(repo_root, readonly=True) as store:
@@ -1781,11 +1783,11 @@ def mcp_cmd() -> None:
 
     Enregistrement client (ex. Claude Code), à ajouter à la config MCP :
 
-    {"mcpServers": {"cccr": {"command": "cccr", "args": ["mcp"]}}}
+    {"mcpServers": {"archlens": {"command": "archlens", "args": ["mcp"]}}}
 
-    Exemple : `cccr mcp`.
+    Exemple : `archlens mcp`.
     """
-    from ccc_radar.mcp_server import mcp as fastmcp_app
+    from archlens.mcp_server import mcp as fastmcp_app
 
     fastmcp_app.run()
 
