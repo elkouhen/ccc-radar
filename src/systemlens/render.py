@@ -1007,6 +1007,10 @@ def render_graph_html(
             "tier_start": ranking["tier_start"],
             "tier_end": ranking["tier_end"],
         }
+        # Sigma draws labels next to the WebGL shapes. Include the score in
+        # that always-visible label so topic and collection complexity does not
+        # require opening the detail panel.
+        node["label"] = f"{node['name']} · {score}"
         node["color"] = {"low": "#2563eb", "medium": "#d97706", "high": "#dc2626"}[level]
         node["size"] = base_size + {"low": 0, "medium": 2, "high": 4}[level]
     kafka_dtos, project_dto_definitions = _kafka_dto_views(

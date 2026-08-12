@@ -84,7 +84,8 @@ are counted once. The HTML complexity badge exposes the HTTP, Kafka, and
 MongoDB breakdown as a tooltip, along with the resource rank and its soft
 tercile bounds. The lowest third is blue, the middle third orange, and the
 highest third red; the terciles are recalculated separately for each resource
-type in every export.
+type in every export. The graph label of each coloured resource also displays
+its connectivity score directly (for example, `orders.created · 4`).
 The Explore search accepts either one exact, unambiguous graph-node name or a
 Kafka itinerary written with `->`. An itinerary starts and ends with a
 microservice and follows only directed Kafka relations through Kafka topics;

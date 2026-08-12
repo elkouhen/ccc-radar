@@ -230,6 +230,7 @@ def test_graph_html_colours_topics_and_mongodb_collections_by_connectivity() -> 
         "tier_end": 1,
     }
     assert topic["color"] == "#2563eb"
+    assert topic["label"] == "orders.created · 2"
     assert collection["complexity"] == {
         "score": 1,
         "level": "low",
@@ -241,6 +242,7 @@ def test_graph_html_colours_topics_and_mongodb_collections_by_connectivity() -> 
         "tier_end": 1,
     }
     assert collection["color"] == "#2563eb"
+    assert collection["label"] == "orders · 1"
     assert "Topics use the complexity colour as their actual fill." in render_graph_html(
         {"orders": [producer], "payments": [consumer]},
         [GraphEdge("kafka", "orders", "payments", producer, consumer)],
@@ -268,6 +270,7 @@ def test_graph_html_microservice_complexity_counts_distinct_direct_clients() -> 
 
     # orders -> payments is one HTTP client relation despite two called routes.
     assert nodes["microservice:orders"]["complexity"]["score"] == 3
+    assert nodes["microservice:orders"]["label"] == "orders · 3"
     assert nodes["microservice:orders"]["complexity"]["breakdown"] == {
         "http": 1, "kafka": 1, "mongodb": 1
     }
