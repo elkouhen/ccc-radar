@@ -2095,10 +2095,12 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
         float distance = shape - .43;
         float alpha = 1.0 - smoothstep(-.014, .014, distance);
         if (alpha < .01) discard;
-        float border = smoothstep(.34, .42, shape);
-        // Topics use the complexity colour as their full, opaque fill. This
-        // must remain independent of the white canvas to be immediately visible.
-        gl_FragColor = vec4(v_color.rgb, v_color.a * alpha);
+        // Same visual contract as microservices: white interior and a thick
+        // complexity-coloured border. The band starts well inside the circle
+        // so it remains visible at normal zoom.
+        float border = smoothstep(.27, .40, shape);
+        vec3 fill = vec3(.98, .99, 1.0);
+        gl_FragColor = vec4(mix(fill, v_color.rgb, border), v_color.a * alpha);
       }
     `;
     const MONGODB_COLLECTION_FRAGMENT_SHADER = `
@@ -2242,10 +2244,7 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
       network = new graphology.MultiDirectedGraph();
       layoutNodes.forEach(node => network.addNode(node.id, {
         label: node.label, x: node.x, y: node.y, size: node.size, color: node.color,
-        // Sigma's native circle program uses `color` as an opaque fill. Keep
-        // topics on it so their complexity colour cannot degrade to a neutral
-        // outline through the custom WebGL shader.
-        type: node.kind === "kafka_topic" ? "circle" : node.external ? "external_microservice" : node.kind,
+        type: node.external ? "external_microservice" : node.kind,
       }));
       visibleLinks.forEach((link, index) => network.addEdgeWithKey(`edge-${index}`, link.source, link.target, {
         label: link.label, size: 1.2, color: relationColor(link), kind: link.kind, type: "arrow",
@@ -2256,6 +2255,7 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
         nodeProgramClasses: {
           microservice: createNodeProgram(MICROSERVICE_FRAGMENT_SHADER),
           external_microservice: createNodeProgram(EXTERNAL_MICROSERVICE_FRAGMENT_SHADER),
+          kafka_topic: createNodeProgram(KAFKA_TOPIC_FRAGMENT_SHADER),
           mongodb_collection: createNodeProgram(MONGODB_COLLECTION_FRAGMENT_SHADER),
         },
         renderEdgeLabels: false, labelDensity: .08, labelGridCellSize: 110, labelRenderedSizeThreshold: 8,

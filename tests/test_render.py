@@ -247,8 +247,8 @@ def test_graph_html_colours_topics_and_mongodb_collections_by_connectivity() -> 
         {"orders": [producer], "payments": [consumer]},
         [GraphEdge("kafka", "orders", "payments", producer, consumer)],
     )
-    assert 'type: node.kind === "kafka_topic" ? "circle"' in document
-    assert "kafka_topic: createNodeProgram" not in document
+    assert "Same visual contract as microservices" in document
+    assert "kafka_topic: createNodeProgram(KAFKA_TOPIC_FRAGMENT_SHADER)" in document
 
 
 def test_graph_html_microservice_complexity_counts_distinct_direct_clients() -> None:
