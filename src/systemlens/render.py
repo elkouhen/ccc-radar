@@ -2096,10 +2096,9 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
         float alpha = 1.0 - smoothstep(-.014, .014, distance);
         if (alpha < .01) discard;
         float border = smoothstep(.34, .42, shape);
-        // Topics use the complexity colour as their actual fill.  A light
-        // tint was not distinguishable from the white canvas in WebGL.
-        vec3 fill = mix(vec3(1.0), v_color.rgb, .78);
-        gl_FragColor = vec4(mix(fill, v_color.rgb, border), v_color.a * alpha);
+        // Topics use the complexity colour as their full, opaque fill. This
+        // must remain independent of the white canvas to be immediately visible.
+        gl_FragColor = vec4(v_color.rgb, v_color.a * alpha);
       }
     `;
     const MONGODB_COLLECTION_FRAGMENT_SHADER = `
@@ -2114,8 +2113,7 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
         float alpha = 1.0 - smoothstep(-.014, .014, distance);
         if (alpha < .01) discard;
         float border = smoothstep(-.065, -.016, distance);
-        vec3 fill = mix(vec3(1.0), v_color.rgb, .70);
-        gl_FragColor = vec4(mix(fill, v_color.rgb, border), v_color.a * alpha);
+        gl_FragColor = vec4(v_color.rgb, v_color.a * alpha);
       }
     `;
     const packedColorBuffer = new ArrayBuffer(4);
