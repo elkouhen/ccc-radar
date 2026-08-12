@@ -3285,15 +3285,15 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
       renderSimplePathChoices(simplePaths.paths, simplePaths.limited);
       persistState();
     }
-    function appendServiceKafkaActivities(node, direction, links, container) {
+    function appendServiceKafkaActivities(node, role, title, links, container) {
       if (!links.length) return;
       const section = document.createElement("section");
       section.className = "details-section";
       const heading = document.createElement("h2");
-      heading.textContent = direction;
+      heading.textContent = title;
       const list = document.createElement("ul");
       list.className = "service-kafka-list";
-      const topicIds = [...new Set(links.map(link => direction === "Publie" ? link.target : link.source))];
+      const topicIds = [...new Set(links.map(link => role === "produce" ? link.target : link.source))];
       topicIds.sort((left, right) => nodeDataById.get(left).name.localeCompare(nodeDataById.get(right).name));
       topicIds.forEach(topicId => {
         const topic = nodeDataById.get(topicId);
@@ -3310,8 +3310,8 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
         meta.className = "service-kafka-meta";
         const dtos = (graphData.kafka_dtos || []).filter(dto => {
           const matchesRole = (
-            (direction === "Publie" && (dto.producers || []).includes(node.name))
-            || (direction === "Consomme" && (dto.consumers || []).includes(node.name))
+            (role === "produce" && (dto.producers || []).includes(node.name))
+            || (role === "consume" && (dto.consumers || []).includes(node.name))
           );
           return (dto.topics || []).includes(topic.name) && matchesRole;
         }).sort((left, right) => dtoLabel(left).localeCompare(dtoLabel(right)));
@@ -3363,24 +3363,22 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
       title.textContent = node.name;
       const meta = document.createElement("div");
       meta.className = "details-meta";
+      const relationBadge = document.createElement("span");
+      relationBadge.className = "detail-badge";
+      relationBadge.textContent = `Relations indexees : ${indexedEdges.length}`;
+      const visibleBadge = document.createElement("span");
+      visibleBadge.className = "detail-badge";
+      visibleBadge.textContent = `Affichees : ${edges.length}`;
+      meta.append(relationBadge, visibleBadge);
       if (isMicroservice) {
         [
           `${publishedApiCount} API${publishedApiCount > 1 ? "s" : ""} exposee${publishedApiCount > 1 ? "s" : ""}`,
           `${publishedTopicCount} topic${publishedTopicCount > 1 ? "s" : ""} publie${publishedTopicCount > 1 ? "s" : ""}`,
           `${collectionCount} collection${collectionCount > 1 ? "s" : ""} utilisee${collectionCount > 1 ? "s" : ""}`,
         ].forEach(label => { const badge = document.createElement("span"); badge.className = "detail-badge"; badge.textContent = label; meta.append(badge); });
-      } else {
-        const relationBadge = document.createElement("span");
-        relationBadge.className = "detail-badge";
-        relationBadge.textContent = `Relations indexees : ${indexedEdges.length}`;
-        const visibleBadge = document.createElement("span");
-        visibleBadge.className = "detail-badge";
-        visibleBadge.textContent = `Affichees : ${edges.length}`;
-        meta.append(relationBadge, visibleBadge);
       }
       const confidenceLabels = { proved: "prouvee", inferred: "inferee", conventional: "conventionnelle" };
       ["proved", "inferred", "conventional"].forEach(confidence => {
-        if (isMicroservice) return;
         const count = edges.filter(link => link.confidence === confidence).length;
         if (!count) return;
         const badge = document.createElement("span");
@@ -3418,21 +3416,17 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
               action: () => focusPublishedRestResource(id, resource),
             })),
         ];
-        const apiGroup = createDetailsGroup("API");
-        appendRelationList("Consomme", httpCalls, id, link => (
+        const relationsGroup = createDetailsGroup("Relations");
+        appendRelationList("APIs consommees", httpCalls, id, link => (
           `API de ${nodeDataById.get(link.target).name}`
-        ), apiGroup);
-        appendActionList("Publie", publishedApis, apiGroup);
-        discardEmptyDetailsGroup(apiGroup);
-        const kafkaGroup = createDetailsGroup("Kafka");
-        appendServiceKafkaActivities(node, "Consomme", kafkaConsumptions, kafkaGroup);
-        appendServiceKafkaActivities(node, "Publie", kafkaPublications, kafkaGroup);
-        discardEmptyDetailsGroup(kafkaGroup);
-        const dataGroup = createDetailsGroup("Donnees");
+        ), relationsGroup);
+        appendActionList("APIs publiees", publishedApis, relationsGroup);
+        appendServiceKafkaActivities(node, "consume", "Topics consommes", kafkaConsumptions, relationsGroup);
+        appendServiceKafkaActivities(node, "produce", "Topics publies", kafkaPublications, relationsGroup);
         appendRelationList("Collections MongoDB", mongoCollections, id, link => (
           nodeDataById.get(link.target).name
-        ), dataGroup);
-        discardEmptyDetailsGroup(dataGroup);
+        ), relationsGroup);
+        discardEmptyDetailsGroup(relationsGroup);
         const sourceEntries = [
           ...openApiContracts.map(contract => ({
             label: `OpenAPI · ${contract.path}`,
@@ -3450,13 +3444,13 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
         discardEmptyDetailsGroup(sourcesGroup);
       }
       if (node.kind === "kafka_topic") {
-        const eventGroup = createDetailsGroup("Evenement");
+        const relationsGroup = createDetailsGroup("Relations");
         appendRelationList("Services producteurs", edges.filter(link => link.kind === "kafka" && link.target === id), id,
-          link => nodeDataById.get(link.source).name, eventGroup);
+          link => nodeDataById.get(link.source).name, relationsGroup);
         appendRelationList("Services consommateurs", edges.filter(link => link.kind === "kafka" && link.source === id), id,
-          link => nodeDataById.get(link.target).name, eventGroup);
+          link => nodeDataById.get(link.source).name, relationsGroup);
         appendRelationList("Pattern request/reply", edges.filter(link => link.kind === "request_reply" && (link.source === id || link.target === id)), id,
-          link => nodeDataById.get(link.source === id ? link.target : link.source).name, eventGroup);
+          link => nodeDataById.get(link.source === id ? link.target : link.source).name, relationsGroup);
         const dtos = (graphData.kafka_dtos || [])
           .filter(dto => (dto.topics || []).includes(node.name))
           .sort((left, right) => dtoLabel(left).localeCompare(dtoLabel(right)));
@@ -3464,13 +3458,13 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
           label: dtoLabel(dto),
           title: "Afficher les champs et les relations Kafka de ce DTO",
           action: () => openDtoInspector(dto.id),
-        })), eventGroup);
+        })), relationsGroup);
         const indexedDtoTypes = new Set(dtos.flatMap(dto => [dto.id, dto.name, dto.qualified_name].filter(Boolean)));
         const unresolvedTypes = [...new Set([
           ...(node.published_message_types || []),
           ...(node.consumed_message_types || []),
         ])].filter(type => !indexedDtoTypes.has(type) && !indexedDtoTypes.has(type.split(".").at(-1)));
-        appendList("Types de message non resolus", unresolvedTypes, eventGroup);
+        appendList("Types de message non resolus", unresolvedTypes, relationsGroup);
         const endpointSources = graphData.nodes
           .filter(candidate => candidate.kind === "microservice")
           .flatMap(candidate => (candidate.kafka_endpoints || []).map(endpoint => ({ service: candidate.name, ...endpoint })))
@@ -3479,15 +3473,15 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
           label: `${endpoint.service} · ${endpoint.role === "produce" ? "publication" : "consommation"} · ${endpoint.location}`,
           title: `Ouvrir ${endpoint.location} dans VS Code`,
           action: () => { if (endpoint.vscode_uri) window.location.href = endpoint.vscode_uri; },
-        })), eventGroup);
-        discardEmptyDetailsGroup(eventGroup);
+        })), relationsGroup);
+        discardEmptyDetailsGroup(relationsGroup);
       }
       if (node.kind === "mongodb_collection") {
-        const dataGroup = createDetailsGroup("Donnees");
-        appendList("Stockee par", [node.owner], dataGroup);
+        const relationsGroup = createDetailsGroup("Relations");
+        appendList("Stockee par", [node.owner], relationsGroup);
         appendRelationList("Services utilisant cette collection", edges.filter(link => link.kind === "mongodb" && link.target === id), id,
-          link => nodeDataById.get(link.source).name, dataGroup);
-        discardEmptyDetailsGroup(dataGroup);
+          link => nodeDataById.get(link.source).name, relationsGroup);
+        discardEmptyDetailsGroup(relationsGroup);
       }
     }
     function focusNodeRelations(id, matches) {

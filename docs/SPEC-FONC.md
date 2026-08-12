@@ -26,7 +26,7 @@ but does not alter AST endpoint extraction.
 | `cccr init` | Creates `.cccr/config.yml`; it never overwrites an existing file. |
 | `cccr doctor [--json]` | Read-only check of configuration, local AST readiness and index state. |
 | `cccr index [--full] [--topic-strategy default\|strategy1] [--manifest FILE]...` | Incrementally extracts and persists architecture facts. |
-| `cccr microservices`, `topics`, `apis`, `dtos`, `mongodb`, `modules` | Browse the indexed catalog; each supports the documented list/show/neighbors actions and JSON output where applicable. |
+| `cccr microservices`, `topics`, `apis`, `dtos`, `mongodb`, `modules` | Browse the indexed catalog; `microservices`, `topics` and `mongodb` list the corresponding architecture objects directly, each with a `kind` and `name`, and support the documented list/show/neighbors actions and JSON output where applicable. |
 | `cccr analyze audit` | Reports static architecture risks. |
 | `cccr analyze indexing-issues [--json]` | Lists unresolved indexing facts. JSON includes source evidence suitable for reviewing proposed heuristics. |
 | `cccr analyze microservices impact NAME` | Lists direct and transitive impact paths. |
@@ -76,10 +76,12 @@ unchanged and produce an actionable message. The itinerary detail is an
 ordered, clickable list of node names and types. A Kafka topic lists its
 associated DTO names in parentheses. Selecting any path stop reveals its
 ordinary detail view, including the indexed Kafka source links where present.
-The microservice detail starts with functional counts, then separates `API`
-and `Kafka` into consumed and published resources. Each Kafka topic lists its
-applicable DTOs. A collapsed `Sources` section lists the indexed OpenAPI and
-Kafka files that provide the evidence, avoiding repetition in every topic.
+Every graph resource detail starts with indexed and visible relation counts,
+then a `Relations` section. For a microservice, that section separates
+consumed and published API and Kafka resources, plus MongoDB collections. Each
+Kafka topic lists its applicable DTOs. A collapsed `Sources` section lists the
+indexed OpenAPI and Kafka files that provide the evidence, avoiding repetition
+in every topic.
 The topic detail lists resolved Kafka DTOs once. It lists message types only
 when no matching DTO has been resolved, avoiding duplicate published and
 consumed type lists when they describe the same contract.

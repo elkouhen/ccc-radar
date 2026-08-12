@@ -126,6 +126,10 @@ enum PaymentStatus { AUTHORIZED, DECLINED }
     assert 'link => link.kind === "kafka"' in document
     assert "${nodeKindLabel(node)}${dtoSuffix}" in document
     assert "function appendServiceKafkaActivities" in document
+    assert document.count('createDetailsGroup("Relations")') == 3
+    assert 'appendRelationList("APIs consommees"' in document
+    assert 'appendServiceKafkaActivities(node, "produce", "Topics publies"' in document
+    assert 'appendList("Stockee par", [node.owner], relationsGroup)' in document
 
 
 def test_graph_html_distinguishes_dtos_with_the_same_simple_name_by_package(tmp_path: Path) -> None:

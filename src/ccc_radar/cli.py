@@ -52,8 +52,6 @@ from ccc_radar.render import (
     render_module_graph_text,
     render_modules_list_json,
     render_modules_list_text,
-    render_workspace_json,
-    render_workspace_text,
 )
 from ccc_radar.paths import config_path, db_path
 from ccc_radar.store import Store, StoreError
@@ -1310,19 +1308,10 @@ def microservices_cmd(
     if len(arguments) > 1:
         typer.echo("Usage : `cccr microservices [--root <root>]` ou `cccr microservices <service> --root <root>`.", err=True)
         raise typer.Exit(code=2)
-    workspace_root = Path(arguments[0]) if arguments else root
-    services = [
-        service
-        for service in discover_maven_services(workspace_root)
-        if service.kind == "microservice"
-    ]
-    federation = load_federation(services)
-    result = render_workspace_json(services, federation)
-
-    if json_output:
-        typer.echo(json.dumps(result))
-    else:
-        typer.echo(render_workspace_text(result))
+    _emit_architecture(
+        list_architecture_objects(_microservice_catalog(root), "microservice"),
+        json_output,
+    )
 
 
 def _selected_microservice(name: str, root: Path):

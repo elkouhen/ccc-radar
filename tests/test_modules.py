@@ -55,6 +55,47 @@ def test_discover_modules_includes_maven_aggregators_libraries_and_gradle_projec
     ]
 
 
+def test_microservices_list_uses_the_architecture_catalog_shape(tmp_path: Path) -> None:
+    _write_pom(tmp_path / "pom.xml", "orders", "1.0.0")
+    application = tmp_path / "src" / "main" / "java" / "OrdersApplication.java"
+    application.parent.mkdir(parents=True)
+    application.write_text(
+        "class OrdersApplication {\n"
+        "  public static void main(String[] args) {\n"
+        "    SpringApplication.run(OrdersApplication.class, args);\n"
+        "  }\n"
+        "}\n"
+    )
+
+    result = runner.invoke(app, ["microservices", "--root", str(tmp_path), "--json"])
+
+    assert result.exit_code == 0
+    assert json.loads(result.output) == [
+        {
+            "kind": "microservice",
+            "name": "orders",
+            "language": "Java",
+            "build_tool": "maven",
+            "version": "1.0.0",
+            "exposes_http_api": False,
+            "http_apis_exposed": [],
+            "http_apis_consumed": [],
+            "kafka_topics_published": [],
+            "kafka_topics_consumed": [],
+            "kafka_message_types_published": {},
+            "kafka_message_types_consumed": {},
+            "databases": {"mongodb_collections": []},
+            "technologies": ["Java", "Spring Boot"],
+            "openapi": False,
+            "openapi_files": [],
+            "scheduled_tasks": [],
+            "scheduled_tasks_detection": "not_available",
+            "dependencies": {"outgoing_modules": [], "incoming_modules": []},
+            "external_apis": [],
+        }
+    ]
+
+
 def test_discover_modules_excludes_maven_and_gradle_modules_in_test_directories(tmp_path: Path) -> None:
     maven_test = tmp_path / "orders-tests"
     gradle_test = tmp_path / "contract-test-kit"

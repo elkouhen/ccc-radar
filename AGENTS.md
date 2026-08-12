@@ -30,6 +30,8 @@ authoritative detail.
    in commit messages.
 6. If a change in `ccc-radar` affects the companion skill, update
    `../ccc-radar-skill/` in the same pass.
+7. Keep changes consistent with the existing codebase and ensure the code is
+   correct, including its behavior, contracts, and edge cases.
 
 ## Cross-functional review
 
