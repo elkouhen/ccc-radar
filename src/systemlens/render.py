@@ -2150,11 +2150,10 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
         float alpha = 1.0 - smoothstep(-.014, .014, distance);
         if (alpha < .01) discard;
         // Same visual contract as microservices: white interior and a thick
-        // complexity-coloured border. Keep a neutral centre, but use a broad
-        // band so blue/amber/red remains visible after a zoom-to-fit.
-        float border = smoothstep(.18, .39, shape);
-        vec3 fill = vec3(.98, .99, 1.0);
-        gl_FragColor = vec4(mix(fill, v_color.rgb, border), v_color.a * alpha);
+        // Kafka topics use the connectivity colour as their fill. A coloured
+        // outline became too subtle after zoom-to-fit on larger graphs; the
+        // full fill keeps the blue/amber/red signal unambiguous at every zoom.
+        gl_FragColor = vec4(v_color.rgb, v_color.a * alpha);
       }
     `;
     const MONGODB_COLLECTION_FRAGMENT_SHADER = `

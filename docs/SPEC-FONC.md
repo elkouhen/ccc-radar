@@ -92,9 +92,10 @@ Microservices with no indexed inter-service relation remain visible in a
 separate isolated area of the graph, so their absence of dependencies is not
 confused with an absent service.
 Microservices, Kafka topics, and MongoDB collections are marked by their
-relative connectivity. In the HTML graph, the shape and neutral interior
-identify the resource type, while the coloured outline alone communicates its
-relative connectivity. The relation count includes their indexed HTTP, Kafka,
+relative connectivity. In the HTML graph, the shape identifies the resource
+type. Kafka topics use a solid connectivity colour so they remain legible at
+every zoom level; microservices and collections use a coloured outline around
+a neutral interior. The relation count includes their indexed HTTP, Kafka,
 and MongoDB dependencies, while low/medium/high relative tiers are calculated separately
 for each resource type. For a microservice, the count is its distinct direct
 HTTP clients and targets, Kafka producer/consumer topic relations, and MongoDB

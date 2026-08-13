@@ -256,8 +256,8 @@ def test_graph_html_colours_topics_and_mongodb_collections_by_connectivity() -> 
         {"orders": [producer], "payments": [consumer]},
         [GraphEdge("kafka", "orders", "payments", producer, consumer)],
     )
-    assert "Same visual contract as microservices" in document
-    assert "float border = smoothstep(.18, .39, shape);" in document
+    assert "Kafka topics use the connectivity colour as their fill" in document
+    assert "gl_FragColor = vec4(v_color.rgb, v_color.a * alpha);" in document
     assert "kafka_topic: createNodeProgram(KAFKA_TOPIC_FRAGMENT_SHADER)" in document
 
 
