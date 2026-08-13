@@ -14,6 +14,8 @@ from systemlens.config import Config
 from systemlens.flow import group_endpoints_by_module_for_flow, trace_flow
 from systemlens.graph import build_graph
 from systemlens.indexer import index_repo
+from systemlens.architecture_inventory import load_architecture_inventory
+from systemlens.mcp_server import reindex_architecture
 from systemlens.scanner import (
     infer_framework_endpoints,
     infer_kafka_endpoints,
@@ -97,6 +99,76 @@ def test_index_is_incremental_without_embeddings(tmp_path: Path) -> None:
     assert first.endpoints_added == 2
     assert len(endpoints) == 2
     assert second.scanned == 0
+
+
+def test_incremental_property_change_reindexes_dependent_java_endpoints(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    shutil.copytree(FIXTURES / "kafka_repo", repo)
+
+    with Store(repo) as store:
+        index_repo(repo, Config(), store)
+        config = repo / "src" / "main" / "resources" / "application.yml"
+        config.write_text(config.read_text().replace("payments.received", "payments.changed"))
+        report = index_repo(repo, Config(), store)
+        topics = {endpoint.topic for endpoint in store.all_endpoints()}
+
+    assert report.scanned > 1
+    assert "payments.changed" in topics
+    assert "payments.received" not in topics
+
+
+def test_incremental_property_deletion_reindexes_dependent_java_endpoints(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    shutil.copytree(FIXTURES / "kafka_repo", repo)
+
+    with Store(repo) as store:
+        index_repo(repo, Config(), store)
+        (repo / "src" / "main" / "resources" / "application.yml").unlink()
+        report = index_repo(repo, Config(), store)
+        endpoints = store.all_endpoints()
+
+    assert report.scanned > 1
+    assert any(
+        endpoint.topic == "app.kafka.topics.payments" and endpoint.topic_dynamic
+        for endpoint in endpoints
+    )
+
+
+def test_incremental_build_identity_change_reattributes_unchanged_endpoints(tmp_path: Path) -> None:
+    repo = tmp_path / "workspace"
+    shutil.copytree(FIXTURES / "kafka_workspace", repo)
+
+    with Store(repo) as store:
+        index_repo(repo, Config(), store)
+        pom = repo / "order-service" / "pom.xml"
+        pom.write_text(pom.read_text().replace("order-service", "orders-renamed", 1))
+        report = index_repo(repo, Config(), store)
+        endpoint_modules = {endpoint.module for endpoint in store.all_endpoints()}
+        relation_modules = {relation.module for relation in store.all_architecture_relations()}
+
+    assert report.scanned > 1
+    assert "orders-renamed" in endpoint_modules
+    assert "order-service" not in endpoint_modules
+    assert "order-service" not in relation_modules
+
+
+@pytest.mark.parametrize("topic_strategy", ["default", "strategy1"])
+def test_mcp_reindex_preserves_the_persisted_topic_strategy(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, topic_strategy: str
+) -> None:
+    repo = tmp_path / "repo"
+    shutil.copytree(FIXTURES / "kafka_repo", repo)
+    monkeypatch.chdir(repo)
+    assert RUNNER.invoke(app, ["init"]).exit_code == 0
+
+    with Store(repo) as store:
+        index_repo(repo, Config(), store, topic_strategy=topic_strategy)
+
+    reindex_architecture()
+
+    with Store(repo, readonly=True) as store:
+        assert store.get_meta("topic_strategy") == topic_strategy
+    assert load_architecture_inventory(repo).profile.topic_strategy == topic_strategy
 
 
 def test_index_rollback_keeps_the_previous_complete_snapshot(

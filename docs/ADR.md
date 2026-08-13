@@ -140,3 +140,38 @@ explicit indexed data model first.
 **Consequences:** Exports are reproducible and work without source trees. DTO
 field and enum inspection is deliberately unavailable until its facts are
 persisted at index time.
+
+## ADR-10 — Persist the analysis profile with each snapshot
+
+**Status:** Accepted.
+
+**Context:** Strategy-dependent extraction facts were persisted, but delivery
+adapters could silently select a different default while reading or refreshing
+the same index.
+
+**Decision:** Load the persisted topic strategy as an immutable
+`AnalysisProfile` with every architecture inventory. CLI, MCP, graph, audit,
+and export adapters consume that profile. A federation rejects source indexes
+whose profiles are incompatible.
+
+**Consequences:** MCP reindexing preserves the existing strategy, and a
+Strategy1 convention cannot appear in a default inventory or disappear from a
+Strategy1 one because of the delivery path.
+
+## ADR-11 — Separate module identity from its display alias
+
+**Status:** Accepted.
+
+**Context:** Maven artifact IDs and Gradle project names are not unique within
+all workspaces or across independently indexed federated repositories.
+
+**Decision:** Persist a collision-safe module identity. It equals the build
+name when unique and is qualified with the relative module path when a
+collision exists. Endpoint, relation, dependency, and federation keys use the
+identity; the build name remains a display alias. Direct service indexes are
+namespaced at the federation boundary.
+
+**Consequences:** Ambiguous aliases are not resolved implicitly, and two
+services with the same display name coexist without data loss. Existing SQLite
+indexes receive the additive `modules.identity` migration on their next
+writable open.

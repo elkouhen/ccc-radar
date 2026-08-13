@@ -191,6 +191,26 @@ def _analysis_inputs_signature(repo_root: Path, config: Config) -> str:
     return digest.hexdigest()
 
 
+def _changes_require_dependent_rescan(paths: set[str]) -> bool:
+    """Return whether changed inputs can alter facts in unchanged source files.
+
+    Endpoint extraction resolves Spring placeholders from configuration files and
+    attributes every source fact to its nearest Maven/Gradle build module.  The
+    source file using either input need not itself change.  A conservative full
+    refresh is therefore required whenever one of these dependency inputs is
+    added, changed, or deleted; publishing a fast but mixed snapshot would be
+    worse than scanning a few additional files.
+    """
+    build_files = {
+        "pom.xml", "build.gradle", "build.gradle.kts", "settings.gradle", "settings.gradle.kts",
+    }
+    return any(
+        Path(path).name in build_files
+        or Path(path).suffix.casefold() in {".properties", ".yml", ".yaml"}
+        for path in paths
+    )
+
+
 def _report_progress(progress: ProgressCallback | None, message: str) -> None:
     if progress is not None:
         progress(message)
@@ -298,6 +318,14 @@ def _index_repo(
             set(changed) | set(deleted), repo_root, discovered_modules
         )
     ):
+        full = True
+        changed = sorted(current_paths)
+        unchanged = set()
+    # Spring configuration and build descriptors are analysis dependencies of
+    # Java endpoint facts.  Their own hash delta is insufficient: an unchanged
+    # Java file can resolve to a different topic, URL, application name, or
+    # module identity after one of these files changes or disappears.
+    if not full and _changes_require_dependent_rescan(set(changed) | set(deleted)):
         full = True
         changed = sorted(current_paths)
         unchanged = set()

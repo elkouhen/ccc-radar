@@ -62,8 +62,9 @@ Not delivered:
 ## Success measures
 
 - A developer can produce a usable REST/Kafka topology after one local index.
-- Incremental indexing touches only changed files unless an extractor signature
-  or selected convention changes.
+- Incremental indexing touches only changed files unless an extractor signature,
+  selected convention, or an analysis dependency (Spring configuration or build
+  descriptor) changes.
 - Every emitted integration is traceable to a concrete source location or an
   explicitly named manifest entry.
 

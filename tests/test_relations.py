@@ -1,7 +1,7 @@
 from dataclasses import replace
 from pathlib import Path
 
-from systemlens.architecture import build_catalog, indexing_issues
+from systemlens.architecture import build_catalog, indexing_issues, request_reply_patterns
 from systemlens.models import MessageEndpoint, compute_endpoint_id
 from systemlens.modules import DiscoveredModule, ModuleDependency, MongoMethod
 from systemlens.relations import build_architecture_relations
@@ -117,6 +117,35 @@ def test_relations_materialize_the_resolved_interservice_topology() -> None:
         for relation in relations
     )
     assert catalog.relations == tuple(relations)
+
+
+def test_catalog_topology_uses_persisted_relations_not_a_new_endpoint_match() -> None:
+    call = _endpoint("call", "rest", "GET /payments", snippet="http://payments")
+    served = replace(
+        _endpoint("serve", "rest", "GET /payments"),
+        module="payments",
+        qualified_name="com.example.PaymentController",
+    )
+
+    assert build_catalog([], [call, served], []).edges == ()
+
+    relations = build_architecture_relations([], [call, served], [])
+    catalog = build_catalog([], [call, served], relations)
+    assert [(edge.kind, edge.from_service, edge.to_service) for edge in catalog.edges] == [
+        ("rest", "orders", "payments")
+    ]
+
+
+def test_request_reply_view_requires_a_persisted_strategy_relation() -> None:
+    endpoints = [
+        _endpoint("produce", "kafka", "orders.request"),
+        _endpoint("consume", "kafka", "retour_orders.request"),
+    ]
+
+    assert request_reply_patterns(build_catalog([], endpoints, []) )["count"] == 0
+
+    relations = build_architecture_relations([], endpoints, [], kafka_reply_strategy1=True)
+    assert request_reply_patterns(build_catalog([], endpoints, relations))["count"] == 1
 
 
 def test_indexing_issues_exposes_source_evidence_for_heuristic_review() -> None:

@@ -5,7 +5,7 @@ from typing import TypedDict
 
 from systemlens.models import ArchitectureRelation, MessageEndpoint, compute_architecture_relation_id
 from systemlens.graph import build_graph, group_endpoints_by_module
-from systemlens.modules import DiscoveredModule, ModuleDependency
+from systemlens.modules import DiscoveredModule, ModuleDependency, module_identity
 
 
 class _RelationEvidence(TypedDict):
@@ -68,7 +68,7 @@ def build_architecture_relations(
 ) -> list[ArchitectureRelation]:
     """Materialize relations only when an indexed fact provides evidence."""
     module_kinds = {
-        module.name: "microservice" if module.starts_application else "module"
+        module_identity(module): "microservice" if module.starts_application else "module"
         for module in modules
     }
     relations: dict[str, ArchitectureRelation] = {}
@@ -145,19 +145,20 @@ def build_architecture_relations(
                 ))
 
     for module in modules:
-        source_kind = module_kinds[module.name]
+        identity = module_identity(module)
+        source_kind = module_kinds[identity]
         for method in module.mongo_methods:
             if not method.collection:
                 continue
             add(_relation(
                 source_kind,
-                module.name,
+                identity,
                 "writes" if method.operation in _MONGO_WRITE_OPERATIONS else "reads",
                 "collection",
                 method.collection,
                 origin="code",
                 confidence="high",
-                module=module.name,
+                module=identity,
                 path=method.path,
                 start_line=method.line,
                 end_line=method.line,
@@ -165,13 +166,13 @@ def build_architecture_relations(
             if method.owner_method:
                 add(_relation(
                     "method",
-                    f"{module.name}:{method.owner_method}",
+                    f"{identity}:{method.owner_method}",
                     "writes" if method.operation in _MONGO_WRITE_OPERATIONS else "reads",
                     "collection",
                     method.collection,
                     origin="code",
                     confidence="high",
-                    module=module.name,
+                    module=identity,
                     path=method.path,
                     start_line=method.line,
                     end_line=method.line,

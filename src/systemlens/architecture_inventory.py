@@ -8,12 +8,12 @@ slightly different view of modules, endpoints and warnings.
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal, cast
 
 from systemlens.graph import group_endpoints_by_module
 from systemlens.inventory_freshness import endpoint_inventory_warning
 from systemlens.models import ArchitectureRelation, ExtractionDiagnostic, Finding, MessageEndpoint
-from systemlens.relations import build_architecture_relations
-from systemlens.modules import DiscoveredModule, ModuleDependency
+from systemlens.modules import DiscoveredModule, ModuleDependency, module_identity
 from systemlens.paths import db_path
 from systemlens.store import Store
 from systemlens.workspace import (
@@ -25,6 +25,17 @@ from systemlens.workspace import (
 
 class ArchitectureInventoryError(RuntimeError):
     """The requested repository has not been indexed yet."""
+
+
+@dataclass(frozen=True)
+class AnalysisProfile:
+    """Persisted extraction choices required to interpret one snapshot."""
+
+    topic_strategy: Literal["default", "strategy1"] = "default"
+
+    @property
+    def strategy1(self) -> bool:
+        return self.topic_strategy == "strategy1"
 
 
 @dataclass(frozen=True)
@@ -43,7 +54,12 @@ class ArchitectureInventory:
     diagnostics: list[ExtractionDiagnostic]
     warnings: list[str]
     source_roots: list[Path]
-    strategy1: bool
+    profile: AnalysisProfile
+
+    @property
+    def strategy1(self) -> bool:
+        """Compatibility shorthand for adapters not yet profile-aware."""
+        return self.profile.strategy1
 
 def load_architecture_inventory(
     repo_root: Path,
@@ -66,6 +82,15 @@ def load_architecture_inventory(
         warnings = list(federation.warnings)
         if warning := dependency_federation_warning(services, federation):
             warnings.append(warning)
+        if len(federation.topic_strategies) > 1:
+            raise ArchitectureInventoryError(
+                "Fédération impossible : les index sélectionnent des stratégies "
+                f"Kafka incompatibles ({', '.join(federation.topic_strategies)})."
+            )
+        profile = AnalysisProfile(cast(
+            Literal["default", "strategy1"],
+            federation.topic_strategies[0] if federation.topic_strategies else "default",
+        ))
         endpoints_by_service = dict(federation.endpoints_by_service)
         modules_by_service = {
             service: module
@@ -97,15 +122,11 @@ def load_architecture_inventory(
             modules=list(federation.modules.values()),
             modules_by_service=modules_by_service,
             module_dependencies=federation.module_dependencies,
-            relations=build_architecture_relations(
-                list(federation.modules.values()),
-                [endpoint for endpoints in federation.endpoints_by_module.values() for endpoint in endpoints],
-                federation.module_dependencies,
-            ),
+            relations=federation.relations,
             diagnostics=[],
             warnings=warnings,
             source_roots=[workspace_root, *(service.path.resolve() for service in services)],
-            strategy1=False,
+            profile=profile,
         )
 
     if not db_path(repo_root).is_file():
@@ -122,17 +143,24 @@ def load_architecture_inventory(
             scope="ce projet",
             inventory_indexed=store.get_meta("endpoint_inventory_indexed") == "1",
         )
-        strategy1 = store.get_meta("topic_strategy") == "strategy1"
+        stored_strategy = store.get_meta("topic_strategy") or "default"
+        if stored_strategy not in {"default", "strategy1"}:
+            raise ArchitectureInventoryError(
+                f"Stratégie Kafka inconnue dans l'index : {stored_strategy!r}."
+            )
     endpoints_by_module = group_endpoints_by_module(endpoints)
     endpoints_by_service = dict(endpoints_by_module)
     modules_by_service = {
-        module.name: module for module in modules if module.name in endpoints_by_service
+        module_identity(module): module
+        for module in modules
+        if module_identity(module) in endpoints_by_service
     }
     if include_runtime_services_without_endpoints:
         for module in modules:
             if module.starts_application:
-                endpoints_by_service.setdefault(module.name, [])
-                modules_by_service.setdefault(module.name, module)
+                identity = module_identity(module)
+                endpoints_by_service.setdefault(identity, [])
+                modules_by_service.setdefault(identity, module)
     findings_by_service = {
         service: [finding for finding in findings if finding.module == service]
         for service in endpoints_by_service
@@ -150,5 +178,5 @@ def load_architecture_inventory(
         diagnostics=diagnostics,
         warnings=[warning] if warning else [],
         source_roots=[repo_root],
-        strategy1=strategy1,
+        profile=AnalysisProfile(cast(Literal["default", "strategy1"], stored_strategy)),
     )

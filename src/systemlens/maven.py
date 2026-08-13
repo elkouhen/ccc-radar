@@ -314,12 +314,33 @@ def _cached_module_name(pom_path_str: str) -> str:
     return artifact_id or pom_path.parent.name
 
 
+@lru_cache(maxsize=512)
+def _cached_module_identity(repo_root_str: str, pom_path_str: str) -> str:
+    """Return a collision-safe Maven module identity within one index root."""
+    repo_root = Path(repo_root_str)
+    pom_path = Path(pom_path_str)
+    name = _cached_module_name(pom_path_str)
+    matching_paths = [
+        candidate
+        for candidate in repo_root.rglob("pom.xml")
+        if _cached_module_name(str(candidate)) == name
+    ]
+    if len(matching_paths) <= 1:
+        return name
+    try:
+        relative = pom_path.parent.resolve().relative_to(repo_root.resolve()).as_posix() or "."
+    except ValueError:
+        relative = pom_path.parent.name
+    return f"{name}@{relative}"
+
+
 def clear_caches() -> None:
     """BACKLOG-16 P2 : à appeler en tête de chaque indexation dans un
     process long-vivant (serveur MCP) — `_cached_module_name` est caché par
     chemin de pom.xml pour toute la durée du process, un artifactId modifié
     entre deux `systemlens index` resterait sinon périmé."""
     _cached_module_name.cache_clear()
+    _cached_module_identity.cache_clear()
     _module_has_spring_boot_main_class.cache_clear()
 
 
@@ -339,7 +360,7 @@ def module_name_for_path(repo_root: Path, rel_path: str) -> str | None:
         if candidate == repo_root_resolved or repo_root_resolved in candidate.parents:
             pom_path = candidate / "pom.xml"
             if pom_path.is_file():
-                return _cached_module_name(str(pom_path))
+                return _cached_module_identity(str(repo_root_resolved), str(pom_path))
         if candidate == repo_root_resolved:
             break
     return None

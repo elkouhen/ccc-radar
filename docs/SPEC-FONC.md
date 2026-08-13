@@ -53,7 +53,9 @@ scanned=<N> skipped=<N> +integrations=<N> -integrations=<N>
 
 The first AST-only run removes stale results from the retired analyzer.
 
-`--topic-strategy strategy1` is opt-in. `--disable` accepts `properties`,
+`--topic-strategy strategy1` is opt-in. The selected strategy is persisted with
+the index and reused by incremental MCP reindexing and all derived views.
+`--disable` accepts `properties`,
 `module-architecture`, and `module-tree-sitter`.
 
 ## Extraction contract
@@ -77,8 +79,9 @@ remain indexed as unresolved evidence and are reported by coverage and indexing
 issues rather than being linked to a coincidentally similar route.
 
 The HTML microservice export provides an inspector for each statically typed
-Kafka message. It shows the message topic, producer and consumer services, and
-allows navigation through recursively referenced project DTO fields and enums.
+Kafka message. It shows the indexed payload-type identity, message topic, and
+producer and consumer services. DTO fields, enum values, and recursive project
+type navigation are not part of the current indexed contract.
 Its initial view foregrounds task-oriented entry points (Kafka topic, service
 dependencies, service-to-service path and Kafka messages). Relation/resource
 filters, graph layouts, specialized reference views and build dependencies are
@@ -141,9 +144,11 @@ when both sides follow the `retour_<request-topic>` convention.
 
 The index stores SHA-256 values for eligible files. A normal run parses added or
 changed files and purges facts for deleted files. A full refresh is forced when
-the endpoint extractor signature, analysis configuration signature or selected
-topic strategy changes. Explicit manifests are included even when otherwise
-excluded.
+the endpoint extractor signature, analysis configuration signature, selected
+topic strategy, Spring configuration file, or Maven/Gradle build descriptor
+changes. Spring properties and build descriptors can affect facts attributed to
+otherwise unchanged Java source files. Explicit manifests are included even when
+otherwise excluded.
 
 The index is `.systemlens/findings.db` for compatibility with prior releases. It is a
 local implementation detail, not a contract for direct SQL writes.

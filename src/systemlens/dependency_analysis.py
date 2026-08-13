@@ -11,9 +11,10 @@ from systemlens.graph import (
     external_microservice_name,
     find_outbound_calls_in_consumers,
     graph_edge_rest_resource,
+    graph_edges_from_relations,
     qualified_rest_resource,
 )
-from systemlens.models import MessageEndpoint
+from systemlens.models import ArchitectureRelation, MessageEndpoint
 from systemlens.modules import DiscoveredModule
 
 
@@ -99,6 +100,8 @@ def build_dependency_graph(
     modules_by_service: dict[str, DiscoveredModule],
     *,
     warnings: list[str] | None = None,
+    relations: list[ArchitectureRelation] | None = None,
+    strategy1: bool = False,
 ) -> DependencyGraphResult:
     """Build an evidenced service/topic/data-store topology for agent use."""
     nodes: dict[str, DependencyNode] = {}
@@ -126,7 +129,11 @@ def build_dependency_graph(
     for service in sorted(endpoints_by_service):
         add_node("microservice", service)
 
-    internal_edges = build_graph(endpoints_by_service)
+    internal_edges = (
+        graph_edges_from_relations(relations, endpoints_by_service)
+        if relations is not None
+        else build_graph(endpoints_by_service, strategy1=strategy1)
+    )
     matched_calls = {edge.from_endpoint.id for edge in internal_edges if edge.kind == "rest"}
 
     # Clients d'API configurés (createInternalClientApi) : la route HTTP n'est
@@ -299,13 +306,25 @@ def audit_dependency_graph(
     modules_by_service: dict[str, DiscoveredModule],
     *,
     warnings: list[str] | None = None,
+    relations: list[ArchitectureRelation] | None = None,
+    strategy1: bool = False,
 ) -> DependencyAuditResult:
     """Combine inventory risks with graph-specific cycles and blocking patterns."""
-    graph = build_dependency_graph(endpoints_by_service, modules_by_service, warnings=warnings)
+    graph = build_dependency_graph(
+        endpoints_by_service,
+        modules_by_service,
+        warnings=warnings,
+        relations=relations,
+        strategy1=strategy1,
+    )
     risks = render_audit_json(
         assess_architecture(
             endpoints_by_service,
-            build_graph(endpoints_by_service),
+            (
+                graph_edges_from_relations(relations, endpoints_by_service)
+                if relations is not None
+                else build_graph(endpoints_by_service, strategy1=strategy1)
+            ),
             modules=list(modules_by_service.values()),
             endpoints_by_module=endpoints_by_service,
         )

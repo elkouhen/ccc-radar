@@ -130,6 +130,22 @@ def discover_gradle_modules(repo_root: Path) -> list[tuple[str, Path, str | None
     return modules
 
 
+def gradle_module_identity(repo_root: Path, module_dir: Path) -> str:
+    """Return an artifact identity, qualified by path only when ambiguous."""
+    root = repo_root.resolve()
+    module_dir = module_dir.resolve()
+    name = _gradle_artifact_name(str(module_dir), module_dir.name)
+    matches = [
+        candidate
+        for candidate_name, candidate, _version in discover_gradle_modules(root)
+        if candidate_name == name
+    ]
+    if len(matches) <= 1:
+        return name
+    relative = module_dir.relative_to(root).as_posix() or "."
+    return f"{name}@{relative}"
+
+
 def gradle_service_for_path(repo_root: Path, rel_path: str) -> str | None:
     """Nom d'artefact du service Gradle auquel appartient ``rel_path``.
 
@@ -141,7 +157,9 @@ def gradle_service_for_path(repo_root: Path, rel_path: str) -> str | None:
     parts = Path(rel_path).parts
     if not parts:
         return None
-    for root, artifact in _service_root_artifacts(str(repo_root.resolve())):
+    resolved_root = repo_root.resolve()
+    for root, artifact in _service_root_artifacts(str(resolved_root)):
         if not root or rel_path == root or rel_path.startswith(f"{root}/"):
-            return artifact
+            module_dir = resolved_root if not root else resolved_root / root
+            return gradle_module_identity(resolved_root, module_dir)
     return None

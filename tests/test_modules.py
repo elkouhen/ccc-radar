@@ -9,8 +9,9 @@ from systemlens.cli import app
 from systemlens.config import Config
 from systemlens.indexer import index_repo
 from systemlens.models import MessageEndpoint
-from systemlens.modules import ModuleDependency, discover_module_dependencies, discover_modules
+from systemlens.modules import ModuleDependency, discover_module_dependencies, discover_modules, module_identity
 from systemlens.store import Store
+from systemlens.workspace import discover_workspace_services, load_federation
 
 runner = CliRunner()
 
@@ -109,6 +110,50 @@ def test_discover_modules_excludes_maven_and_gradle_modules_in_test_directories(
     assert [module.name for module in discover_modules(tmp_path)] == [
         "contract-api", "orders-api", "orders-api"
     ]
+
+
+def test_duplicate_artifact_names_are_persisted_with_distinct_identities(tmp_path: Path) -> None:
+    north = tmp_path / "north"
+    south = tmp_path / "south"
+    north.mkdir()
+    south.mkdir()
+    _write_pom(north / "pom.xml", "orders", "1.0.0")
+    _write_pom(south / "pom.xml", "orders", "1.0.0")
+
+    modules = discover_modules(tmp_path)
+    identities = {module_identity(module) for module in modules}
+    assert identities == {"orders@north", "orders@south"}
+
+    with Store(tmp_path) as store:
+        store.replace_modules(modules)
+        stored = store.all_modules()
+
+    assert {module_identity(module) for module in stored} == identities
+
+
+def test_workspace_federation_namespaces_direct_indexes_with_duplicate_artifacts(
+    tmp_path: Path,
+) -> None:
+    workspace = tmp_path / "workspace"
+    for directory in ("north", "south"):
+        service = workspace / directory
+        source = service / "src" / "main" / "java" / "App.java"
+        source.parent.mkdir(parents=True)
+        _write_pom(service / "pom.xml", "orders", "1.0.0")
+        source.write_text(
+            "class App { void send() { kafkaTemplate.send(\"orders.created\", new Object()); } }"
+        )
+        with Store(service) as store:
+            index_repo(service, Config(), store)
+
+    federation = load_federation(discover_workspace_services(workspace))
+
+    assert set(federation.endpoints_by_module) == {"orders@north", "orders@south"}
+    assert {
+        endpoint.module
+        for endpoints in federation.endpoints_by_module.values()
+        for endpoint in endpoints
+    } == {"orders@north", "orders@south"}
 
 
 def test_discover_modules_excludes_maven_and_gradle_mock_projects(tmp_path: Path) -> None:

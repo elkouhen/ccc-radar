@@ -6,7 +6,7 @@ from dataclasses import asdict, dataclass
 
 from systemlens.graph import GraphEdge
 from systemlens.models import MessageEndpoint
-from systemlens.modules import DiscoveredModule
+from systemlens.modules import DiscoveredModule, module_identity
 
 
 _MONGO_WRITE_OPERATIONS = frozenset({
@@ -70,7 +70,7 @@ def assess_architecture(
     for module in sorted(modules or [], key=lambda item: item.name):
         if module.starts_application or module.kind == "aggregator":
             continue
-        endpoints = (endpoints_by_module or {}).get(module.name, [])
+        endpoints = (endpoints_by_module or {}).get(module_identity(module), [])
         risk = _non_runtime_module_activity_risk(module, endpoints)
         if risk is not None:
             risks.append(risk)
@@ -165,8 +165,8 @@ def _non_runtime_module_activity_risk(
         "non-runtime-module-activity",
         "WARNING",
         "Module non microservice avec responsabilités d'exécution",
-        f"{module.name} est un module non runtime mais " + "; ".join(details) + ".",
-        (module.name,),
+        f"{module_identity(module)} est un module non runtime mais " + "; ".join(details) + ".",
+        (module_identity(module),),
     )
 
 

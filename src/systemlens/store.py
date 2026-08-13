@@ -22,7 +22,7 @@ from systemlens.modules import (
 )
 from systemlens.paths import db_path
 
-SCHEMA_VERSION = "16"
+SCHEMA_VERSION = "17"
 SEVERITY_ORDER = ["INFO", "WARNING", "ERROR"]
 _COUNTABLE_DIMENSIONS = ("rule_id", "severity")
 _SQLITE_BIND_LIMIT = 900
@@ -232,6 +232,7 @@ class Store:
             CREATE TABLE IF NOT EXISTS modules (
                 path TEXT PRIMARY KEY,
                 name TEXT NOT NULL,
+                identity TEXT,
                 build_system TEXT NOT NULL,
                 version TEXT,
                 kind TEXT NOT NULL,
@@ -282,6 +283,7 @@ class Store:
         self._migrate_module_columns()
         self._migrate_endpoint_message_type()
         self._migrate_module_architecture_columns()
+        self._migrate_module_identity()
         if self.get_meta("schema_version") != SCHEMA_VERSION:
             self.set_meta("schema_version", SCHEMA_VERSION)
         self.conn.commit()
@@ -327,6 +329,12 @@ class Store:
                 column_type = "INTEGER" if name == "starts_application" else "TEXT"
                 self.conn.execute(f"ALTER TABLE modules ADD COLUMN {name} {column_type} NOT NULL DEFAULT {default}")
 
+    def _migrate_module_identity(self) -> None:
+        cols = {row["name"] for row in self.conn.execute("PRAGMA table_info(modules)")}
+        if "identity" not in cols:
+            self.conn.execute("ALTER TABLE modules ADD COLUMN identity TEXT")
+        self.conn.execute("UPDATE modules SET identity = name WHERE identity IS NULL OR identity = ''")
+
     def _migrate_endpoint_message_type(self) -> None:
         """Schema v12 -> v13: payload Java type on Kafka integration sites."""
         cols = {row["name"] for row in self.conn.execute("PRAGMA table_info(endpoints)")}
@@ -357,13 +365,14 @@ class Store:
             relative_path = module.path.resolve().relative_to(self._repo_root).as_posix()
             self.conn.execute(
                 """
-                INSERT INTO modules (path, name, build_system, version, kind, starts_application, configuration_example, application_entrypoint,
+                INSERT INTO modules (path, name, identity, build_system, version, kind, starts_application, configuration_example, application_entrypoint,
                                      mongo_collections, mongo_methods, openapi_files, kafka_methods, blocking_points, rest_controllers, openapi_generated_clients)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     relative_path,
                     module.name,
+                    module.identity or module.name,
                     module.build_system,
                     module.version,
                     module.kind,
@@ -382,12 +391,13 @@ class Store:
 
     def all_modules(self) -> list[DiscoveredModule]:
         rows = self.conn.execute(
-            "SELECT path, name, build_system, version, kind, starts_application, configuration_example, application_entrypoint, mongo_collections, mongo_methods, openapi_files, kafka_methods, blocking_points, rest_controllers, openapi_generated_clients "
+            "SELECT path, name, identity, build_system, version, kind, starts_application, configuration_example, application_entrypoint, mongo_collections, mongo_methods, openapi_files, kafka_methods, blocking_points, rest_controllers, openapi_generated_clients "
             "FROM modules ORDER BY path"
         ).fetchall()
         return [
             DiscoveredModule(
                 name=row["name"],
+                identity=row["identity"] or row["name"],
                 path=self._repo_root / row["path"],
                 build_system=row["build_system"],
                 version=row["version"],

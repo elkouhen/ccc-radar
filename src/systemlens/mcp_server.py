@@ -26,12 +26,11 @@ from systemlens.dependency_analysis import (
 )
 from systemlens.flow import group_endpoints_by_module_for_flow, trace_flow
 from systemlens.graph import (
-    build_graph,
     find_outbound_calls_in_consumers,
+    graph_edges_from_relations,
 )
 from systemlens.indexer import IndexReport, index_repo
 from systemlens.inventory_freshness import endpoint_inventory_warning
-from systemlens.modules import DiscoveredModule
 from systemlens.paths import db_path
 from systemlens.render import (
     EndpointHit,
@@ -71,14 +70,12 @@ def _current_repo_endpoint_warning(store: Store) -> str | None:
     )
 
 
-def _dependency_inventory(
-    workspace_root: str | None,
-) -> tuple[dict[str, list], dict[str, DiscoveredModule], list[str]]:
+def _dependency_inventory(workspace_root: str | None):
     """Load runtime services and module metadata for graph-oriented MCP tools."""
     inventory = load_architecture_inventory(
         _repo_root(), Path(workspace_root) if workspace_root else None
     )
-    return inventory.endpoints_by_service, inventory.modules_by_service, inventory.warnings
+    return inventory
 
 
 def _architecture_catalog(workspace_root: str | None):
@@ -159,7 +156,7 @@ def architecture_audit(workspace_root: str | None = None) -> list[dict[str, obje
     )
     risks = assess_architecture(
         inventory.endpoints_by_service,
-        build_graph(inventory.endpoints_by_service, strategy1=inventory.strategy1),
+        graph_edges_from_relations(inventory.relations, inventory.endpoints_by_service),
         modules=inventory.modules,
         endpoints_by_module=inventory.endpoints_by_module,
     )
@@ -172,7 +169,12 @@ def architecture_coverage() -> dict[str, object]:
     repo_root = _repo_root()
     _require_index(repo_root)
     with Store(repo_root, readonly=True) as store:
-        catalog = build_catalog(store.all_modules(), store.all_endpoints(), store.all_architecture_relations())
+        catalog = build_catalog(
+            store.all_modules(),
+            store.all_endpoints(),
+            store.all_architecture_relations(),
+            strategy1=store.get_meta("topic_strategy") == "strategy1",
+        )
         return inventory_coverage(catalog, list(catalog.relations))
 
 
@@ -186,7 +188,12 @@ def list_request_reply_patterns() -> dict[str, object]:
     repo_root = _repo_root()
     _require_index(repo_root)
     with Store(repo_root, readonly=True) as store:
-        catalog = build_catalog(store.all_modules(), store.all_endpoints(), store.all_architecture_relations())
+        catalog = build_catalog(
+            store.all_modules(),
+            store.all_endpoints(),
+            store.all_architecture_relations(),
+            strategy1=store.get_meta("topic_strategy") == "strategy1",
+        )
         return request_reply_patterns(catalog)
 
 
@@ -196,7 +203,10 @@ def reindex_architecture() -> IndexReport:
     repo_root = _repo_root()
     config = load_config(repo_root)
     with Store(repo_root) as store:
-        report = index_repo(repo_root, config, store)
+        topic_strategy = store.get_meta("topic_strategy") or "default"
+        if topic_strategy not in {"default", "strategy1"}:
+            raise RuntimeError(f"Stratégie Kafka inconnue dans l'index : {topic_strategy!r}")
+        report = index_repo(repo_root, config, store, topic_strategy=topic_strategy)
         store.set_meta("index_engine", "manual")
         return report
 
@@ -241,7 +251,7 @@ def graph(workspace_root: str | None = None) -> GraphResult:
         _repo_root(), Path(workspace_root) if workspace_root else None
     )
     outbound_calls = find_outbound_calls_in_consumers(inventory.endpoints)
-    edges = build_graph(inventory.endpoints_by_service, strategy1=inventory.strategy1)
+    edges = graph_edges_from_relations(inventory.relations, inventory.endpoints_by_service)
     return render_graph_json(
         list(inventory.endpoints_by_service),
         edges,
@@ -262,8 +272,14 @@ def dependency_graph(workspace_root: str | None = None) -> DependencyGraphResult
     audit ou pour reconstruire une dépendance service -> topic -> stockage.
     Avec `workspace_root`, fédère les services déjà indexés séparément.
     """
-    endpoints_by_service, modules_by_service, warnings = _dependency_inventory(workspace_root)
-    return build_dependency_graph(endpoints_by_service, modules_by_service, warnings=warnings)
+    inventory = _dependency_inventory(workspace_root)
+    return build_dependency_graph(
+        inventory.endpoints_by_service,
+        inventory.modules_by_service,
+        warnings=inventory.warnings,
+        relations=inventory.relations,
+        strategy1=inventory.strategy1,
+    )
 
 
 @mcp.tool()
@@ -277,8 +293,14 @@ def audit_dependency_graph(workspace_root: str | None = None) -> DependencyAudit
     Les résultats sont des signaux statiques avec un niveau de confiance, pas
     des traces d'exécution. Avec `workspace_root`, fédère les services indexés.
     """
-    endpoints_by_service, modules_by_service, warnings = _dependency_inventory(workspace_root)
-    return run_dependency_audit(endpoints_by_service, modules_by_service, warnings=warnings)
+    inventory = _dependency_inventory(workspace_root)
+    return run_dependency_audit(
+        inventory.endpoints_by_service,
+        inventory.modules_by_service,
+        warnings=inventory.warnings,
+        relations=inventory.relations,
+        strategy1=inventory.strategy1,
+    )
 
 
 @mcp.tool()

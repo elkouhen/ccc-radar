@@ -7,17 +7,17 @@ déjà indexés pour construire une vue fédérée
 (`endpoints_by_service`/`findings_by_service`) consommable par `graph.py`.
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import TypeVar
 
 from systemlens.inventory_freshness import endpoint_inventory_warning
-from systemlens.models import Finding, MessageEndpoint
-from systemlens.modules import DiscoveredModule, ModuleDependency, discover_modules
+from systemlens.models import ArchitectureRelation, Finding, MessageEndpoint
+from systemlens.modules import DiscoveredModule, ModuleDependency, discover_modules, module_identity
 from systemlens.paths import db_path
 from systemlens.store import Store, StoreError
 
-_ItemT = TypeVar("_ItemT", Finding, MessageEndpoint)
+_ItemT = TypeVar("_ItemT", ArchitectureRelation, Finding, MessageEndpoint)
 
 
 @dataclass(frozen=True)
@@ -38,6 +38,8 @@ class FederationResult:
     endpoints_by_module: dict[str, list[MessageEndpoint]] = field(default_factory=dict)
     modules: dict[str, DiscoveredModule] = field(default_factory=dict)
     module_dependencies: list[ModuleDependency] = field(default_factory=list)
+    relations: list[ArchitectureRelation] = field(default_factory=list)
+    topic_strategies: tuple[str, ...] = ()
 
 
 def missing_indexed_microservices(
@@ -82,6 +84,48 @@ def _dedupe_by_id(items: list[_ItemT]) -> list[_ItemT]:
     return deduped
 
 
+def _federated_endpoint(
+    endpoint: MessageEndpoint, service: DiscoveredService, local_identity: str
+) -> MessageEndpoint:
+    """Namespace a directly indexed service fact in a parent federation."""
+    return replace(
+        endpoint,
+        id=f"{service.name}:{endpoint.id}",
+        module=service.name if endpoint.module == local_identity else endpoint.module,
+    )
+
+
+def _federated_finding(
+    finding: Finding, service: DiscoveredService, local_identity: str
+) -> Finding:
+    return replace(
+        finding,
+        id=f"{service.name}:{finding.id}",
+        module=service.name if finding.module == local_identity else finding.module,
+    )
+
+
+def _federated_relation(
+    relation: ArchitectureRelation, service: DiscoveredService, local_identity: str
+) -> ArchitectureRelation:
+    """Retain local evidence while rewriting its service identity at the boundary."""
+    return replace(
+        relation,
+        id=f"{service.name}:{relation.id}",
+        source_name=(
+            service.name
+            if relation.source_kind == "microservice" and relation.source_name == local_identity
+            else relation.source_name
+        ),
+        target_name=(
+            service.name
+            if relation.target_kind == "microservice" and relation.target_name == local_identity
+            else relation.target_name
+        ),
+        module=service.name if relation.module == local_identity else relation.module,
+    )
+
+
 def _service_index_state(root: Path, service_dir: Path) -> tuple[bool, Path]:
     root = root.resolve()
     root_indexed = db_path(root).is_file()
@@ -107,7 +151,7 @@ def discover_workspace_services(root: Path) -> list[DiscoveredService]:
             continue
         indexed, index_root = _service_index_state(root, module.path)
         services.append(DiscoveredService(
-            name=module.name,
+            name=module_identity(module),
             path=module.path,
             kind="microservice" if module.starts_application else "shared-module",
             indexed=indexed,
@@ -134,6 +178,8 @@ def load_federation(services: list[DiscoveredService]) -> FederationResult:
     endpoints_by_module: dict[str, list[MessageEndpoint]] = {}
     modules: dict[str, DiscoveredModule] = {}
     module_dependencies: set[ModuleDependency] = set()
+    relations: list[ArchitectureRelation] = []
+    topic_strategies: set[str] = set()
     warnings: list[str] = []
 
     for service in services:
@@ -145,17 +191,67 @@ def load_federation(services: list[DiscoveredService]) -> FederationResult:
             continue
         try:
             with Store(service.index_root, readonly=True) as store:
-                indexed_modules = {module.name: module for module in store.all_modules()}
-                modules.update(indexed_modules)
-                module_dependencies.update(store.all_module_dependencies())
-                if module := indexed_modules.get(service.name):
-                    modules_by_service[service.name] = module
+                indexed_modules = {
+                    module_identity(module): module for module in store.all_modules()
+                }
+                indexed_relations = store.all_architecture_relations()
+                local_module = next(
+                    (
+                        module
+                        for module in indexed_modules.values()
+                        if module.path.resolve() == service.path.resolve()
+                    ),
+                    indexed_modules.get(service.name),
+                )
                 if service.index_root == service.path:
-                    findings = store.all_findings()
-                    endpoints = store.all_endpoints()
+                    local_identity = module_identity(local_module) if local_module else service.name
+                    def federated_module_identity(identity: str) -> str:
+                        return service.name if identity == local_identity else f"{service.name}/{identity}"
+
+                    module_dependencies.update(
+                        ModuleDependency(
+                            federated_module_identity(dependency.source),
+                            federated_module_identity(dependency.target),
+                        )
+                        for dependency in store.all_module_dependencies()
+                    )
+                    modules.update({
+                        federated_module_identity(identity): replace(
+                            module,
+                            identity=federated_module_identity(identity),
+                        )
+                        for identity, module in indexed_modules.items()
+                    })
+                    if local_module is not None:
+                        modules_by_service[service.name] = replace(
+                            local_module, identity=service.name
+                        )
+                    findings = [
+                        _federated_finding(finding, service, local_identity)
+                        for finding in store.all_findings()
+                    ]
+                    endpoints = [
+                        _federated_endpoint(endpoint, service, local_identity)
+                        for endpoint in store.all_endpoints()
+                    ]
+                    relations.extend(
+                        _federated_relation(relation, service, local_identity)
+                        for relation in indexed_relations
+                    )
                 else:
+                    modules.update(indexed_modules)
+                    module_dependencies.update(store.all_module_dependencies())
+                    if module := indexed_modules.get(service.name):
+                        modules_by_service[service.name] = module
                     findings = [f for f in store.all_findings() if f.module == service.name]
                     endpoints = [e for e in store.all_endpoints() if e.module == service.name]
+                    relations.extend(
+                        relation
+                        for relation in indexed_relations
+                        if relation.module == service.name
+                        or relation.source_name == service.name
+                        or relation.target_name == service.name
+                    )
                 findings = _dedupe_by_id(findings)
                 endpoints = _dedupe_by_id(endpoints)
                 findings_by_service[service.name] = findings
@@ -169,6 +265,7 @@ def load_federation(services: list[DiscoveredService]) -> FederationResult:
                 )
                 if stale_warning is not None:
                     warnings.append(stale_warning)
+                topic_strategies.add(store.get_meta("topic_strategy") or "default")
         except StoreError as exc:
             warnings.append(f"{service.name} : {exc}")
 
@@ -180,4 +277,6 @@ def load_federation(services: list[DiscoveredService]) -> FederationResult:
         endpoints_by_module,
         modules,
         sorted(module_dependencies, key=lambda dependency: (dependency.source, dependency.target)),
+        _dedupe_by_id(relations),
+        tuple(sorted(topic_strategies)),
     )

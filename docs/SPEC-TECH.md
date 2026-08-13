@@ -33,9 +33,15 @@ sha256(role | topic | path | start_line:end_line)[:16]
 objects. It includes origin (`code`, `manifest` or `derived`), confidence,
 module and source location. It is the persisted source of truth for the
 architecture snapshot, including conservative resolved inter-service REST and
-Kafka topology relations. `ArchitectureSnapshot` is the immutable application
-projection used by catalog and coverage views; adapters may add presentation
-details from its indexed endpoints but do not rescan source.
+Kafka topology relations. `ArchitectureSnapshot` derives its topology edges
+from those persisted relations; adapters may use indexed endpoints only to add
+route, topic, and source presentation details and do not re-resolve targets or
+rescan source.
+
+`AnalysisProfile` carries persisted extraction choices with the loaded
+inventory, currently the `default` or `strategy1` topic convention. CLI, MCP,
+export, graph, and audit adapters consume this profile. A workspace federation
+retains source profiles and rejects a mixture of incompatible topic strategies.
 
 `ExtractionDiagnostic` is a safe, persisted extraction outcome with its file
 path, extractor, category, severity and a non-source-code detail. The initial
@@ -63,7 +69,10 @@ external-analyzer data on the first AST-only index run.
 2. Discover modules unless disabled.
 3. Build the eligible-file hash inventory, respecting include/exclude rules,
    test-source exclusion and nested-build boundaries.
-4. Compare hashes with the stored inventory and purge removed files.
+4. Compare hashes with the stored inventory and purge removed files. A changed
+   or deleted Spring configuration file or Maven/Gradle descriptor promotes the
+   delta to a full endpoint refresh because these files are dependencies of
+   otherwise unchanged Java facts.
 5. Force a full refresh when extractor/configuration/strategy signatures differ.
 6. Run AST extractors for the changed files and atomically replace their
    endpoints.
@@ -113,12 +122,10 @@ variable declaration or enclosing class field.
 Strategy1 also enables the `getXxxServiceUrl()` REST target-name convention;
 without it, SystemLens uses only an explicit URL or `lb://` service target.
 
-`render_graph_html` resolves the Java DTOs and enums rooted at those Kafka
-payload types from production source roots. It follows declared field types
-recursively only when a project type name resolves unambiguously, and embeds
-the resulting definitions and enum constants in the self-contained HTML
-payload. DTO navigation is therefore a read-only export concern and does not
-add facts to the SQLite index.
+The graph export exposes only the indexed Java payload-type identities linked
+to Kafka endpoints. It does not resolve Java DTO fields or enums from source
+roots at render time; recursive DTO inspection requires a future persisted
+schema contract.
 
 The graph export keeps an exact-name index of its visual nodes. Its client-side
 itinerary algorithm performs directed breadth-first searches for each pair of
@@ -143,9 +150,10 @@ its evidence is intended for a human or an AI to assess a conservative rule.
 
 SQLite schema migration is additive where possible. `files` stores hash state,
 `endpoints` stores source facts, and normalized tables store modules,
-dependencies and relations. The database filename remains `findings.db` for
-backward compatibility; new AST-only behavior must not infer that it contains
-security findings.
+dependencies and relations. Each module has a collision-safe identity used by
+endpoints and relations; its artifact/project name remains a display alias.
+The database filename remains `findings.db` for backward compatibility; new
+AST-only behavior must not infer that it contains security findings.
 
 SystemLens stores this database under `.systemlens/`. It intentionally does not
 load the former `.cccr/`, `.archlens/`, or `.codeatlas/` state directory: the

@@ -10,8 +10,8 @@ from pathlib import Path
 from typing import Protocol
 
 from systemlens import java_parser
-from systemlens.gradle import discover_gradle_modules
-from systemlens.maven import parse_pom, pom_version
+from systemlens.gradle import discover_gradle_modules, gradle_module_identity
+from systemlens.maven import module_name_for_path, parse_pom, pom_version
 from systemlens.configuration import service_configuration_example
 from systemlens.topic_expressions import spring_topic_reference
 
@@ -34,6 +34,14 @@ class DiscoveredModule:
     # REST controllers and OpenAPI-generated clients
     rest_controllers: tuple[str, ...] = ()
     openapi_generated_clients: tuple[str, ...] = ()
+    # Stable key carried by endpoints and relations. It equals ``name`` unless
+    # another build module in the same index uses the same artifact name.
+    identity: str = ""
+
+
+def module_identity(module: DiscoveredModule) -> str:
+    """Return the collision-safe key while keeping ``name`` as display alias."""
+    return module.identity or module.name
 
 
 @dataclass(frozen=True, order=True)
@@ -727,6 +735,7 @@ def discover_modules(
                 starts_application=packaging != "pom" and entrypoint is not None,
                 configuration_example=service_configuration_example(module_dir),
                 application_entrypoint=entrypoint,
+                identity=module_name_for_path(root, pom_path.relative_to(root).as_posix()) or module_name,
             )
         )
         seen_paths.add(module_dir)
@@ -759,6 +768,7 @@ def discover_modules(
                 starts_application=entrypoint is not None,
                 configuration_example=service_configuration_example(module_dir),
                 application_entrypoint=entrypoint,
+                identity=gradle_module_identity(root, module_dir),
             )
         )
     module_roots = {module.path for module in modules}
@@ -786,9 +796,11 @@ def discover_module_dependencies(root: Path, modules: list[DiscoveredModule]) ->
     leur chemin de projet, puis sur le nom d'artefact. Les dépendances externes
     ne sont volontairement pas ajoutées au graphe.
     """
-    names = {module.name for module in modules}
+    identities_by_name: dict[str, set[str]] = {}
+    for module in modules:
+        identities_by_name.setdefault(module.name, set()).add(module_identity(module))
     gradle_projects = {
-        ":" + module.path.resolve().relative_to(root.resolve()).as_posix().replace("/", ":"): module.name
+        ":" + module.path.resolve().relative_to(root.resolve()).as_posix().replace("/", ":"): module_identity(module)
         for module in modules
         if module.build_system == "gradle" and module.path.resolve() != root.resolve()
     }
@@ -799,9 +811,12 @@ def discover_module_dependencies(root: Path, modules: list[DiscoveredModule]) ->
         else:
             targets = _gradle_module_dependencies(module.path)
         for target in targets:
-            resolved = gradle_projects.get(target, target)
-            if resolved in names and resolved != module.name:
-                dependencies.add(ModuleDependency(source=module.name, target=resolved))
+            resolved = gradle_projects.get(target)
+            if resolved is None:
+                candidates = identities_by_name.get(target, set())
+                resolved = next(iter(candidates)) if len(candidates) == 1 else None
+            if resolved is not None and resolved != module_identity(module):
+                dependencies.add(ModuleDependency(source=module_identity(module), target=resolved))
     return sorted(dependencies)
 
 

@@ -11,12 +11,12 @@ from typing import cast
 
 from systemlens.graph import (
     GraphEdge,
-    build_graph,
+    graph_edges_from_relations,
     graph_edge_rest_resource,
     resolve_rest_target_service,
 )
 from systemlens.models import ArchitectureRelation, ExtractionDiagnostic, MessageEndpoint
-from systemlens.modules import DiscoveredModule
+from systemlens.modules import DiscoveredModule, module_identity
 
 
 _KINDS = {
@@ -49,8 +49,8 @@ class ArchitectureSnapshot:
     edges: tuple[GraphEdge, ...]
 
     @property
-    def modules_by_name(self) -> dict[str, DiscoveredModule]:
-        return {module.name: module for module in self.modules}
+    def modules_by_identity(self) -> dict[str, DiscoveredModule]:
+        return {module_identity(module): module for module in self.modules}
 
 
 # Compatibility name for the public navigation helpers.
@@ -85,7 +85,7 @@ def build_snapshot(
         modules=tuple(sorted(modules, key=lambda module: module.name)),
         endpoints=tuple(endpoints),
         relations=tuple(relations),
-        edges=tuple(build_graph(endpoints_by_module, strategy1=strategy1)),
+        edges=tuple(graph_edges_from_relations(relations, endpoints_by_module)),
     )
 
 
@@ -100,11 +100,20 @@ def build_catalog(
     return build_snapshot(modules, endpoints, relations, strategy1=strategy1)
 
 
+def _module_for_reference(catalog: ArchitectureCatalog, reference: str) -> DiscoveredModule | None:
+    """Resolve an identity directly or a display alias only when unambiguous."""
+    if module := catalog.modules_by_identity.get(reference):
+        return module
+    matches = [module for module in catalog.modules if module.name == reference]
+    return matches[0] if len(matches) == 1 else None
+
+
 def module_summary(catalog: ArchitectureCatalog, name: str) -> dict[str, object] | None:
-    module = catalog.modules_by_name.get(name)
+    module = _module_for_reference(catalog, name)
     if module is None:
         return None
-    endpoints = [endpoint for endpoint in catalog.endpoints if endpoint.module == name]
+    identity = module_identity(module)
+    endpoints = [endpoint for endpoint in catalog.endpoints if endpoint.module == identity]
     served = sorted({endpoint.topic for endpoint in endpoints if endpoint.system == "rest" and endpoint.role == "serve"})
     called = sorted({endpoint.topic for endpoint in endpoints if endpoint.system == "rest" and endpoint.role == "call"})
     produced = sorted({endpoint.topic for endpoint in endpoints if endpoint.system == "kafka" and endpoint.role == "produce"})
@@ -115,7 +124,7 @@ def module_summary(catalog: ArchitectureCatalog, name: str) -> dict[str, object]
         relation.target_name
         for relation in catalog.relations
         if relation.source_kind == "microservice"
-        and relation.source_name == name
+        and relation.source_name == identity
         and relation.target_kind == "microservice"
         and relation.relation in {"calls_service", "publishes_to"}
     })
@@ -123,11 +132,11 @@ def module_summary(catalog: ArchitectureCatalog, name: str) -> dict[str, object]
         relation.source_name
         for relation in catalog.relations
         if relation.source_kind == "microservice"
-        and relation.target_name == name
+        and relation.target_name == identity
         and relation.target_kind == "microservice"
         and relation.relation in {"calls_service", "publishes_to"}
     })
-    matched_call_ids = {edge.from_endpoint.id for edge in catalog.edges if edge.kind == "rest" and edge.from_service == name}
+    matched_call_ids = {edge.from_endpoint.id for edge in catalog.edges if edge.kind == "rest" and edge.from_service == identity}
     external_apis = sorted({
         endpoint.topic
         for endpoint in endpoints
@@ -142,7 +151,7 @@ def module_summary(catalog: ArchitectureCatalog, name: str) -> dict[str, object]
         technologies.append("MongoDB")
     if module.openapi_files:
         technologies.append("OpenAPI")
-    return {
+    summary: dict[str, object] = {
         "kind": "microservice" if module.starts_application else "module",
         "name": module.name,
         "language": "Java",
@@ -164,6 +173,9 @@ def module_summary(catalog: ArchitectureCatalog, name: str) -> dict[str, object]
         "dependencies": {"outgoing_modules": outgoing, "incoming_modules": incoming},
         "external_apis": external_apis,
     }
+    if identity != module.name:
+        summary["id"] = identity
+    return summary
 
 
 def list_objects(catalog: ArchitectureCatalog, kind: str) -> list[dict[str, object]]:
@@ -171,12 +183,12 @@ def list_objects(catalog: ArchitectureCatalog, kind: str) -> list[dict[str, obje
         return [
             summary for module in catalog.modules
             if module.starts_application
-            if (summary := module_summary(catalog, module.name)) is not None
+            if (summary := module_summary(catalog, module_identity(module))) is not None
         ]
     if kind == "module":
         return [
             summary for module in catalog.modules
-            if (summary := module_summary(catalog, module.name)) is not None
+            if (summary := module_summary(catalog, module_identity(module))) is not None
         ]
     if kind == "topic":
         topics = sorted({endpoint.topic for endpoint in catalog.endpoints if endpoint.system == "kafka"})
@@ -218,17 +230,12 @@ def request_reply_patterns(catalog: ArchitectureCatalog) -> dict[str, object]:
     matching request topic is also indexed. This is a convention-based view,
     not evidence of a runtime request/reply exchange.
     """
-    topics = sorted({
-        endpoint.topic
-        for endpoint in catalog.endpoints
-        if endpoint.system == "kafka" and not endpoint.topic_dynamic
-    })
-    topics_by_folded_name = {topic.casefold(): topic for topic in topics}
     pairs = {
-        (topics_by_folded_name[reply_topic[len("retour_"):].casefold()], reply_topic)
-        for reply_topic in topics
-        if reply_topic.casefold().startswith("retour_")
-        and reply_topic[len("retour_"):].casefold() in topics_by_folded_name
+        (relation.source_name, relation.target_name)
+        for relation in catalog.relations
+        if relation.source_kind == "topic"
+        and relation.target_kind == "topic"
+        and relation.relation == "request_reply"
     }
     patterns = []
     for request_topic, reply_topic in sorted(pairs, key=lambda pair: (pair[0], pair[1])):
@@ -288,7 +295,7 @@ def dto_summary(catalog: ArchitectureCatalog, dto: str) -> dict[str, object]:
         for endpoint in catalog.endpoints
         if endpoint.system == "kafka" and endpoint.message_type == dto
     ]
-    microservices = {module.name for module in catalog.modules if module.starts_application}
+    microservices = {module_identity(module) for module in catalog.modules if module.starts_application}
     return {
         "kind": "dto",
         "name": dto,
@@ -361,7 +368,10 @@ def neighbors(catalog: ArchitectureCatalog, kind: str, name: str) -> list[dict[s
         return None
     related: set[tuple[str, str, str]] = set()
     if kind in {"module", "microservice"}:
-        for endpoint in (endpoint for endpoint in catalog.endpoints if endpoint.module == name):
+        module = _module_for_reference(catalog, name)
+        assert module is not None
+        identity = module_identity(module)
+        for endpoint in (endpoint for endpoint in catalog.endpoints if endpoint.module == identity):
             object_kind = "topic" if endpoint.system == "kafka" else "api"
             relation = {
                 "produce": "publishes",
@@ -370,13 +380,12 @@ def neighbors(catalog: ArchitectureCatalog, kind: str, name: str) -> list[dict[s
                 "call": "calls",
             }[endpoint.role]
             related.add((object_kind, endpoint.topic, relation))
-        module = catalog.modules_by_name[name]
         for collection in module.mongo_collections:
             related.add(("collection", collection, "uses"))
         for edge in catalog.edges:
-            if edge.from_service == name:
+            if edge.from_service == identity:
                 related.add(("module", edge.to_service, "depends_on"))
-            if edge.to_service == name:
+            if edge.to_service == identity:
                 related.add(("module", edge.from_service, "used_by"))
     elif kind == "topic":
         for endpoint in (endpoint for endpoint in catalog.endpoints if endpoint.system == "kafka" and endpoint.topic == name):
@@ -403,7 +412,7 @@ def neighbors(catalog: ArchitectureCatalog, kind: str, name: str) -> list[dict[s
     else:
         for module in catalog.modules:
             if name in module.mongo_collections:
-                related.add(("module", module.name, "uses"))
+                related.add(("module", module_identity(module), "uses"))
     return [
         {"kind": item_kind, "name": item_name, "relation": relation}
         for item_kind, item_name, relation in sorted(related)
@@ -424,13 +433,19 @@ def find_microservice_paths(
     topology as the interactive graph exports. REST stays a direct
     service-to-service relation labelled with the matched API.
     """
+    source_module = _module_for_reference(catalog, source)
+    target_module = _module_for_reference(catalog, target)
     if (
-        show_object(catalog, "microservice", source) is None
-        or show_object(catalog, "microservice", target) is None
+        source_module is None
+        or target_module is None
+        or not source_module.starts_application
+        or not target_module.starts_application
     ):
         return None
-    source_node = ("microservice", source)
-    target_node = ("microservice", target)
+    source_identity = module_identity(source_module)
+    target_identity = module_identity(target_module)
+    source_node = ("microservice", source_identity)
+    target_node = ("microservice", target_identity)
     adjacency: dict[tuple[str, str], list[tuple[tuple[str, str], dict[str, str]]]] = {}
 
     def add_edge(
@@ -489,8 +504,8 @@ def find_microservice_paths(
             queue.append((next_node, [*nodes, next_node], [*relations, relation]))
     return {
         "kind": "microservice_paths",
-        "source": source,
-        "target": target,
+        "source": source_identity,
+        "target": target_identity,
         "paths": paths,
         "max_depth": max_depth,
         "truncated": truncated,
@@ -510,9 +525,9 @@ def analyze(catalog: ArchitectureCatalog, query: str, target: str | None) -> dic
         return {"query": "calls", "module": target, "dependencies": result["dependencies"]} if result else None
     if normalized in {"external-apis", "external_api"}:
         items = [
-            {"module": module.name, "apis": summary["external_apis"]}
+            {"module": module_identity(module), "apis": summary["external_apis"]}
             for module in catalog.modules
-            if (summary := module_summary(catalog, module.name)) is not None and summary["external_apis"]
+            if (summary := module_summary(catalog, module_identity(module))) is not None and summary["external_apis"]
         ]
         return {"query": "external-apis", "items": items}
     if normalized in {"orphan-integrations", "orphan-endpoints", "orphans"}:

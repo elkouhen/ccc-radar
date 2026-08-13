@@ -8,7 +8,7 @@ import sys
 import time
 from typing import Literal
 
-from systemlens.models import MessageEndpoint
+from systemlens.models import ArchitectureRelation, MessageEndpoint
 
 
 @dataclass(frozen=True)
@@ -417,6 +417,77 @@ def build_graph(
                 seen.add(key)
                 edges.append(GraphEdge("kafka", produce_service, consume_service, produce, consume))
 
+    return edges
+
+
+def graph_edges_from_relations(
+    relations: list[ArchitectureRelation] | tuple[ArchitectureRelation, ...],
+    endpoints_by_service: dict[str, list[MessageEndpoint]],
+) -> list[GraphEdge]:
+    """Adapt persisted topology relations to the graph rendering view.
+
+    ``architecture_relations`` decides which services are connected. Endpoints
+    are consulted only to attach route/topic labels and source evidence to an
+    already materialized relation; this function never resolves a target from
+    endpoint similarity. It is deliberately separate from :func:`build_graph`,
+    which remains the index-time materializer and a fixture convenience.
+    """
+    endpoints = [
+        endpoint
+        for service_endpoints in endpoints_by_service.values()
+        for endpoint in service_endpoints
+    ]
+    source_index: dict[tuple[str, str | None, int | None, str], list[MessageEndpoint]] = {}
+    for endpoint in endpoints:
+        if endpoint.module is None:
+            continue
+        source_index.setdefault(
+            (endpoint.module, endpoint.path, endpoint.start_line, endpoint.role), []
+        ).append(endpoint)
+
+    edges: list[GraphEdge] = []
+    seen: set[tuple[str, str, str, str]] = set()
+    for relation in sorted(relations, key=lambda item: (item.id, item.source_name, item.target_name)):
+        if (
+            relation.source_kind != "microservice"
+            or relation.target_kind != "microservice"
+            or relation.relation not in {"calls_service", "publishes_to"}
+        ):
+            continue
+        kind = "rest" if relation.relation == "calls_service" else "kafka"
+        role = "call" if kind == "rest" else "produce"
+        candidates = source_index.get(
+            (relation.source_name, relation.path, relation.start_line, role), []
+        )
+        if not candidates:
+            # A relation without its endpoint evidence is incomplete. Do not
+            # fabricate a visual edge; coverage still exposes the persisted
+            # relation and the next index will restore an atomic snapshot.
+            continue
+        for source_endpoint in candidates:
+            target_endpoint = next(
+                (
+                    endpoint
+                    for endpoint in endpoints_by_service.get(relation.target_name, [])
+                    if endpoint.system == kind
+                    and endpoint.role == ("serve" if kind == "rest" else "consume")
+                    and endpoint.topic == source_endpoint.topic
+                ),
+                None,
+            )
+            key = (kind, relation.source_name, relation.target_name, source_endpoint.id)
+            if key in seen:
+                continue
+            seen.add(key)
+            edges.append(
+                GraphEdge(
+                    kind,
+                    relation.source_name,
+                    relation.target_name,
+                    source_endpoint,
+                    target_endpoint,
+                )
+            )
     return edges
 
 

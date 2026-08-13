@@ -12,6 +12,7 @@ documents and summarizes the documentation hygiene expected in this repository.
 | [`docs/SPEC-FONC.md`](docs/SPEC-FONC.md) | Observable behavior: CLI commands, flags, error messages, MCP tools, skill workflows | Before changing anything a user or agent sees |
 | [`docs/SPEC-TECH.md`](docs/SPEC-TECH.md) | Modules, data model, SQLite schema, algorithms, JSON contract | Before changing internal architecture in `src/systemlens/` |
 | [`docs/ADR.md`](docs/ADR.md) | Architecture decisions: context, choice, consequences | Before revisiting an existing technical choice |
+| [`BACKLOG.md`](BACKLOG.md) | Prioritized, acceptance-tested architecture and delivery work | When planning or implementing deferred improvements |
 | [`../ccc-radar-skill/`](../ccc-radar-skill/) | Companion skill repo: agent workflow, bundled rule packs, operational guidance | Whenever an SystemLens change can affect the skill or its docs |
 
 `README.md` stays intentionally short. The specifications and ADRs hold the
