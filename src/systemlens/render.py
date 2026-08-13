@@ -2276,7 +2276,10 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
           if (!source || !target) return;
           const dx = target.x - source.x, dy = target.y - source.y;
           const distance = Math.hypot(dx, dy) || .001;
-          const desired = ["kafka", "request_reply"].includes(link.kind) ? 1.05 : link.kind === "mongodb" ? .68 : .82;
+          // Leave room for the labels on either side of a relation. The
+          // browser camera fits the resulting graph, so this only improves
+          // readability instead of making a large graph harder to navigate.
+          const desired = ["kafka", "request_reply"].includes(link.kind) ? 1.28 : link.kind === "mongodb" ? .86 : 1.02;
           const pull = (distance - desired) * .035;
           const ux = dx / distance, uy = dy / distance;
           source.vx += ux * pull; source.vy += uy * pull;
@@ -2293,13 +2296,13 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
     function layoutIsolatedNodes(nodes, connectedNodes) {
       if (!nodes.length) return [];
       const startX = connectedNodes.length
-        ? Math.max(...connectedNodes.map(node => node.x)) + 1.4
+        ? Math.max(...connectedNodes.map(node => node.x)) + 1.8
         : 0;
       const columns = Math.max(1, Math.ceil(Math.sqrt(nodes.length)));
       return nodes.map((node, index) => ({
         ...node,
-        x: startX + (index % columns) * .55,
-        y: (Math.floor(index / columns) - (Math.ceil(nodes.length / columns) - 1) / 2) * .55,
+        x: startX + (index % columns) * .78,
+        y: (Math.floor(index / columns) - (Math.ceil(nodes.length / columns) - 1) / 2) * .78,
         isolated: true,
       }));
     }
@@ -2331,7 +2334,7 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
           kafka_topic: createNodeProgram(KAFKA_TOPIC_FRAGMENT_SHADER),
           mongodb_collection: createNodeProgram(MONGODB_COLLECTION_FRAGMENT_SHADER),
         },
-        renderEdgeLabels: false, labelDensity: .08, labelGridCellSize: 110, labelRenderedSizeThreshold: 8,
+        renderEdgeLabels: false, labelDensity: .06, labelGridCellSize: 160, labelRenderedSizeThreshold: 10,
         nodeReducer: (node, data) => {
           if (!isVisibleNodeId(node)) return { ...data, hidden: true, label: "" };
           if (!selectedId || relatedNodes.has(node)) {

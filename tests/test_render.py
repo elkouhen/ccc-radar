@@ -132,6 +132,8 @@ enum PaymentStatus { AUTHORIZED, DECLINED }
     assert "const isolatedNodeIds = new Set(" in document
     assert "function layoutIsolatedNodes(nodes, connectedNodes)" in document
     assert "...layoutIsolatedNodes(isolatedNodes, positionedConnectedNodes)" in document
+    assert "labelGridCellSize: 160" in document
+    assert "labelRenderedSizeThreshold: 10" in document
     assert "Connectivité relative :" in document
     assert "Collections use the same visual grammar as microservices and" in document
     assert "legend-resource-mark collection" in document
