@@ -104,7 +104,8 @@ MongoDB breakdown as a tooltip, along with the resource rank and its soft
 tercile bounds. The lowest third is blue, the middle third orange, and the
 highest third red; the terciles are recalculated separately for each resource
 type in every export. The graph label of each coloured resource also displays
-its connectivity score directly (for example, `orders.created · 4`).
+its relative connectivity through its coloured outline; the exact details are
+available after selecting the node.
 The Explore search suggests indexed resource names and accepts either one
 exact, unambiguous graph-node name or a Kafka itinerary written with `->`.
 An itinerary starts and ends with a
