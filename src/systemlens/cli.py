@@ -36,6 +36,7 @@ from systemlens.graph import (
 from systemlens.indexer import index_repo
 from systemlens.inventory_freshness import endpoint_inventory_warning
 from systemlens.models import MessageEndpoint
+from systemlens.models import ExtractionDiagnostic
 from systemlens.modules import DiscoveredModule, ModuleDependency, discover_modules
 from systemlens.render import (
     GraphResult,
@@ -918,6 +919,7 @@ class _MicroserviceGraphData:
     module_dependencies: list[ModuleDependency]
     source_roots: list[Path]
     warnings: list[str]
+    diagnostics: list[ExtractionDiagnostic]
     result: GraphResult
 
 
@@ -979,6 +981,7 @@ def _load_microservice_graph(
         inventory.module_dependencies,
         inventory.source_roots,
         inventory.warnings,
+        inventory.diagnostics,
         result,
     )
 
@@ -1096,6 +1099,7 @@ def export_microservices_cmd(
                 None,
                 vscode_wsl_distro,
                 request_reply_strategy1=True,
+                diagnostics=graph_data.diagnostics,
             ),
             encoding="utf-8",
         )
@@ -1170,7 +1174,9 @@ def export_request_reply_cmd(
     repo_root = Path.cwd()
     _require_index(repo_root)
     with Store(repo_root, readonly=True) as store:
-        result = request_reply_patterns(build_catalog(store.all_modules(), store.all_endpoints()))
+        result = request_reply_patterns(
+            build_catalog(store.all_modules(), store.all_endpoints(), store.all_architecture_relations())
+        )
     html.write_text(render_request_reply_html(result), encoding="utf-8")
     typer.echo(f"Vue request/reply écrite dans {html} ({result['count']} pattern(s)).")
 
@@ -1189,17 +1195,18 @@ def _render_audit(repo_root: Path, workspace: Path | None, json_output: bool) ->
 def _render_inventory_coverage(repo_root: Path, json_output: bool) -> None:
     _require_index(repo_root)
     with Store(repo_root, readonly=True) as store:
-        catalog = build_catalog(store.all_modules(), store.all_endpoints())
-        result = inventory_coverage(catalog, store.all_architecture_relations())
+        catalog = build_catalog(store.all_modules(), store.all_endpoints(), store.all_architecture_relations())
+        result = inventory_coverage(catalog, list(catalog.relations))
     _emit_architecture(result, json_output)
 
 
 def _render_indexing_issues(repo_root: Path, json_output: bool) -> None:
     _require_index(repo_root)
     with Store(repo_root, readonly=True) as store:
-        catalog = build_catalog(store.all_modules(), store.all_endpoints())
+        catalog = build_catalog(store.all_modules(), store.all_endpoints(), store.all_architecture_relations())
         warning = _current_repo_endpoint_warning(store)
-    result = indexing_issues(catalog, [warning] if warning else [])
+        diagnostics = store.all_extraction_diagnostics()
+    result = indexing_issues(catalog, [warning] if warning else [], diagnostics)
     if json_output:
         typer.echo(json.dumps(result))
         return
@@ -1215,7 +1222,7 @@ def _render_indexing_issues(repo_root: Path, json_output: bool) -> None:
 def _render_request_reply_patterns(repo_root: Path, json_output: bool) -> None:
     _require_index(repo_root)
     with Store(repo_root, readonly=True) as store:
-        catalog = build_catalog(store.all_modules(), store.all_endpoints())
+        catalog = build_catalog(store.all_modules(), store.all_endpoints(), store.all_architecture_relations())
         result = request_reply_patterns(catalog)
     _emit_architecture(result, json_output)
 
@@ -1332,7 +1339,7 @@ def _microservice_catalog(root: Path):
         inventory = load_architecture_inventory(root)
         if inventory.modules:
             return build_catalog(
-                inventory.modules, inventory.endpoints, strategy1=inventory.strategy1
+                inventory.modules, inventory.endpoints, inventory.relations, strategy1=inventory.strategy1
             )
     services = discover_maven_services(root)
     federation = load_federation(services)

@@ -2,6 +2,7 @@ import fnmatch
 import json
 import sqlite3
 from collections.abc import Iterable, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from types import TracebackType
@@ -10,7 +11,7 @@ from typing import Any
 import numpy as np
 import sqlite_vec
 
-from systemlens.models import ArchitectureRelation, Finding, MessageEndpoint
+from systemlens.models import ArchitectureRelation, ExtractionDiagnostic, Finding, MessageEndpoint
 from systemlens.modules import (
     BlockingPoint,
     DiscoveredModule,
@@ -21,7 +22,7 @@ from systemlens.modules import (
 )
 from systemlens.paths import db_path
 
-SCHEMA_VERSION = "15"
+SCHEMA_VERSION = "16"
 SEVERITY_ORDER = ["INFO", "WARNING", "ERROR"]
 _COUNTABLE_DIMENSIONS = ("rule_id", "severity")
 _SQLITE_BIND_LIMIT = 900
@@ -89,6 +90,7 @@ class Store:
         self._db_path = db_path(self._repo_root)
         self._conn: sqlite3.Connection | None = None
         self._readonly = readonly
+        self._transaction_active = False
 
     def __enter__(self) -> "Store":
         if self._readonly:
@@ -123,6 +125,30 @@ class Store:
             self._conn.commit()
         self._conn.close()
         self._conn = None
+
+    @contextmanager
+    def transaction(self) -> Iterator[None]:
+        """Atomically publish one architecture snapshot.
+
+        Schema creation happens when the writable store is opened. All domain
+        mutations for an index run must happen within this boundary, so an
+        exception never exposes a mixture of old and new inventory facts.
+        """
+        if self._readonly:
+            raise StoreError("Une transaction n'est pas disponible en lecture seule.")
+        if self._transaction_active:
+            raise StoreError("Les transactions Store imbriquées ne sont pas prises en charge.")
+        self._transaction_active = True
+        self.conn.execute("BEGIN IMMEDIATE")
+        try:
+            yield
+        except BaseException:
+            self.conn.rollback()
+            raise
+        else:
+            self.conn.commit()
+        finally:
+            self._transaction_active = False
 
     def _check_schema_compatible(self) -> None:
         try:
@@ -242,6 +268,14 @@ class Store:
                 ON architecture_relations(source_kind, source_name);
             CREATE INDEX IF NOT EXISTS idx_architecture_relations_target
                 ON architecture_relations(target_kind, target_name);
+            CREATE TABLE IF NOT EXISTS extraction_diagnostics (
+                path TEXT NOT NULL,
+                extractor TEXT NOT NULL,
+                category TEXT NOT NULL,
+                severity TEXT NOT NULL,
+                detail TEXT NOT NULL,
+                PRIMARY KEY (path, extractor, category)
+            );
             """
         )
         self._migrate_legacy_embeddings()
@@ -441,6 +475,25 @@ class Store:
             for row in rows
         ]
 
+    # -- extraction diagnostics --
+
+    def replace_extraction_diagnostics_for_files(
+        self, paths: list[str], diagnostics: list[ExtractionDiagnostic]
+    ) -> None:
+        for chunk in _chunked(paths):
+            placeholders = ", ".join("?" for _ in chunk)
+            self.conn.execute(f"DELETE FROM extraction_diagnostics WHERE path IN ({placeholders})", chunk)
+        self.conn.executemany(
+            "INSERT INTO extraction_diagnostics (path, extractor, category, severity, detail) VALUES (?, ?, ?, ?, ?)",
+            [(item.path, item.extractor, item.category, item.severity, item.detail) for item in diagnostics],
+        )
+
+    def all_extraction_diagnostics(self) -> list[ExtractionDiagnostic]:
+        rows = self.conn.execute(
+            "SELECT path, extractor, category, severity, detail FROM extraction_diagnostics ORDER BY path, extractor, category"
+        ).fetchall()
+        return [ExtractionDiagnostic(**dict(row)) for row in rows]
+
     def get_embedding_dim(self) -> int | None:
         raw = self.get_meta("embedding_dim")
         return int(raw) if raw else None
@@ -468,6 +521,7 @@ class Store:
         self._delete_embeddings(removed_ids)
         self.replace_code_chunks_for_files(paths, [])
         self.replace_endpoints_for_files(paths, [])
+        self.replace_extraction_diagnostics_for_files(paths, [])
 
     # -- findings --
 

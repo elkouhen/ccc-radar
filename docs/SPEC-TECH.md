@@ -31,8 +31,25 @@ sha256(role | topic | path | start_line:end_line)[:16]
 
 `ArchitectureRelation` records an evidenced link between source and target
 objects. It includes origin (`code`, `manifest` or `derived`), confidence,
-module and source location. The graph and audit layers consume relations and
-endpoints; they do not rescan source.
+module and source location. It is the persisted source of truth for the
+architecture snapshot, including conservative resolved inter-service REST and
+Kafka topology relations. `ArchitectureSnapshot` is the immutable application
+projection used by catalog and coverage views; adapters may add presentation
+details from its indexed endpoints but do not rescan source.
+
+`ExtractionDiagnostic` is a safe, persisted extraction outcome with its file
+path, extractor, category, severity and a non-source-code detail. The initial
+implementation records Tree-sitter Java parse failures; `analyze
+indexing-issues` exposes them alongside unresolved architecture facts.
+
+## Export snapshot contract
+
+HTML and JSON graph exports only consume the loaded architecture snapshot.
+They do not reopen OpenAPI documents or recursively parse Java DTO sources at
+render time. The export can show indexed Kafka payload-type identities and
+OpenAPI evidence paths; richer DTO/OpenAPI content requires an explicit future
+indexed contract rather than a live source read. This keeps an export
+reproducible when repository files change after `systemlens index`.
 
 The legacy `findings` table and model are retained only to open existing index
 databases. `Store.clear_findings_once("ast_only_analysis_v1")` removes stale
@@ -52,8 +69,18 @@ external-analyzer data on the first AST-only index run.
    endpoints.
 7. Persist hashes, modules, dependencies and derived relations.
 
-No subprocess is used to analyze source code. Extraction failures leave the
-previous successful state intact for files not yet replaced.
+Steps 1–7 execute inside `Store.transaction()`. The writable connection uses
+`BEGIN IMMEDIATE`, then commits the complete snapshot only after relation
+materialization succeeds; any exception rolls back files, endpoints, modules,
+dependencies, relations and index signatures together. Schema creation and
+compatible migrations happen when a writable store opens, before an index
+transaction. Read-only stores open SQLite in `mode=ro` and never migrate or
+commit. A concurrent reader sees the last committed snapshot until the writer
+commits the next one.
+
+No subprocess is used to analyze source code. A failed index leaves the whole
+previous successful snapshot intact; isolated extraction failures are reported
+as diagnostics when that capability is enabled.
 
 ## Extractors
 

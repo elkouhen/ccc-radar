@@ -11,7 +11,8 @@ from pathlib import Path
 
 from systemlens.graph import group_endpoints_by_module
 from systemlens.inventory_freshness import endpoint_inventory_warning
-from systemlens.models import Finding, MessageEndpoint
+from systemlens.models import ArchitectureRelation, ExtractionDiagnostic, Finding, MessageEndpoint
+from systemlens.relations import build_architecture_relations
 from systemlens.modules import DiscoveredModule, ModuleDependency
 from systemlens.paths import db_path
 from systemlens.store import Store
@@ -38,6 +39,8 @@ class ArchitectureInventory:
     modules: list[DiscoveredModule]
     modules_by_service: dict[str, DiscoveredModule]
     module_dependencies: list[ModuleDependency]
+    relations: list[ArchitectureRelation]
+    diagnostics: list[ExtractionDiagnostic]
     warnings: list[str]
     source_roots: list[Path]
     strategy1: bool
@@ -94,6 +97,12 @@ def load_architecture_inventory(
             modules=list(federation.modules.values()),
             modules_by_service=modules_by_service,
             module_dependencies=federation.module_dependencies,
+            relations=build_architecture_relations(
+                list(federation.modules.values()),
+                [endpoint for endpoints in federation.endpoints_by_module.values() for endpoint in endpoints],
+                federation.module_dependencies,
+            ),
+            diagnostics=[],
             warnings=warnings,
             source_roots=[workspace_root, *(service.path.resolve() for service in services)],
             strategy1=False,
@@ -106,6 +115,8 @@ def load_architecture_inventory(
         findings = store.all_findings()
         modules = store.all_modules()
         dependencies = store.all_module_dependencies()
+        relations = store.all_architecture_relations()
+        diagnostics = store.all_extraction_diagnostics()
         warning = endpoint_inventory_warning(
             store.get_meta("endpoint_inventory_signature"),
             scope="ce projet",
@@ -135,6 +146,8 @@ def load_architecture_inventory(
         modules=modules,
         modules_by_service=modules_by_service,
         module_dependencies=dependencies,
+        relations=relations,
+        diagnostics=diagnostics,
         warnings=[warning] if warning else [],
         source_roots=[repo_root],
         strategy1=strategy1,

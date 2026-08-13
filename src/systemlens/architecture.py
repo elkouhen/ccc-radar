@@ -15,7 +15,7 @@ from systemlens.graph import (
     graph_edge_rest_resource,
     resolve_rest_target_service,
 )
-from systemlens.models import ArchitectureRelation, MessageEndpoint
+from systemlens.models import ArchitectureRelation, ExtractionDiagnostic, MessageEndpoint
 from systemlens.modules import DiscoveredModule
 
 
@@ -40,9 +40,12 @@ _KINDS = {
 
 
 @dataclass(frozen=True)
-class ArchitectureCatalog:
+class ArchitectureSnapshot:
+    """Canonical immutable projection of one indexed architecture snapshot."""
+
     modules: tuple[DiscoveredModule, ...]
     endpoints: tuple[MessageEndpoint, ...]
+    relations: tuple[ArchitectureRelation, ...]
     edges: tuple[GraphEdge, ...]
 
     @property
@@ -50,22 +53,51 @@ class ArchitectureCatalog:
         return {module.name: module for module in self.modules}
 
 
+# Compatibility name for the public navigation helpers.
+ArchitectureCatalog = ArchitectureSnapshot
+
+
 def normalize_kind(kind: str) -> str | None:
     return _KINDS.get(kind.casefold())
 
 
-def build_catalog(
-    modules: list[DiscoveredModule], endpoints: list[MessageEndpoint], *, strategy1: bool = False
-) -> ArchitectureCatalog:
+def build_snapshot(
+    modules: list[DiscoveredModule],
+    endpoints: list[MessageEndpoint],
+    relations: list[ArchitectureRelation] | None = None,
+    *,
+    strategy1: bool = False,
+) -> ArchitectureSnapshot:
+    """Adapt indexed facts into the single immutable architecture projection.
+
+    Indexed callers pass the persisted relation projection. The fallback keeps
+    direct library use and unit fixtures usable without a database.
+    """
+    if relations is None:
+        from systemlens.relations import build_architecture_relations
+
+        relations = build_architecture_relations(modules, endpoints, [], kafka_reply_strategy1=strategy1)
     endpoints_by_module: dict[str, list[MessageEndpoint]] = {}
     for endpoint in endpoints:
         if endpoint.module is not None:
             endpoints_by_module.setdefault(endpoint.module, []).append(endpoint)
-    return ArchitectureCatalog(
+    return ArchitectureSnapshot(
         modules=tuple(sorted(modules, key=lambda module: module.name)),
         endpoints=tuple(endpoints),
+        relations=tuple(relations),
         edges=tuple(build_graph(endpoints_by_module, strategy1=strategy1)),
     )
+
+
+def build_catalog(
+    modules: list[DiscoveredModule],
+    endpoints: list[MessageEndpoint],
+    relations: list[ArchitectureRelation] | None = None,
+    *,
+    strategy1: bool = False,
+) -> ArchitectureCatalog:
+    """Backward-compatible name for :func:`build_snapshot`."""
+    return build_snapshot(modules, endpoints, relations, strategy1=strategy1)
 
 
 def module_summary(catalog: ArchitectureCatalog, name: str) -> dict[str, object] | None:
@@ -79,8 +111,22 @@ def module_summary(catalog: ArchitectureCatalog, name: str) -> dict[str, object]
     consumed = sorted({endpoint.topic for endpoint in endpoints if endpoint.system == "kafka" and endpoint.role == "consume"})
     produced_types = _kafka_message_types(endpoints, "produce")
     consumed_types = _kafka_message_types(endpoints, "consume")
-    outgoing = sorted({edge.to_service for edge in catalog.edges if edge.from_service == name})
-    incoming = sorted({edge.from_service for edge in catalog.edges if edge.to_service == name})
+    outgoing = sorted({
+        relation.target_name
+        for relation in catalog.relations
+        if relation.source_kind == "microservice"
+        and relation.source_name == name
+        and relation.target_kind == "microservice"
+        and relation.relation in {"calls_service", "publishes_to"}
+    })
+    incoming = sorted({
+        relation.source_name
+        for relation in catalog.relations
+        if relation.source_kind == "microservice"
+        and relation.target_name == name
+        and relation.target_kind == "microservice"
+        and relation.relation in {"calls_service", "publishes_to"}
+    })
     matched_call_ids = {edge.from_endpoint.id for edge in catalog.edges if edge.kind == "rest" and edge.from_service == name}
     external_apis = sorted({
         endpoint.topic
@@ -635,7 +681,9 @@ def inventory_coverage(
 
 
 def indexing_issues(
-    catalog: ArchitectureCatalog, warnings: list[str] | tuple[str, ...] = ()
+    catalog: ArchitectureCatalog,
+    warnings: list[str] | tuple[str, ...] = (),
+    diagnostics: list[ExtractionDiagnostic] | tuple[ExtractionDiagnostic, ...] = (),
 ) -> dict[str, object]:
     """Return unresolved facts with source evidence for remediation analysis.
 
@@ -644,6 +692,16 @@ def indexing_issues(
     can assess a proposed heuristic without guessing from a summary.
     """
     issues: list[dict[str, object]] = []
+
+    for diagnostic in diagnostics:
+        issues.append({
+            "code": f"extraction_{diagnostic.category}",
+            "severity": diagnostic.severity,
+            "message": f"{diagnostic.extractor}: {diagnostic.detail}",
+            "service": None,
+            "framework": None,
+            "source": {"path": diagnostic.path, "start_line": None, "end_line": None, "snippet": None},
+        })
 
     def endpoint_issue(
         code: str, severity: str, message: str, endpoint: MessageEndpoint

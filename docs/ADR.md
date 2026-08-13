@@ -85,3 +85,58 @@ and `.codeatlas/` configuration and index data are not read by SystemLens: run
 `systemlens init` and `systemlens index` in each repository to create a fresh
 `.systemlens/` inventory. Trace environment variables use the `SYSTEMLENS_`
 prefix.
+
+## ADR-7 — Publish each index as an atomic SQLite snapshot
+
+**Status:** Accepted.
+
+**Context:** An index refresh replaces file hashes, endpoints, modules,
+dependencies, relation facts and their signatures. Publishing only part of
+that sequence would make all read adapters report an incoherent architecture.
+
+**Decision:** `index_repo` executes its complete refresh inside one explicit
+`Store.transaction()` using SQLite `BEGIN IMMEDIATE`. The store commits only
+after the complete relation projection is materialized, and rolls back on any
+exception. Schema setup remains a separate opening-time concern; read-only
+connections never mutate the database.
+
+**Consequences:** Concurrent readers observe the previous complete snapshot
+while a refresh is in progress, then the next complete snapshot after commit.
+An index holds the single-writer SQLite lock for its run; this favours a
+trustworthy local inventory over concurrent writers.
+
+## ADR-8 — Persisted relations are the canonical architecture projection
+
+**Status:** Accepted.
+
+**Context:** Endpoints, request-time graph edges, dependency dictionaries and
+renderer-specific links previously represented overlapping architecture facts
+with independently implemented rules.
+
+**Decision:** `architecture_relations` is the canonical persisted relation
+projection. Indexing materializes evidenced endpoint, module, data-store and
+resolved inter-service topology relations into it. Read adapters receive the
+immutable `ArchitectureSnapshot`; the legacy `ArchitectureCatalog` name is a
+compatibility alias for that projection.
+
+**Consequences:** Relation identity, provenance and confidence are stable
+across local catalog and coverage adapters. Graph-shaped renderers can still
+adapt endpoint evidence for route and topic labels, but must not independently
+infer service topology or rescan repository sources.
+
+## ADR-9 — Exports never enrich a snapshot from live source files
+
+**Status:** Accepted.
+
+**Context:** HTML export previously reopened OpenAPI documents and recursively
+parsed Java DTO files, allowing a single export to mix indexed topology with a
+later working-tree revision.
+
+**Decision:** Renderers only consume loaded snapshot facts. They display
+indexed Kafka payload identities and OpenAPI evidence paths, but do not parse
+contract or Java source files. A later detailed-contract feature must add an
+explicit indexed data model first.
+
+**Consequences:** Exports are reproducible and work without source trees. DTO
+field and enum inspection is deliberately unavailable until its facts are
+persisted at index time.

@@ -86,7 +86,7 @@ def _architecture_catalog(workspace_root: str | None):
         _repo_root(), Path(workspace_root) if workspace_root else None
     )
     return build_catalog(
-        inventory.modules, inventory.endpoints, strategy1=inventory.strategy1
+        inventory.modules, inventory.endpoints, inventory.relations, strategy1=inventory.strategy1
     ), inventory
 
 
@@ -172,8 +172,8 @@ def architecture_coverage() -> dict[str, object]:
     repo_root = _repo_root()
     _require_index(repo_root)
     with Store(repo_root, readonly=True) as store:
-        catalog = build_catalog(store.all_modules(), store.all_endpoints())
-        return inventory_coverage(catalog, store.all_architecture_relations())
+        catalog = build_catalog(store.all_modules(), store.all_endpoints(), store.all_architecture_relations())
+        return inventory_coverage(catalog, list(catalog.relations))
 
 
 @mcp.tool()
@@ -186,7 +186,7 @@ def list_request_reply_patterns() -> dict[str, object]:
     repo_root = _repo_root()
     _require_index(repo_root)
     with Store(repo_root, readonly=True) as store:
-        catalog = build_catalog(store.all_modules(), store.all_endpoints())
+        catalog = build_catalog(store.all_modules(), store.all_endpoints(), store.all_architecture_relations())
         return request_reply_patterns(catalog)
 
 

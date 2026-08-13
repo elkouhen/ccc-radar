@@ -121,7 +121,7 @@ facts in indexing issues and as external API calls in the dependency graph.
 ## ARCH-002 — Define one canonical architecture graph projection
 
 **Priority:** P1
-**Status:** Proposed
+**Status:** Implemented (2026-08-13)
 **Area:** Architecture, contract consistency
 
 ### Evidence
@@ -170,12 +170,21 @@ derived, remove the materialized table and compute through one domain service.
 `dependency_analysis.py`, `architecture.py`, `store.py`, `cli.py`,
 `mcp_server.py`, `SPEC-TECH.md` and `ADR.md`.
 
+### Completion
+
+The persisted `architecture_relations` table is the chosen source of truth.
+Indexing now materializes conservative resolved REST and Kafka service topology
+alongside endpoint, module and data-store relations. `ArchitectureSnapshot`
+is the immutable projection passed to catalog and coverage adapters; the former
+`ArchitectureCatalog` name remains a compatibility alias. ADR-8 records the
+persistence strategy.
+
 ---
 
 ## ARCH-003 — Make one index run an explicit atomic snapshot transaction
 
 **Priority:** P1
-**Status:** Proposed
+**Status:** Implemented (2026-08-13)
 **Area:** Persistence, reliability
 
 ### Evidence
@@ -214,12 +223,21 @@ the long-lived MCP process.
 
 `store.py`, `indexer.py`, `mcp_server.py`, `tests/` and `SPEC-TECH.md`.
 
+### Completion
+
+`Store.transaction()` now owns one complete index publication using
+`BEGIN IMMEDIATE`. The indexer runs all snapshot mutations inside that
+boundary, while schema migration stays separate at writable-store opening.
+A failure-injection test proves that endpoints, modules, dependencies,
+relations, file hashes and signatures remain the previous snapshot when
+relation materialization fails.
+
 ---
 
 ## ARCH-004 — Persist extraction diagnostics instead of silently returning no facts
 
 **Priority:** P1
-**Status:** Proposed
+**Status:** In progress (2026-08-13)
 **Area:** Observability, data quality
 
 ### Evidence
@@ -260,12 +278,20 @@ availability, schema compatibility and snapshot freshness without mutation.
 `models.py`, `store.py`, `indexer.py`, `doctor.py`, `architecture.py` and
 `render.py`.
 
+### Progress
+
+The index now persists safe `ExtractionDiagnostic` facts for Tree-sitter Java
+parse failures and presents them through `analyze indexing-issues`. Diagnostics
+are replaced with the file snapshot and removed with a deleted file. Remaining
+work extends this contract to build, OpenAPI and filesystem extractors, then
+presents the same counts in doctor, MCP and HTML exports.
+
 ---
 
 ## ARCH-005 — Keep exports faithful to the persisted snapshot
 
 **Priority:** P1
-**Status:** Proposed
+**Status:** Implemented (2026-08-13)
 **Area:** Snapshot consistency, export architecture
 
 ### Evidence
@@ -298,6 +324,14 @@ as such in the export and reject mixed revisions.
 
 `models.py`, `scanner.py`, `indexer.py`, `store.py`, `architecture_inventory.py`,
 `render.py`, `tests/test_render.py`, `SPEC-TECH.md` and `ADR.md`.
+
+### Completion
+
+Graph exports no longer open OpenAPI documents or parse Java DTO files while
+rendering. They use only the indexed endpoint payload types and OpenAPI paths,
+so changing source files after indexing cannot alter an export. Detailed DTO
+and OpenAPI bodies are intentionally not shown until they have a dedicated
+persisted contract; this avoids mixing revisions.
 
 ---
 

@@ -53,7 +53,7 @@ def _html_graph_data(document: str) -> dict[str, object]:
     return json.loads(match.group(1))
 
 
-def test_graph_html_recursively_exposes_kafka_produced_and_consumed_dtos(tmp_path: Path) -> None:
+def test_graph_html_uses_only_indexed_kafka_dto_facts(tmp_path: Path) -> None:
     source_root = tmp_path / "orders" / "src" / "main" / "java" / "com" / "example" / "events"
     source_root.mkdir(parents=True)
     (source_root / "OrderCreated.java").write_text(
@@ -91,33 +91,11 @@ enum PaymentStatus { AUTHORIZED, DECLINED }
 
     graph_data = _html_graph_data(document)
     kafka_dtos = {dto["name"]: dto for dto in graph_data["kafka_dtos"]}
-    definitions = {
-        dto["name"]: dto
-        for dto in [*graph_data["kafka_dtos"], *graph_data["project_dto_definitions"]]
-    }
-
     assert kafka_dtos["OrderCreated"]["producers"] == ["producer"]
     assert kafka_dtos["OrderCreated"]["consumers"] == ["consumer"]
     assert kafka_dtos["OrderCreated"]["topics"] == ["orders.created"]
-    assert definitions["OrderCreated"]["fields"] == [
-        {"name": "details", "type": "OrderDetails", "dto_references": ["com.example.events.OrderDetails"]},
-        {"name": "lines", "type": "List<LineItem>", "dto_references": ["com.example.events.LineItem"]},
-    ]
-    assert definitions["OrderDetails"]["fields"] == [
-        {"name": "customer", "type": "Customer", "dto_references": ["com.example.events.Customer"]}
-    ]
-    assert definitions["Customer"]["fields"] == [
-        {"name": "id", "type": "String"},
-        {"name": "address", "type": "Address", "dto_references": ["com.example.events.Address"]},
-    ]
-    assert definitions["LineItem"]["fields"] == [
-        {"name": "sku", "type": "String"},
-        {"name": "price", "type": "Price", "dto_references": ["com.example.events.Price"]},
-        {"name": "status", "type": "PaymentStatus", "dto_references": ["com.example.events.PaymentStatus"]},
-    ]
-    assert definitions["Address"]["fields"] == [{"name": "city", "type": "String"}]
-    assert definitions["Price"]["fields"] == [{"name": "currency", "type": "String"}]
-    assert definitions["PaymentStatus"]["enum_values"] == ["AUTHORIZED", "DECLINED"]
+    assert kafka_dtos["OrderCreated"]["fields"] == []
+    assert graph_data["project_dto_definitions"] == []
     assert 'appendDtoInspectorSection("Valeurs enum", dto.enum_values || [])' in document
     assert "Que voulez-vous comprendre ?" in document
     assert "Qui produit ou consomme un topic Kafka ?" in document
@@ -159,7 +137,7 @@ enum PaymentStatus { AUTHORIZED, DECLINED }
     assert "legend-resource-mark collection" in document
 
 
-def test_graph_html_distinguishes_dtos_with_the_same_simple_name_by_package(tmp_path: Path) -> None:
+def test_graph_html_does_not_infer_dto_packages_from_live_sources(tmp_path: Path) -> None:
     source_root = tmp_path / "service" / "src" / "main" / "java"
     (source_root / "com" / "acme" / "one").mkdir(parents=True)
     (source_root / "com" / "acme" / "two").mkdir(parents=True)
@@ -195,11 +173,9 @@ def test_graph_html_distinguishes_dtos_with_the_same_simple_name_by_package(tmp_
     graph_data = _html_graph_data(render_graph_html({"one": [first], "two": [second]}, [], build_modules=[module]))
     definitions = {dto["id"]: dto for dto in graph_data["kafka_dtos"]}
 
-    assert set(definitions) == {"com.acme.one.Event", "com.acme.two.Event"}
-    assert definitions["com.acme.one.Event"]["fields"] == [{"name": "orderId", "type": "String"}]
-    assert definitions["com.acme.two.Event"]["fields"] == [{"name": "customerId", "type": "String"}]
-    assert definitions["com.acme.one.Event"]["producers"] == ["one"]
-    assert definitions["com.acme.two.Event"]["producers"] == ["two"]
+    assert set(definitions) == {"Event"}
+    assert definitions["Event"]["fields"] == []
+    assert definitions["Event"]["producers"] == ["one", "two"]
 
 
 def test_graph_html_links_an_indexing_issue_to_its_source_file() -> None:

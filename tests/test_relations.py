@@ -99,6 +99,26 @@ def test_strategy1_links_a_reply_topic_to_its_request_topic(tmp_path: Path) -> N
     )
 
 
+def test_relations_materialize_the_resolved_interservice_topology() -> None:
+    call = _endpoint("call", "rest", "GET /payments", snippet="http://payments")
+    served = replace(
+        _endpoint("serve", "rest", "GET /payments"),
+        module="payments",
+        qualified_name="com.example.PaymentController",
+    )
+
+    relations = build_architecture_relations([], [call, served], [])
+    catalog = build_catalog([], [call, served], relations)
+
+    assert any(
+        relation.source_name == "orders"
+        and relation.relation == "calls_service"
+        and relation.target_name == "payments"
+        for relation in relations
+    )
+    assert catalog.relations == tuple(relations)
+
+
 def test_indexing_issues_exposes_source_evidence_for_heuristic_review() -> None:
     dynamic_topic = replace(
         _endpoint("produce", "kafka", "kafkaProperties.getTopics().getOrders()", snippet="send(topic, payload)"),

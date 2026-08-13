@@ -4,6 +4,7 @@ import re
 from typing import TypedDict
 
 from systemlens.models import ArchitectureRelation, MessageEndpoint, compute_architecture_relation_id
+from systemlens.graph import build_graph, group_endpoints_by_module
 from systemlens.modules import DiscoveredModule, ModuleDependency
 
 
@@ -175,6 +176,26 @@ def build_architecture_relations(
                     start_line=method.line,
                     end_line=method.line,
                 ))
+
+    # Inter-service links are materialized from the same conservative graph
+    # resolver used by all delivery adapters.  They are snapshot facts, not a
+    # renderer-specific route coincidence.
+    for edge in build_graph(group_endpoints_by_module(endpoints), strategy1=kafka_reply_strategy1):
+        relation_name = "calls_service" if edge.kind == "rest" else "publishes_to"
+        add(_relation(
+            "microservice",
+            edge.from_service,
+            relation_name,
+            "microservice",
+            edge.to_service,
+            origin=edge.from_endpoint.source,
+            confidence="medium" if edge.from_endpoint.topic_dynamic else "high",
+            module=edge.from_service,
+            path=edge.from_endpoint.path,
+            start_line=edge.from_endpoint.start_line,
+            end_line=edge.from_endpoint.end_line,
+            qualified_name=edge.from_endpoint.qualified_name,
+        ))
     return sorted(
         relations.values(),
         key=lambda item: (

@@ -18,9 +18,10 @@ from systemlens.graph import (
     graph_edge_rest_resource,
 )
 from systemlens import java_parser
-from systemlens.models import Finding, MessageEndpoint
+from systemlens.models import ExtractionDiagnostic, Finding, MessageEndpoint
 from systemlens.modules import DiscoveredModule, ModuleDependency
 from systemlens.search import SearchHit, Summary, get_context
+from systemlens.render_snapshot import kafka_dto_views
 from systemlens.workspace import DiscoveredService, FederationResult
 
 
@@ -363,6 +364,7 @@ def _indexing_issues(
     modules: list[DiscoveredModule],
     source_roots: list[Path] | None,
     vscode_wsl_distro: str | None,
+    diagnostics: list[ExtractionDiagnostic] | None = None,
 ) -> list[dict[str, str]]:
     """Return every unresolved inventory fact suitable for the HTML export."""
     issues: list[dict[str, str]] = []
@@ -380,6 +382,13 @@ def _indexing_issues(
 
     for warning in dict.fromkeys(warnings or []):
         add("warning", "Avertissement d'inventaire", warning)
+    for diagnostic in diagnostics or []:
+        issues.append({
+            "severity": diagnostic.severity,
+            "category": "Diagnostic d'extraction",
+            "message": f"{diagnostic.extractor}: {diagnostic.detail}",
+            "location": diagnostic.path,
+        })
 
     matched_http_call_ids = {edge.from_endpoint.id for edge in edges if edge.kind == "rest"}
     service_names = sorted(endpoints_by_service)
@@ -639,12 +648,16 @@ def _java_package_and_imports(source: str) -> tuple[str, frozenset[str]]:
     return package, frozenset(imports)
 
 
-def _kafka_dto_views(
+def _live_kafka_dto_views(
     endpoints_by_service: dict[str, list[MessageEndpoint]],
     modules: list[DiscoveredModule],
     vscode_wsl_distro: str | None = None,
 ) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
-    """Build Kafka DTOs and recursively reachable project DTO definitions."""
+    """Deprecated live DTO enrichment retained only for migration tooling.
+
+    Exports deliberately do not call this function: source parsing belongs to
+    indexing so a rendered file cannot mix two repository revisions.
+    """
     candidates: dict[str, _JavaDtoCandidate] = {}
     source_contexts: dict[str, tuple[str, frozenset[str]]] = {}
     for module in modules:
@@ -768,6 +781,8 @@ def _kafka_dto_views(
     return root_definitions, nested_definitions
 
 
+
+
 def render_graph_html(
     endpoints_by_service: dict[str, list[MessageEndpoint]],
     edges: list[GraphEdge],
@@ -780,6 +795,7 @@ def render_graph_html(
     findings_by_service: dict[str, list[Finding]] | None = None,
     vscode_wsl_distro: str | None = None,
     request_reply_strategy1: bool = False,
+    diagnostics: list[ExtractionDiagnostic] | None = None,
 ) -> str:
     """Render an interactive Sigma.js graph as a self-contained HTML document.
 
@@ -856,11 +872,6 @@ def render_graph_html(
                         "path": path,
                         "resources": sorted(contract_resources.get(path, set())),
                         **({"vscode_uri": _vscode_file_uri(module.path / path, vscode_wsl_distro)} if module else {}),
-                        **(
-                            {"spec": spec}
-                            if (spec := _openapi_contract_spec(path, all_modules, source_roots)) is not None
-                            else {}
-                        ),
                     }
                     for path in openapi_files
                 ],
@@ -1023,9 +1034,7 @@ def render_graph_html(
         node["label"] = f"{node['name']} · {score}"
         node["color"] = {"low": "#2563eb", "medium": "#d97706", "high": "#dc2626"}[level]
         node["size"] = base_size + {"low": 0, "medium": 2, "high": 4}[level]
-    kafka_dtos, project_dto_definitions = _kafka_dto_views(
-        endpoints_by_service, all_modules, vscode_wsl_distro
-    )
+    kafka_dtos, project_dto_definitions = kafka_dto_views(endpoints_by_service)
     graph_data = json.dumps(
         {
             "nodes": nodes,
@@ -1040,6 +1049,7 @@ def render_graph_html(
                 all_modules,
                 source_roots,
                 vscode_wsl_distro,
+                diagnostics,
             ),
         },
         ensure_ascii=False,

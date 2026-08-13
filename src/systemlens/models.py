@@ -115,3 +115,14 @@ class ArchitectureRelation:
     start_line: int | None = None
     end_line: int | None = None
     qualified_name: str | None = None
+
+
+@dataclass(frozen=True)
+class ExtractionDiagnostic:
+    """A safe, indexed record of one extractor failure or limitation."""
+
+    path: str
+    extractor: str
+    category: str
+    severity: str
+    detail: str

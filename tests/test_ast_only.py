@@ -5,8 +5,10 @@ import json
 from dataclasses import replace
 from pathlib import Path
 
+import pytest
 from typer.testing import CliRunner
 
+import systemlens.indexer as indexer_module
 from systemlens.cli import app
 from systemlens.config import Config
 from systemlens.flow import group_endpoints_by_module_for_flow, trace_flow
@@ -95,6 +97,72 @@ def test_index_is_incremental_without_embeddings(tmp_path: Path) -> None:
     assert first.endpoints_added == 2
     assert len(endpoints) == 2
     assert second.scanned == 0
+
+
+def test_index_rollback_keeps_the_previous_complete_snapshot(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = tmp_path / "repo"
+    shutil.copytree(FIXTURES / "endpoint_index_repo", repo)
+
+    with Store(repo) as store:
+        index_repo(repo, Config(), store)
+        before = (
+            store.get_file_hashes(),
+            store.all_endpoints(),
+            store.all_modules(),
+            store.all_module_dependencies(),
+            store.all_architecture_relations(),
+            store.get_meta("endpoint_inventory_signature"),
+        )
+        source = repo / "app" / "OrderConsumer.java"
+        source.write_text(source.read_text() + "\n// changed after the snapshot\n")
+
+        def fail_relation_projection(*_args, **_kwargs):
+            raise RuntimeError("forced relation projection failure")
+
+        monkeypatch.setattr(indexer_module, "build_architecture_relations", fail_relation_projection)
+        with pytest.raises(RuntimeError, match="forced relation projection failure"):
+            index_repo(repo, Config(), store)
+
+        after = (
+            store.get_file_hashes(),
+            store.all_endpoints(),
+            store.all_modules(),
+            store.all_module_dependencies(),
+            store.all_architecture_relations(),
+            store.get_meta("endpoint_inventory_signature"),
+        )
+
+    assert after == before
+
+
+def test_read_only_store_sees_previous_snapshot_until_transaction_commits(tmp_path: Path) -> None:
+    with Store(tmp_path) as writer:
+        writer.set_meta("snapshot", "before")
+
+    with Store(tmp_path) as writer:
+        with writer.transaction():
+            writer.set_meta("snapshot", "after")
+            with Store(tmp_path, readonly=True) as reader:
+                assert reader.get_meta("snapshot") == "before"
+
+    with Store(tmp_path, readonly=True) as reader:
+        assert reader.get_meta("snapshot") == "after"
+
+
+def test_index_persists_a_safe_java_parse_diagnostic(tmp_path: Path) -> None:
+    source = tmp_path / "Broken.java"
+    source.write_text("class Broken { void run( {")
+
+    with Store(tmp_path) as store:
+        index_repo(tmp_path, Config(), store)
+        diagnostics = store.all_extraction_diagnostics()
+
+    assert [(item.path, item.extractor, item.category, item.severity) for item in diagnostics] == [
+        ("Broken.java", "tree-sitter-java", "parse_failed", "warning")
+    ]
+    assert "class Broken" not in diagnostics[0].detail
 
 
 def test_cli_index_does_not_require_an_embedding_model(tmp_path: Path, monkeypatch) -> None:

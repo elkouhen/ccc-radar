@@ -9,7 +9,8 @@ from typing import Callable
 
 from systemlens.config import Config
 from systemlens.inventory_freshness import current_endpoint_inventory_signature
-from systemlens.models import MessageEndpoint
+from systemlens import java_parser
+from systemlens.models import ExtractionDiagnostic, MessageEndpoint
 from systemlens.modules import (
     discover_module_dependencies,
     discover_modules,
@@ -203,7 +204,7 @@ def _trace(stage: str, **fields: object) -> None:
     print(f"SYSTEMLENS_TRACE ts={time.monotonic():.6f} stage={stage} {details}".rstrip(), file=sys.stderr, flush=True)
 
 
-def index_repo(
+def _index_repo(
     repo_root: Path,
     config: Config,
     store: Store,
@@ -316,6 +317,7 @@ def index_repo(
     legacy_findings_removed = store.clear_findings_once("ast_only_analysis_v1")
     endpoints_added = 0
     endpoints: list[MessageEndpoint] = []
+    diagnostics: list[ExtractionDiagnostic] = []
     if changed:
         endpoints_removed += store.count_endpoints_for_paths(changed)
         _report_progress(progress, f"→ Indexation : analyse AST sur {len(changed)} fichier(s)...")
@@ -344,6 +346,19 @@ def index_repo(
         store.replace_endpoints_for_files(changed, endpoints)
         _trace("store.endpoints_written", endpoints=len(endpoints))
         endpoints_added = len(endpoints)
+
+        for path in changed:
+            if not path.endswith(".java"):
+                continue
+            if java_parser.parse_java(str(repo_root), path) is None:
+                diagnostics.append(ExtractionDiagnostic(
+                    path=path,
+                    extractor="tree-sitter-java",
+                    category="parse_failed",
+                    severity="warning",
+                    detail="Java source could not be parsed; no facts were extracted from this file.",
+                ))
+        store.replace_extraction_diagnostics_for_files(changed, diagnostics)
 
     # Les empreintes de fichiers sont l'état de l'inventaire, indépendant du
     # Les empreintes de fichiers sont persistées afin de garder l'indexation
@@ -392,3 +407,27 @@ def index_repo(
         endpoints_added=endpoints_added,
         endpoints_removed=endpoints_removed,
     )
+
+
+def index_repo(
+    repo_root: Path,
+    config: Config,
+    store: Store,
+    full: bool = False,
+    disabled: frozenset[str] = frozenset(),
+    extra_files: list[str] | None = None,
+    topic_strategy: str = "default",
+    progress: ProgressCallback | None = None,
+) -> IndexReport:
+    """Index one repository and publish its facts as an atomic snapshot."""
+    with store.transaction():
+        return _index_repo(
+            repo_root,
+            config,
+            store,
+            full=full,
+            disabled=disabled,
+            extra_files=extra_files,
+            topic_strategy=topic_strategy,
+            progress=progress,
+        )
