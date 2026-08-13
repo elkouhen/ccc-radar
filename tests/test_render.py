@@ -238,6 +238,7 @@ def test_graph_html_colours_topics_and_mongodb_collections_by_connectivity() -> 
         "tier_end": 1,
     }
     assert topic["color"] == "#2563eb"
+    assert topic["size"] == 15
     assert topic["label"] == "orders.created"
     assert collection["complexity"] == {
         "score": 1,
@@ -256,6 +257,7 @@ def test_graph_html_colours_topics_and_mongodb_collections_by_connectivity() -> 
         [GraphEdge("kafka", "orders", "payments", producer, consumer)],
     )
     assert "Same visual contract as microservices" in document
+    assert "float border = smoothstep(.18, .39, shape);" in document
     assert "kafka_topic: createNodeProgram(KAFKA_TOPIC_FRAGMENT_SHADER)" in document
 
 

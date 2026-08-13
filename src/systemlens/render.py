@@ -1009,7 +1009,10 @@ def render_graph_html(
         for kind in ("microservice", "kafka_topic", "mongodb_collection")
     }
     for node in nodes:
-        base_size = 17 if node["kind"] == "microservice" else 14 if node["kind"] == "mongodb_collection" else 13
+        # Kafka topics need a slightly larger footprint than collections: the
+        # force layout can zoom out to keep labels apart, and their circular
+        # connectivity outline must remain readable at that fitted scale.
+        base_size = 17 if node["kind"] == "microservice" else 15 if node["kind"] == "kafka_topic" else 14
         if node["kind"] not in complexity_rankings_by_kind:
             node["color"] = "#64748b"
             node["size"] = base_size
@@ -2147,9 +2150,9 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
         float alpha = 1.0 - smoothstep(-.014, .014, distance);
         if (alpha < .01) discard;
         // Same visual contract as microservices: white interior and a thick
-        // complexity-coloured border. The band starts well inside the circle
-        // so it remains visible at normal zoom.
-        float border = smoothstep(.27, .40, shape);
+        // complexity-coloured border. Keep a neutral centre, but use a broad
+        // band so blue/amber/red remains visible after a zoom-to-fit.
+        float border = smoothstep(.18, .39, shape);
         vec3 fill = vec3(.98, .99, 1.0);
         gl_FragColor = vec4(mix(fill, v_color.rgb, border), v_color.a * alpha);
       }
