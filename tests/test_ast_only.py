@@ -143,7 +143,11 @@ def test_indexed_kafka_facts_build_a_traceable_service_edge(tmp_path: Path) -> N
 def test_rest_graph_uses_ast_endpoint_facts() -> None:
     endpoints = infer_framework_endpoints(FIXTURES / "rest_repo")
     served = next(endpoint for endpoint in endpoints if endpoint.role == "serve")
-    called = replace(next(endpoint for endpoint in endpoints if endpoint.role == "call"), topic=served.topic)
+    called = replace(
+        next(endpoint for endpoint in endpoints if endpoint.role == "call"),
+        topic=served.topic,
+        snippet="http://server",
+    )
     graph = build_graph({"server": [served], "caller": [called]})
 
     assert graph

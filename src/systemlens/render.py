@@ -14,6 +14,7 @@ from systemlens.graph import (
     GraphEdge,
     OutboundCallInConsumer,
     external_microservice_names,
+    resolve_rest_target_service,
     graph_edge_rest_resource,
 )
 from systemlens import java_parser
@@ -381,6 +382,7 @@ def _indexing_issues(
         add("warning", "Avertissement d'inventaire", warning)
 
     matched_http_call_ids = {edge.from_endpoint.id for edge in edges if edge.kind == "rest"}
+    service_names = sorted(endpoints_by_service)
     for service, endpoints in sorted(endpoints_by_service.items()):
         for endpoint in sorted(endpoints, key=lambda item: (item.path, item.start_line, item.id)):
             if endpoint.system == "kafka" and endpoint.topic_dynamic:
@@ -398,6 +400,15 @@ def _indexing_issues(
                     endpoint,
                 )
             if endpoint.system == "rest" and endpoint.role == "call" and endpoint.id not in matched_http_call_ids:
+                resolution = resolve_rest_target_service(endpoint, service_names)
+                if resolution.status == "ambiguous":
+                    add(
+                        "warning",
+                        "Cible HTTP ambiguë",
+                        f"{service} : la cible explicite {resolution.hint!r} correspond à plusieurs microservices.",
+                        endpoint,
+                    )
+                    continue
                 add(
                     "warning" if endpoint.topic_dynamic else "info",
                     "Appel HTTP non rapproche",

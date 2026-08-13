@@ -9,7 +9,12 @@ from collections import deque
 from dataclasses import dataclass
 from typing import cast
 
-from systemlens.graph import GraphEdge, build_graph, graph_edge_rest_resource
+from systemlens.graph import (
+    GraphEdge,
+    build_graph,
+    graph_edge_rest_resource,
+    resolve_rest_target_service,
+)
 from systemlens.models import ArchitectureRelation, MessageEndpoint
 from systemlens.modules import DiscoveredModule
 
@@ -676,6 +681,7 @@ def indexing_issues(
         )
 
     matched_http_call_ids = {edge.from_endpoint.id for edge in catalog.edges if edge.kind == "rest"}
+    service_names = sorted({endpoint.module for endpoint in catalog.endpoints if endpoint.module})
     for endpoint in sorted(catalog.endpoints, key=lambda item: (item.path, item.start_line, item.id)):
         service = endpoint.module or "service inconnu"
         if endpoint.system == "kafka" and endpoint.topic_dynamic:
@@ -693,6 +699,15 @@ def indexing_issues(
                 endpoint,
             )
         if endpoint.system == "rest" and endpoint.role == "call" and endpoint.id not in matched_http_call_ids:
+            resolution = resolve_rest_target_service(endpoint, service_names)
+            if resolution.status == "ambiguous":
+                endpoint_issue(
+                    "ambiguous_http_target",
+                    "warning",
+                    f"{service} : la cible explicite {resolution.hint!r} correspond a plusieurs microservices.",
+                    endpoint,
+                )
+                continue
             endpoint_issue(
                 "unmatched_http_call",
                 "warning" if endpoint.topic_dynamic else "info",

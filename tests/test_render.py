@@ -212,6 +212,30 @@ def test_graph_html_links_an_indexing_issue_to_its_source_file() -> None:
     assert issue["vscode_uri"].startswith("vscode://file/")
 
 
+def test_graph_html_reports_an_ambiguous_explicit_http_target() -> None:
+    call = replace(_rest_endpoint("call", "GET /orders", "Client.java"), snippet="http://orders")
+    orders = _rest_endpoint("serve", "GET /orders", "OrdersController.java")
+    alternate = replace(
+        _rest_endpoint("serve", "GET /orders", "AlternateController.java"),
+        id="alternate",
+    )
+
+    graph_data = _html_graph_data(
+        render_graph_html(
+            {"caller": [call], "orders": [orders], "ORDERS": [alternate]}, []
+        )
+    )
+
+    issue = graph_data["indexing_issues"][0]
+    assert issue["severity"] == "warning"
+    assert issue["category"] == "Cible HTTP ambiguë"
+    assert issue["message"] == (
+        "caller : la cible explicite 'orders' correspond à plusieurs microservices."
+    )
+    assert issue["location"] == "Client.java:1"
+    assert issue["vscode_uri"].endswith("/Client.java:1")
+
+
 def test_graph_html_colours_topics_and_mongodb_collections_by_connectivity() -> None:
     producer = _kafka_endpoint("produce", "OrderCreated", "Publisher.java")
     consumer = _kafka_endpoint("consume", "OrderCreated", "Consumer.java")

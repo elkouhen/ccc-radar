@@ -242,6 +242,22 @@ def test_unresolved_configured_client_domain_emits_warning() -> None:
     assert result["summary"]["configured_client_relations"] == 0
 
 
+def test_targetless_rest_call_is_reported_as_external_not_an_internal_relation() -> None:
+    caller = make_endpoint("call", "GET /health", "caller/Client.java", module="caller")
+    unrelated = make_endpoint(
+        "serve", "GET /health", "unrelated/HealthController.java", module="unrelated"
+    )
+
+    result = build_dependency_graph(
+        {"caller": [caller], "unrelated": [unrelated]}, {}
+    )
+
+    assert not [edge for edge in result["edges"] if edge["kind"] == "http"]
+    assert [(edge["source"], edge["target"], edge["kind"]) for edge in result["edges"] if edge["kind"] == "calls_external"] == [
+        ("microservice:caller", "external_api:GET /health", "calls_external")
+    ]
+
+
 def test_dynamic_kafka_topics_remain_service_scoped_unresolved_evidence() -> None:
     producer = make_endpoint(
         "produce", "<dynamic>", "orders/Publisher.java", module="orders",

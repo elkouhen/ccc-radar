@@ -149,7 +149,7 @@ def test_build_graph_skips_same_service_calls() -> None:
     assert build_graph(endpoints_by_service) == []
 
 
-def test_build_graph_links_compatible_rest_routes_without_a_service_target() -> None:
+def test_build_graph_keeps_targetless_compatible_rest_routes_unresolved() -> None:
     edges = build_graph(
         {
             "caller-service": [make_endpoint("call", "GET /health", "Caller.java")],
@@ -157,8 +157,41 @@ def test_build_graph_links_compatible_rest_routes_without_a_service_target() -> 
         }
     )
 
-    assert len(edges) == 1
-    assert (edges[0].from_service, edges[0].to_service) == ("caller-service", "unrelated-service")
+    assert edges == []
+
+
+def test_build_graph_requires_an_exact_service_target_hint() -> None:
+    call = make_endpoint(
+        "call", "GET /orders", "gateway/Client.java", snippet="http://order-service"
+    )
+    order = make_endpoint("serve", "GET /orders", "orders/Controller.java")
+    order_history = make_endpoint(
+        "serve", "GET /orders", "history/Controller.java"
+    )
+
+    edges = build_graph(
+        {
+            "gateway": [call],
+            "order-service": [order],
+            "order-history-service": [order_history],
+        }
+    )
+
+    assert [(edge.from_service, edge.to_service) for edge in edges] == [
+        ("gateway", "order-service")
+    ]
+
+
+def test_build_graph_keeps_ambiguous_normalized_service_alias_unresolved() -> None:
+    call = make_endpoint(
+        "call", "GET /orders", "gateway/Client.java", snippet="http://orders"
+    )
+    first = make_endpoint("serve", "GET /orders", "orders/Controller.java")
+    second = make_endpoint("serve", "GET /orders", "orders-alt/Controller.java")
+
+    assert build_graph(
+        {"gateway": [call], "orders": [first], "ORDERS": [second]}
+    ) == []
 
 
 def test_build_graph_creates_kafka_edges_on_matching_topic_only() -> None:
@@ -231,27 +264,25 @@ def test_build_graph_uses_service_url_getter_hint_only_with_strategy1() -> None:
         "serve",
         "GET /orders/{orderId}",
         "order/Controller.java",
-        module="ftgo-order-service",
+        module="order-service",
     )
     order_history_service = make_endpoint(
         "serve",
         "GET /orders/{orderId}",
         "history/Controller.java",
-        module="ftgo-order-history-service",
+        module="order-history-service",
     )
 
     endpoints_by_service = {
-        "ftgo-api-gateway": [call],
-        "ftgo-order-service": [order_service],
-        "ftgo-order-history-service": [order_history_service],
+        "api-gateway": [call],
+        "order-service": [order_service],
+        "order-history-service": [order_history_service],
     }
 
-    assert {edge.to_service for edge in build_graph(endpoints_by_service)} == {
-        "ftgo-order-service", "ftgo-order-history-service"
-    }
+    assert build_graph(endpoints_by_service) == []
     strategy1_edges = build_graph(endpoints_by_service, strategy1=True)
     assert len(strategy1_edges) == 1
-    assert strategy1_edges[0].to_service == "ftgo-order-service"
+    assert strategy1_edges[0].to_service == "order-service"
 
 
 def test_build_graph_uses_domain_from_rest_configuration_to_disambiguate_targets() -> None:

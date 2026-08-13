@@ -6,6 +6,7 @@ import os
 import re
 import sys
 import time
+from typing import Literal
 
 from systemlens.models import MessageEndpoint
 
@@ -23,6 +24,15 @@ class GraphEdge:
 class OutboundCallInConsumer:
     consumer: MessageEndpoint
     call: MessageEndpoint
+
+
+@dataclass(frozen=True)
+class RestTargetResolution:
+    """Conservative result of resolving one REST call to a service identity."""
+
+    status: Literal["resolved", "ambiguous", "external", "unresolved"]
+    hint: str | None = None
+    service: str | None = None
 
 
 def qualified_rest_resource(service_name: str, resource: str) -> str:
@@ -195,11 +205,55 @@ def _resolved_configured_api_call(
     return replace(call, topic=serve.topic, topic_dynamic=False)
 
 
-def _service_matches_hint(service_name: str, hint: str | None) -> bool:
+def _normalized_service_alias(value: str) -> str:
+    """Normalize one explicit service identity for exact matching only.
+
+    A host from ``http://`` or ``lb://`` has already been parsed by
+    :func:`_rest_target_service_hint`; this helper only normalizes case and a
+    harmless trailing DNS dot.  It deliberately does not accept prefixes,
+    suffixes or substrings: route similarity is not evidence that two services
+    are the same dependency target.
+    """
+    return value.strip().casefold().rstrip(".")
+
+
+def _services_matching_hint(
+    service_names: list[str], hint: str | None
+) -> list[str]:
+    """Return the uniquely evidenced candidates for an explicit REST target.
+
+    Calls without a target hint are intentionally unresolved.  If a workspace
+    contains two names that normalize to the same explicit alias, the target is
+    ambiguous and is likewise left unresolved rather than choosing one.
+    """
     if hint is None:
-        return True
-    normalized = service_name.lower()
-    return normalized == hint or normalized.endswith(f"-{hint}") or hint in normalized
+        return []
+    normalized_hint = _normalized_service_alias(hint)
+    return [
+        service_name
+        for service_name in service_names
+        if _normalized_service_alias(service_name) == normalized_hint
+    ]
+
+
+def resolve_rest_target_service(
+    call: MessageEndpoint, service_names: list[str], *, strategy1: bool = False
+) -> RestTargetResolution:
+    """Resolve an explicit REST target without using route similarity.
+
+    Only an exact normalized target alias may resolve an indexed internal
+    service. A call explicitly marked as an external microservice is retained
+    as such; a missing target or several equivalent aliases stays unresolved.
+    """
+    if external_service := external_microservice_name(call):
+        return RestTargetResolution("external", service=external_service)
+    hint = _rest_target_service_hint(call, strategy1=strategy1)
+    matches = _services_matching_hint(service_names, hint)
+    if len(matches) == 1:
+        return RestTargetResolution("resolved", hint=hint, service=matches[0])
+    if len(matches) > 1:
+        return RestTargetResolution("ambiguous", hint=hint)
+    return RestTargetResolution("unresolved", hint=hint)
 
 
 def paths_match(call_topic: str, serve_topic: str) -> bool:
@@ -237,11 +291,11 @@ def build_graph(
 ) -> list[GraphEdge]:
     """Construit les arêtes REST et Kafka entre services distincts.
 
-    Une arête REST associe un appel à une route exposée compatible. Lorsqu'une
-    cible de service est présente dans le site d'appel (URL de service ou
-    ``lb://``), elle restreint cet appariement. Le getter de configuration
-    ``getXxxServiceUrl()`` est une convention Strategy1 et n'est considéré que
-    lorsque ``strategy1=True``.
+    Une arête REST n'est créée que si le site d'appel désigne exactement un
+    unique service interne (URL de service, ``lb://`` ou convention Strategy1).
+    La méthode et la route ne font alors que confirmer la compatibilité au sein
+    de ce service. Le getter de configuration ``getXxxServiceUrl()`` n'est
+    considéré que lorsque ``strategy1=True``.
     Pas d'auto-arête : un service qui s'appelle lui-même n'entre pas dans le
     graphe inter-services.
 
@@ -274,12 +328,18 @@ def build_graph(
     edges: list[GraphEdge] = []
     seen: set[tuple[str, str, str, str, str]] = set()
     gateway_proxy_targets: set[tuple[str, str]] = set()
+    service_names = sorted(endpoints_by_service)
     for call_service, call in calls:
-        target_hint = _rest_target_service_hint(call, strategy1=strategy1)
+        resolution = resolve_rest_target_service(
+            call, service_names, strategy1=strategy1
+        )
+        if resolution.status != "resolved" or resolution.service is None:
+            continue
+        target_service = resolution.service
         for serve_service, serve in serves:
             if call_service == serve_service:
                 continue
-            if not _service_matches_hint(serve_service, target_hint):
+            if serve_service != target_service:
                 continue
             effective_call = call
             if not paths_match(call.topic, serve.topic):

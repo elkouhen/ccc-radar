@@ -68,6 +68,14 @@ WebClient, Spring Cloud Gateway, Spring Data REST, Spring Kafka and Spring
 Cloud Stream. Markdown and JSON Kafka manifests are supported as explicit
 sources and are labelled `source=manifest`.
 
+A REST call forms an internal architecture relation only when its target
+service is identified by an exact normalized explicit alias, such as an HTTP
+host, an `lb://` service name, or a configured client domain. A matching HTTP
+method and route only refines a resource within that already identified
+service; it never identifies a service by itself. Calls without a unique target
+remain indexed as unresolved evidence and are reported by coverage and indexing
+issues rather than being linked to a coincidentally similar route.
+
 The HTML microservice export provides an inspector for each statically typed
 Kafka message. It shows the message topic, producer and consumer services, and
 allows navigation through recursively referenced project DTO fields and enums.

@@ -62,6 +62,13 @@ invocations to discover Spring MVC/WebFlux routes, Feign clients, RestTemplate,
 WebClient, Spring Data REST and gateway routes. It resolves literals and known
 Spring property expressions conservatively.
 
+REST graph construction first resolves an explicit target identity from an HTTP
+host, `lb://` URI, configured client domain, or an opt-in Strategy1 convention.
+The normalized alias must match exactly one indexed service; prefix, suffix and
+substring matching are not used. Route compatibility is evaluated only within
+that service. A targetless or ambiguous call remains an endpoint fact and is
+reported as unresolved rather than creating an internal edge.
+
 `infer_kafka_endpoints` recognises Spring Kafka listeners and send sites,
 KafkaTemplate/ProducerRecord usage and Spring Cloud Stream StreamBridge calls.
 It preserves dynamic topic expressions and derives a payload type only from an

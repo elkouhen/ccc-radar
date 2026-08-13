@@ -123,3 +123,13 @@ def test_indexing_issues_exposes_source_evidence_for_heuristic_review() -> None:
         "end_line": 12,
         "snippet": "send(topic, payload)",
     }
+
+
+def test_indexing_issues_distinguishes_an_ambiguous_explicit_http_target() -> None:
+    call = _endpoint("call", "rest", "GET /orders", snippet="http://orders")
+    alternate = replace(call, id="alternate", role="serve", module="ORDERS")
+
+    result = indexing_issues(build_catalog([], [call, alternate]))
+
+    assert result["by_code"] == {"ambiguous_http_target": 1}
+    assert result["issues"][0]["severity"] == "warning"
