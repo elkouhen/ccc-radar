@@ -30,14 +30,17 @@ but does not alter AST endpoint extraction.
 |---|---|
 | `systemlens init` | Creates `.systemlens/config.yml`; it never overwrites an existing file. |
 | `systemlens doctor [--json]` | Read-only check of configuration, local AST readiness and index state. |
-| `systemlens index [--full] [--topic-strategy default\|strategy1] [--manifest FILE]...` | Incrementally extracts and persists architecture facts. |
+| `systemlens index [MANIFEST]... [--full] [--topic-strategy default\|strategy1] [--manifest FILE]...` | Incrementally extracts and persists architecture facts. Kafka manifests may be passed positionally or through repeatable `--manifest FILE`. |
 | `systemlens microservices`, `topics`, `apis`, `dtos`, `mongodb`, `modules` | Browse the indexed catalog; `microservices`, `topics` and `mongodb` list the corresponding architecture objects directly, each with a `kind` and `name`, and support the documented list/show/neighbors actions and JSON output where applicable. |
 | `systemlens analyze audit` | Reports static architecture risks. |
+| `systemlens analyze coverage [--json]` | Reports inventory coverage and unresolved integrations. |
 | `systemlens analyze indexing-issues [--json]` | Lists unresolved indexing facts. JSON includes source evidence suitable for reviewing proposed heuristics. |
 | `systemlens analyze microservices impact NAME` | Lists direct and transitive impact paths. |
 | `systemlens analyze microservices path FROM TO` | Lists bounded paths between services. |
 | `systemlens analyze request-reply` | Lists Strategy1 Kafka request/reply candidates. |
-| `systemlens export microservices` / `systemlens export modules` | Emits JSON, HTML or LikeC4 views. |
+| `systemlens export microservices (--html FILE \| --c4 DIRECTORY \| --json)` | Exports the microservice, Kafka-topic and MongoDB-collection topology. |
+| `systemlens export modules --html FILE` | Exports the Maven/Gradle build-dependency view. |
+| `systemlens export request-reply --html FILE` | Exports Strategy1 Kafka request/reply candidates. |
 | `systemlens mcp` | Starts the stdio MCP server. |
 
 `systemlens index` reports its file delta, AST analysis stage, persisted endpoint
@@ -74,9 +77,14 @@ filters, graph layouts, specialized reference views and build dependencies are
 available as advanced controls. Changing a relation-type filter rebuilds and
 relayouts the graph from only the selected dependency types; excluded relations
 do not influence the resulting graph layout.
-Microservices, Kafka topics, and MongoDB collections are coloured by their
-connectivity complexity. The relation count includes their indexed HTTP, Kafka,
-and MongoDB dependencies, while low/medium/high tiers are calculated separately
+Microservices with no indexed inter-service relation remain visible in a
+separate isolated area of the graph, so their absence of dependencies is not
+confused with an absent service.
+Microservices, Kafka topics, and MongoDB collections are marked by their
+relative connectivity. In the HTML graph, the shape and neutral interior
+identify the resource type, while the coloured outline alone communicates its
+relative connectivity. The relation count includes their indexed HTTP, Kafka,
+and MongoDB dependencies, while low/medium/high relative tiers are calculated separately
 for each resource type. For a microservice, the count is its distinct direct
 HTTP clients and targets, Kafka producer/consumer topic relations, and MongoDB
 collection relations; multiple HTTP routes between the same client and target
@@ -86,8 +94,9 @@ tercile bounds. The lowest third is blue, the middle third orange, and the
 highest third red; the terciles are recalculated separately for each resource
 type in every export. The graph label of each coloured resource also displays
 its connectivity score directly (for example, `orders.created · 4`).
-The Explore search accepts either one exact, unambiguous graph-node name or a
-Kafka itinerary written with `->`. An itinerary starts and ends with a
+The Explore search suggests indexed resource names and accepts either one
+exact, unambiguous graph-node name or a Kafka itinerary written with `->`.
+An itinerary starts and ends with a
 microservice and follows only directed Kafka relations through Kafka topics;
 it never traverses HTTP or MongoDB dependencies.
 Invalid, ambiguous, repeated, or unreachable stops leave the current graph
@@ -108,7 +117,9 @@ Indexing issues that have a source endpoint expose a VS Code link to the
 associated file and line. The `Resources` view groups distinct OpenAPI and
 Kafka DTO sections; both support filtering their complete list (OpenAPI by
 path or service, DTOs by simple name or package). Request/reply and build
-dependencies remain available as complementary analyses from that view.
+dependencies remain available as complementary analyses from that view. A
+persistent inventory status reports whether unresolved indexing facts exist and
+opens their review view.
 
 `--topic-strategy strategy1` adds opt-in convention extraction for selected
 `getTopics()` accessors and `envoyerMessageKafka*(kafkaProperties.getTopics().getXxx(), payload)` calls
@@ -137,12 +148,15 @@ The MCP server exposes the same indexed architecture. Its primary tools are:
 |---|---|
 | `list_endpoints` | Filter raw REST/Kafka facts. |
 | `architecture_catalog` | List, show and navigate services, modules, topics, DTOs, APIs and collections. |
+| `architecture_audit` | Return the structured equivalent of `systemlens analyze audit`. |
+| `architecture_coverage` | Return inventory coverage and unresolved integration counts. |
 | `graph` | Return an inter-service topology. |
 | `dependency_graph` | Return typed HTTP, Kafka, MongoDB and external API relations. |
 | `audit_dependency_graph` | Return static topology risks. |
 | `trace_message_flow` | Trace a topic or route through its source sites. |
 | `list_modules` | Return the persisted module inventory. |
 | `list_workspace_services` | Discover and load a multi-service Maven/Gradle workspace read-only. |
+| `list_request_reply_patterns` | Return Strategy1 Kafka request/reply candidates. |
 | `reindex_architecture` | Incrementally refresh AST facts after a source change. |
 
 MCP tools require an existing index where they query persisted facts. Errors are

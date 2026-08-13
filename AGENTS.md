@@ -53,6 +53,13 @@ view and state any material trade-off or unverified risk:
 Apply only the perspectives relevant to the change. Do not use this checklist
 as a substitute for proportionate implementation and tests.
 
+## Deferred HTML accessibility and delivery concerns
+
+Until explicitly reprioritized by the user, do not propose, implement, or
+block work on the generated HTML export's CDN dependencies, ARIA semantics, or
+keyboard navigation. These concerns are intentionally deferred and must not
+expand the scope of an otherwise requested UX or graph-rendering change.
+
 ## Hugging Face model downloads
 
 When a model must be downloaded with `hf`, **disable `SSL_CERT_FILE` first** in

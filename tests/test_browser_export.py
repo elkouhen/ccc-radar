@@ -81,7 +81,11 @@ def test_html_export_resources_are_usable_in_a_constrained_browser_viewport(tmp_
         end_line=6, snippet="", message_type=None,
     )
     document = render_graph_html(
-        {"orders": [_producer("com.example.OrderCreated"), rest_call], "payments": [consumer, rest_server]},
+        {
+            "orders": [_producer("com.example.OrderCreated"), rest_call],
+            "payments": [consumer, rest_server],
+            "inventory": [],
+        },
         [
             GraphEdge("kafka", "orders", "payments", _producer("com.example.OrderCreated"), consumer),
             GraphEdge("rest", "orders", "payments", rest_call, rest_server),
@@ -95,9 +99,14 @@ def test_html_export_resources_are_usable_in_a_constrained_browser_viewport(tmp_
         errors: list[str] = []
         page.on("pageerror", lambda error: errors.append(str(error)))
         page.set_content(document, wait_until="load")
+        page.wait_for_timeout(100)
+        assert not errors
 
         graph = page.locator("#graph")
         assert graph.get_attribute("data-relation-count") == "3"
+        assert "1 ressource isolée" in page.locator("#graph-summary").inner_text()
+        assert page.locator("#inventory-status").inner_text() == "Inventaire : aucun fait non résolu"
+        assert page.locator("#node-suggestions option").count() == 4
         page.locator("#relation-http").uncheck()
         assert graph.get_attribute("data-relation-count") == "2"
         page.locator("#relation-kafka").uncheck()
@@ -149,5 +158,8 @@ def test_html_export_resources_are_usable_in_a_constrained_browser_viewport(tmp_
         search.fill("does-not-exist")
         search.press("Enter")
         assert "Noeud introuvable" in page.locator("#search-status").inner_text()
+        search.fill("inventory")
+        search.press("Enter")
+        assert page.locator(".details-title").inner_text() == "inventory"
         assert not errors
         browser.close()

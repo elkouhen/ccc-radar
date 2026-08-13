@@ -1,7 +1,6 @@
 import json
 import os
 import re
-import subprocess
 from dataclasses import dataclass
 from html import escape
 from pathlib import Path
@@ -1709,10 +1708,17 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
     .legend-content { display: grid; gap: 5px; }
     .legend-row { display: flex; align-items: center; gap: 6px; }
     .legend-mark { display: inline-block; width: 10px; height: 10px; border-radius: 50%; }
+    .legend-resource-mark { box-sizing: border-box; background: #f8fafc; border: 2px solid #64748b; }
+    .legend-resource-mark.microservice { clip-path: polygon(25% 7%, 75% 7%, 100% 50%, 75% 93%, 25% 93%, 0 50%); }
+    .legend-resource-mark.collection { border-radius: 4px; }
     .legend-line { width: 18px; height: 2px; }
     .graph-summary { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 16px; border-bottom: 1px solid #e2e8f0; background: #f8fafc; }
     .graph-summary-item { display: inline-flex; align-items: center; min-height: 22px; padding: 2px 8px; border: 1px solid #dbe4ee; border-radius: 999px; color: #475569; background: #fff; font-size: 11px; font-weight: 700; }
     .graph-summary-item.is-warning { border-color: #fcd34d; color: #92400e; background: #fffbeb; }
+    .inventory-status { width: auto !important; height: auto !important; min-height: 30px; padding: 6px 8px !important; color: #166534 !important; border-color: #bbf7d0 !important; background: #f0fdf4 !important; font-size: 11px !important; font-weight: 700; text-align: left; }
+    .inventory-status:hover, .inventory-status:focus-visible { background: #dcfce7 !important; outline: none; }
+    .inventory-status.is-warning { color: #92400e !important; border-color: #fcd34d !important; background: #fffbeb !important; }
+    .inventory-status.is-warning:hover, .inventory-status.is-warning:focus-visible { background: #fef3c7 !important; }
     .inspector-modal[hidden] { display: none; }
     .inspector-modal { position: fixed; z-index: 10; inset: 0; display: grid; place-items: center; padding: 24px; background: rgba(15, 23, 42, .52); }
     .inspector-dialog { display: grid; grid-template-rows: auto minmax(0, 1fr); width: min(1120px, 100%); height: min(820px, 100%); overflow: hidden; border: 1px solid #cbd5e1; border-radius: 14px; background: #fff; box-shadow: 0 24px 80px rgba(15, 23, 42, .34); }
@@ -1747,6 +1753,7 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
       </div>
     </div>
     <div id="graph-summary" class="graph-summary" aria-label="Synthese de l'architecture"></div>
+    <button id="inventory-status" class="inventory-status" type="button" hidden></button>
     <div class="toolbar-tabs" role="tablist" aria-label="Vues de l'architecture">
       <button id="graph-tab" class="toolbar-tab is-active" type="button" role="tab" aria-selected="true" aria-controls="graph-panel">Explorer</button>
       <button id="paths-tab" class="toolbar-tab" type="button" role="tab" aria-selected="false" aria-controls="paths-panel">Parcours</button>
@@ -1765,8 +1772,9 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
         </div>
       </section>
       <label class="explore-search-label" for="search">Rechercher une ressource ou un itinéraire</label>
-      <input id="search" type="search" placeholder="orders ou orders -> payments" autocomplete="off" aria-describedby="search-help search-status" aria-label="Rechercher une ressource ou un itinéraire">
-      <p id="search-help" class="explore-search-help">Nom exact d'un noeud, ou itinéraire avec <code>-></code>. Appuyez sur Entrée pour afficher l'itinéraire le plus court.</p>
+      <input id="search" type="search" list="node-suggestions" placeholder="orders ou orders -> payments" autocomplete="off" aria-describedby="search-help search-status" aria-label="Rechercher une ressource ou un itinéraire">
+      <datalist id="node-suggestions"></datalist>
+      <p id="search-help" class="explore-search-help">Choisissez une suggestion ou saisissez le nom exact d'un noeud. Utilisez <code>-></code>, puis Entrée, pour afficher l'itinéraire le plus court.</p>
       <p id="search-status" class="explore-search-status" role="status"></p>
       <div class="filter-presets" role="group" aria-label="Vues de relations">
         <button class="filter-preset is-active" type="button" data-preset="all">Toutes</button>
@@ -1869,13 +1877,13 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
   <details id="graph-legend" class="legend" aria-label="Legende du graphe">
     <summary>Legende</summary>
     <div class="legend-content">
-      <div class="legend-row"><span class="legend-mark" style="background:#2563eb"></span>Complexite faible (premier tiers)</div>
-      <div class="legend-row"><span class="legend-mark" style="background:#d97706"></span>Complexite moyenne (tiers central)</div>
-      <div class="legend-row"><span class="legend-mark" style="background:#dc2626"></span>Complexite elevee (dernier tiers)</div>
-      <div class="legend-row">Les tiers sont recalcules separement pour les microservices, topics et collections.</div>
-      <div class="legend-row"><span class="legend-mark" style="background:#64748b;clip-path:polygon(25% 7%,75% 7%,100% 50%,75% 93%,25% 93%,0 50%)"></span>Microservice</div>
-      <div class="legend-row"><span class="legend-mark" style="background:#64748b"></span>Topic Kafka</div>
-      <div class="legend-row"><span class="legend-mark" style="border-radius:4px;background:#64748b"></span>Collection MongoDB</div>
+      <div class="legend-row"><span class="legend-mark" style="background:#2563eb"></span>Connectivité relative basse (premier tiers)</div>
+      <div class="legend-row"><span class="legend-mark" style="background:#d97706"></span>Connectivité relative médiane (tiers central)</div>
+      <div class="legend-row"><span class="legend-mark" style="background:#dc2626"></span>Connectivité relative élevée (dernier tiers)</div>
+      <div class="legend-row">La connectivité est relative à chaque type de ressource, pas un niveau de risque.</div>
+      <div class="legend-row"><span class="legend-mark legend-resource-mark microservice"></span>Microservice</div>
+      <div class="legend-row"><span class="legend-mark legend-resource-mark topic"></span>Topic Kafka</div>
+      <div class="legend-row"><span class="legend-mark legend-resource-mark collection"></span>Collection MongoDB</div>
       <div class="legend-row"><span class="legend-line" style="background:#D55E00"></span>Appel HTTP</div>
       <div class="legend-row"><span class="legend-line" style="background:#009E73"></span>Publication Kafka</div>
       <div class="legend-row"><span class="legend-line" style="background:#0072B2"></span>Consommation Kafka</div>
@@ -1899,6 +1907,25 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
   <script type="module">
     const graphData = JSON.parse(document.getElementById("graph-data").textContent);
     const nodeDataById = new Map(graphData.nodes.map(node => [node.id, node]));
+    const linkedNodeIds = new Set(graphData.links.flatMap(link => [link.source, link.target]));
+    const isolatedNodeIds = new Set(
+      graphData.nodes.filter(node => !linkedNodeIds.has(node.id)).map(node => node.id)
+    );
+    const nodeSuggestions = document.getElementById("node-suggestions");
+    const nodeKindSuggestion = node => (
+      node.kind === "kafka_topic" ? "Topic Kafka"
+        : node.kind === "mongodb_collection" ? "Collection MongoDB"
+          : node.external ? "Service externe" : "Microservice"
+    );
+    graphData.nodes
+      .slice()
+      .sort((left, right) => left.name.localeCompare(right.name))
+      .forEach(node => {
+        const option = document.createElement("option");
+        option.value = node.name;
+        option.label = nodeKindSuggestion(node);
+        nodeSuggestions.append(option);
+      });
     const graphSummary = document.getElementById("graph-summary");
     const summaryCounts = {
       microservices: graphData.nodes.filter(node => node.kind === "microservice").length,
@@ -1911,6 +1938,9 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
       `${summaryCounts.topics} topic${summaryCounts.topics > 1 ? "s" : ""} Kafka`,
       `${summaryCounts.collections} collection${summaryCounts.collections > 1 ? "s" : ""} MongoDB`,
       `${graphData.links.length} relation${graphData.links.length > 1 ? "s" : ""}`,
+      ...(isolatedNodeIds.size
+        ? [`${isolatedNodeIds.size} ressource${isolatedNodeIds.size > 1 ? "s" : ""} isolée${isolatedNodeIds.size > 1 ? "s" : ""}`]
+        : []),
     ];
     summaryItems.forEach(text => {
       const item = document.createElement("span");
@@ -2114,8 +2144,12 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
         float distance = length(max(corner, 0.0)) + min(max(corner.x, corner.y), 0.0) - radius;
         float alpha = 1.0 - smoothstep(-.014, .014, distance);
         if (alpha < .01) discard;
-        float border = smoothstep(-.065, -.016, distance);
-        gl_FragColor = vec4(v_color.rgb, v_color.a * alpha);
+        // Collections use the same visual grammar as microservices and
+        // topics: shape communicates the resource type, while the coloured
+        // outline communicates connectivity complexity.
+        float border = smoothstep(-.095, -.020, distance);
+        vec3 fill = vec3(.98, .99, 1.0);
+        gl_FragColor = vec4(mix(fill, v_color.rgb, border), v_color.a * alpha);
       }
     `;
     const packedColorBuffer = new ArrayBuffer(4);
@@ -2235,11 +2269,29 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
       }
       return layoutNodes;
     }
+    function layoutIsolatedNodes(nodes, connectedNodes) {
+      if (!nodes.length) return [];
+      const startX = connectedNodes.length
+        ? Math.max(...connectedNodes.map(node => node.x)) + 1.4
+        : 0;
+      const columns = Math.max(1, Math.ceil(Math.sqrt(nodes.length)));
+      return nodes.map((node, index) => ({
+        ...node,
+        x: startX + (index % columns) * .55,
+        y: (Math.floor(index / columns) - (Math.ceil(nodes.length / columns) - 1) / 2) * .55,
+        isolated: true,
+      }));
+    }
     function rebuildGraph() {
       const visibleLinks = graphData.links.filter(link => isVisibleRelation(link.kind));
       const visibleNodeIds = new Set(visibleLinks.flatMap(link => [link.source, link.target]));
-      const visibleNodes = graphData.nodes.filter(node => visibleNodeIds.has(node.id));
-      const layoutNodes = layoutGraphNodes(visibleNodes, visibleLinks);
+      const connectedNodes = graphData.nodes.filter(node => visibleNodeIds.has(node.id));
+      const isolatedNodes = graphData.nodes.filter(node => isolatedNodeIds.has(node.id));
+      const positionedConnectedNodes = layoutGraphNodes(connectedNodes, visibleLinks);
+      const layoutNodes = [
+        ...positionedConnectedNodes,
+        ...layoutIsolatedNodes(isolatedNodes, positionedConnectedNodes),
+      ];
       renderer?.kill();
       network = new graphology.MultiDirectedGraph();
       layoutNodes.forEach(node => network.addNode(node.id, {
@@ -2340,6 +2392,7 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
     const indexingIssuesEmpty = document.getElementById("indexing-issues-empty");
     const indexingIssuesTitle = document.getElementById("indexing-issues-title");
     const indexingIssues = graphData.indexing_issues || [];
+    const inventoryStatus = document.getElementById("inventory-status");
     const openApiReferencesList = document.getElementById("openapi-references");
     const openApiReferencesEmpty = document.getElementById("openapi-references-empty");
     const openApiReferencesFilter = document.getElementById("openapi-reference-filter");
@@ -2548,6 +2601,14 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
       reset();
     }
     function renderIndexingIssues() {
+      inventoryStatus.hidden = false;
+      inventoryStatus.classList.toggle("is-warning", indexingIssues.length > 0);
+      inventoryStatus.textContent = indexingIssues.length
+        ? `Inventaire : ${indexingIssues.length} fait${indexingIssues.length > 1 ? "s" : ""} à vérifier`
+        : "Inventaire : aucun fait non résolu";
+      inventoryStatus.title = indexingIssues.length
+        ? "Ouvrir les problèmes d'indexation"
+        : "Aucun fait non résolu dans cet inventaire";
       indexingIssuesTitle.textContent = `Problemes d'indexation (${indexingIssues.length})`;
       indexingIssuesList.replaceChildren();
       indexingIssuesEmpty.hidden = indexingIssues.length > 0;
@@ -3445,9 +3506,10 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
       if (complexity) {
         const scoreBadge = document.createElement("span");
         scoreBadge.className = `detail-badge complexity ${complexity.level}`;
-        scoreBadge.textContent = `Connectivite : ${complexity.level} (${complexity.score})`;
+        const connectivityLabels = { low: "basse", medium: "médiane", high: "élevée" };
+        scoreBadge.textContent = `Connectivité relative : ${connectivityLabels[complexity.level]} (${complexity.score})`;
         const breakdown = complexity.breakdown || {};
-        scoreBadge.title = `HTTP : ${breakdown.http || 0} · Kafka : ${breakdown.kafka || 0} · MongoDB : ${breakdown.mongodb || 0} · Rang ${complexity.rank}/${complexity.population} · Tiers : ${complexity.tier_start}-${complexity.tier_end}`;
+        scoreBadge.title = `HTTP : ${breakdown.http || 0} · Kafka : ${breakdown.kafka || 0} · MongoDB : ${breakdown.mongodb || 0} · Rang relatif ${complexity.rank}/${complexity.population} · Tiers : ${complexity.tier_start}-${complexity.tier_end}`;
         meta.append(scoreBadge);
       }
       header.append(kicker, title, meta);
@@ -3648,6 +3710,7 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
     resourcesTab.addEventListener("click", () => setToolbarTab("resources"));
     issuesTab.addEventListener("click", () => setToolbarTab("issues"));
     pathsTab.addEventListener("click", () => setToolbarTab("paths"));
+    inventoryStatus.addEventListener("click", () => setToolbarTab("issues"));
     document.getElementById("show-request-reply").addEventListener("click", () => setToolbarTab("request-reply"));
     document.getElementById("show-dependencies").addEventListener("click", () => setToolbarTab("dependencies"));
     filterPresetButtons.forEach(button => button.addEventListener("click", () => applyRelationPreset(button.dataset.preset)));
@@ -3823,16 +3886,6 @@ _SIGMA_MODULE_GRAPH_HTML_TEMPLATE = """<!doctype html>
 """
 
 
-def _d2_escape(value: str) -> str:
-    return value.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
-
-
-
-
-
-
-
-
 def _rest_resources_served(endpoints: list[MessageEndpoint]) -> list[str]:
     return sorted(
         {
@@ -3988,139 +4041,6 @@ def _visual_link_evidence(
     if any(endpoint.source == "manifest" for endpoint in endpoints):
         return "proved", "manifest"
     return "proved", "code"
-
-
-
-
-def render_graph_d2(
-    endpoints_by_service: dict[str, list[MessageEndpoint]],
-    edges: list[GraphEdge],
-    collections_by_service: dict[str, list[str]] | None = None,
-) -> str:
-    """Rend le graphe en source D2 pour bénéficier du moteur d'agencement
-    natif de D2. Les nœuds restent microservices + topics Kafka, les arêtes
-    REST vont de l'appelant vers l'appelé et les arêtes Kafka sont dépliées
-    en production puis consommation. Kafka et les liens vers MongoDB restent
-    en pointillé."""
-    external_services = external_microservice_names(edges)
-    ordered_services = sorted(set(endpoints_by_service) | external_services)
-    kafka_topics = sorted({edge.from_endpoint.topic for edge in edges if edge.kind == "kafka"})
-    mongo_collections = _mongodb_collection_nodes(collections_by_service)
-    service_ids = {name: f"svc_{i}" for i, name in enumerate(ordered_services)}
-    topic_ids = {name: f"topic_{i}" for i, name in enumerate(kafka_topics)}
-    collection_ids = {identity: f"mongo_{i}" for i, (_service, _collection, identity) in enumerate(mongo_collections)}
-
-    lines = [
-        "direction: down",
-        "",
-    ]
-    for name in ordered_services:
-        node_id = service_ids[name]
-        lines.extend(
-            [
-                f"{node_id}: {{",
-                f'  label: "{_d2_escape(name)}"',
-                f"  shape: {'triangle' if name in external_services else 'hexagon'}",
-                f'  style.fill: "{"#f3f4f6" if name in external_services else "#dae8fc"}"',
-                f'  style.stroke: "{"#6b7280" if name in external_services else "#6c8ebf"}"',
-            ]
-        )
-        lines.extend(
-            [
-                "}",
-                "",
-            ]
-        )
-    for name in kafka_topics:
-        node_id = topic_ids[name]
-        lines.extend(
-            [
-                f"{node_id}: {{",
-                f'  label: "{_d2_escape(name)}"',
-                "  shape: circle",
-                '  style.fill: "#ffe6cc"',
-                '  style.stroke: "#d79b00"',
-                "}",
-                "",
-            ]
-        )
-    for _service, collection, identity in mongo_collections:
-        node_id = collection_ids[identity]
-        lines.extend(
-            [
-                f"{node_id}: {{",
-                f'  label: "{_d2_escape(collection)}"',
-                "  shape: rectangle",
-                '  style.fill: "#e6ffed"',
-                '  style.stroke: "#2f855a"',
-                "  style.border-radius: 8",
-                "}",
-                "",
-            ]
-        )
-
-    ids_by_kind = {
-        "microservice": service_ids,
-        "kafka_topic": topic_ids,
-        "mongodb_collection": collection_ids,
-    }
-    visual_edges = [*_visual_graph_edges(edges), *_mongodb_visual_graph_edges(collections_by_service)]
-    for source_kind, source_name, target_kind, target_name, label, kind in visual_edges:
-        source_id = ids_by_kind[source_kind].get(source_name)
-        target_id = ids_by_kind[target_kind].get(target_name)
-        if source_id is None or target_id is None:
-            continue
-        lines.append(f'{source_id} -> {target_id}: "{_d2_escape(label)}" {{')
-        if kind == "kafka":
-            lines.append("  style.stroke-dash: 3")
-        elif kind == "mongodb":
-            lines.append('  style.stroke: "#2f855a"')
-            lines.append("  style.stroke-dash: 3")
-        lines.append("}")
-        lines.append("")
-
-    return "\n".join(lines).rstrip() + "\n"
-
-
-def write_graph_d2(output_path: Path, source: str, layout: str = "elk") -> None:
-    """Écrit soit la source D2 (`.d2`), soit un rendu généré par la CLI D2
-    (`.svg`, `.png`, etc.)."""
-    if output_path.suffix.lower() == ".d2":
-        output_path.write_text(source, encoding="utf-8")
-        return
-
-    try:
-        proc = subprocess.run(
-            ["d2", "--layout", layout, "-", str(output_path)],
-            input=source,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-    except FileNotFoundError as exc:
-        raise RuntimeError(
-            "CLI 'd2' introuvable. Installez D2 ou utilisez une sortie .d2 pour écrire la source."
-        ) from exc
-
-    if proc.returncode != 0:
-        details = proc.stderr.strip() or proc.stdout.strip() or f"code {proc.returncode}"
-        raise RuntimeError(f"d2 a échoué: {details}")
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 class EndpointHit(TypedDict):

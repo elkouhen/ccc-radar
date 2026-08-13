@@ -55,9 +55,24 @@ Start the stdio server from an initialized repository:
 systemlens mcp
 ```
 
+For example, register it in an MCP client configuration as:
+
+```json
+{
+  "mcpServers": {
+    "systemlens": {
+      "command": "systemlens",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
 The main tools are `list_endpoints`, `architecture_catalog`, `graph`,
-`dependency_graph`, `audit_dependency_graph`, `trace_message_flow`,
-`list_modules`, and `list_workspace_services`.
+`dependency_graph`, `audit_dependency_graph`, `architecture_audit`,
+`architecture_coverage`, `trace_message_flow`, `list_modules`,
+`list_workspace_services`, `list_request_reply_patterns`, and
+`reindex_architecture`.
 
 ## Documentation
 

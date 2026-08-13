@@ -151,8 +151,7 @@ def main() -> int:
     for repo in sorted(path for path in EXAMPLES.iterdir() if path.is_dir()):
         slug = repo.name
         page = REPORTS / f"{slug}.md"
-        d2_path = ASSETS / f"{slug}.d2"
-        svg_path = ASSETS / f"{slug}.svg"
+        html_path = ASSETS / f"{slug}-systemlens.html"
 
         git_ok = shell_text(["git", "rev-parse", "--is-inside-work-tree"], repo) == "true"
         branch = shell_text(["git", "branch", "--show-current"], repo, "-") if git_ok else "-"
@@ -182,10 +181,11 @@ def main() -> int:
                 f"systemlens index failed for {repo.name}:\nSTDOUT:\n{index_proc.stdout}\nSTDERR:\n{index_proc.stderr}"
             )
 
-        graph_proc = run([str(SYSTEMLENS), "graph", "--json"], repo)
+        graph_proc = run([str(SYSTEMLENS), "export", "microservices", "--json"], repo)
         if graph_proc.returncode != 0:
             raise SystemExit(
-                f"systemlens graph --json failed for {repo.name}:\nSTDOUT:\n{graph_proc.stdout}\nSTDERR:\n{graph_proc.stderr}"
+                "systemlens export microservices --json failed for "
+                f"{repo.name}:\nSTDOUT:\n{graph_proc.stdout}\nSTDERR:\n{graph_proc.stderr}"
             )
         graph = json.loads(graph_proc.stdout)
 
@@ -196,12 +196,14 @@ def main() -> int:
             )
         micro = json.loads(micro_proc.stdout)
 
-        for output in (d2_path, svg_path):
-            proc = run([str(SYSTEMLENS), "graph", "--d2", str(output)], repo)
-            if proc.returncode != 0:
-                raise SystemExit(
-                    f"systemlens graph --d2 {output.name} failed for {repo.name}:\nSTDOUT:\n{proc.stdout}\nSTDERR:\n{proc.stderr}"
-                )
+        html_proc = run(
+            [str(SYSTEMLENS), "export", "microservices", "--html", str(html_path)], repo
+        )
+        if html_proc.returncode != 0:
+            raise SystemExit(
+                "systemlens export microservices --html failed for "
+                f"{repo.name}:\nSTDOUT:\n{html_proc.stdout}\nSTDERR:\n{html_proc.stderr}"
+            )
 
         warnings = []
         note = graph.get("note") or ""
@@ -274,13 +276,11 @@ def main() -> int:
                     "",
                     git_table,
                     "",
-                    "## systemlens graph",
+                    "## systemlens microservice export",
                     "",
                     graph_table,
                     "",
-                    f"Artifacts: [`{rel(svg_path)}`]({rel(svg_path)}) · [`{rel(d2_path)}`]({rel(d2_path)})",
-                    "",
-                    f'<img src="{rel(svg_path)}" alt="Graph for {slug}" width="960">',
+                    f"Interactive artifact: [`{rel(html_path)}`]({rel(html_path)})",
                     "",
                     "## Graph notes and warnings",
                     "",
@@ -322,7 +322,7 @@ def main() -> int:
     index_lines = [
         "# Example reports",
         "",
-        "Generated pages for each directory in `~/examples`, with the `systemlens` graph rendered from D2 to SVG, flow summaries, and basic Git repository metadata.",
+        "Generated pages for each directory in `~/examples`, with an interactive SystemLens HTML export, flow summaries, and basic Git repository metadata.",
         "",
         "| Repository | Branch | Commit | Services | Edges | HTTP flows | Kafka flows | Warnings | Page |",
         "|---|---|---|---:|---:|---:|---:|---:|---|",

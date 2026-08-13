@@ -202,9 +202,6 @@ def reindex_architecture() -> IndexReport:
 
 
 @mcp.tool()
-
-
-@mcp.tool()
 def list_endpoints(
     system: str | None = None,
     role: str | None = None,

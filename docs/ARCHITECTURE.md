@@ -95,7 +95,7 @@ they are not cross-module entry points.
 | Java AST endpoint extraction | `scanner.py` |
 | Maven/Gradle module facts or Java source inventory | `modules.py`, `maven.py`, `gradle.py` |
 | SQLite schema or queries | `store.py` |
-| JSON, terminal, HTML, D2, or LikeC4 presentation | `render.py` |
+| JSON, terminal, HTML, or LikeC4 presentation | `render.py` |
 
 ## Dependency rules
 
@@ -110,12 +110,13 @@ they are not cross-module entry points.
 5. Keep new output formats in `render.py` (or a future dedicated renderer),
    not in query or discovery code.
 
-Browser integration tests live in `tests/test_browser_export.py` and are
-marked `integration`, so they do not run in the default unit-test suite. Run
-them with `uv run playwright install chromium` once per environment, then:
+Browser integration tests live in `tests/test_browser_export.py`. They are
+marked both `integration` and `slow`, so they do not run in the default
+unit-test suite. They use the Google Chrome application when it is available,
+or the executable configured in `SYSTEMLENS_CHROME_BIN`. Run them with:
 
 ```bash
-uv run pytest -m integration tests/test_browser_export.py
+SYSTEMLENS_CHROME_BIN=/path/to/chrome uv run pytest -m slow tests/test_browser_export.py
 ```
 
 ## Maintenance focus

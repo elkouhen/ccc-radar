@@ -149,8 +149,14 @@ enum PaymentStatus { AUTHORIZED, DECLINED }
     assert 'appendList("Stockee par", [node.owner], relationsGroup)' in document
     assert "function rebuildGraph()" in document
     assert "const visibleLinks = graphData.links.filter(link => isVisibleRelation(link.kind));" in document
-    assert "const visibleNodes = graphData.nodes.filter(node => visibleNodeIds.has(node.id));" in document
-    assert "const layoutNodes = layoutGraphNodes(visibleNodes, visibleLinks);" in document
+    assert 'id="node-suggestions"' in document
+    assert 'id="inventory-status"' in document
+    assert "const isolatedNodeIds = new Set(" in document
+    assert "function layoutIsolatedNodes(nodes, connectedNodes)" in document
+    assert "...layoutIsolatedNodes(isolatedNodes, positionedConnectedNodes)" in document
+    assert "Connectivité relative :" in document
+    assert "Collections use the same visual grammar as microservices and" in document
+    assert "legend-resource-mark collection" in document
 
 
 def test_graph_html_distinguishes_dtos_with_the_same_simple_name_by_package(tmp_path: Path) -> None:
