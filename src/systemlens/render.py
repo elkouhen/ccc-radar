@@ -4344,7 +4344,19 @@ def _vscode_file_uri(
     resolved = path.resolve()
     location = f":{line}" if line is not None else ""
     if wsl_distro:
-        return f"vscode://file//wsl.localhost/{quote(wsl_distro, safe='')}{quote(resolved.as_posix(), safe='/')}{location}"
+        resolved_path = resolved.as_posix()
+        # A Windows exporter can load the WSL index through a UNC root such
+        # as ``\\\\wsl.localhost\\Ubuntu\\home\\...``. It already names the WSL
+        # filesystem, so adding the URI host again would produce an invalid
+        # ``.../Ubuntu//wsl.localhost/Ubuntu/...`` link.
+        for prefix in (
+            f"//wsl.localhost/{wsl_distro}",
+            f"/wsl.localhost/{wsl_distro}",
+        ):
+            if resolved_path.casefold().startswith(f"{prefix.casefold()}/"):
+                resolved_path = resolved_path[len(prefix):]
+                break
+        return f"vscode://file//wsl.localhost/{quote(wsl_distro, safe='')}{quote(resolved_path, safe='/')}{location}"
     return f"vscode://file/{quote(resolved.as_posix(), safe='/')}{location}"
 
 

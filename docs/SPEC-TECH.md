@@ -79,7 +79,9 @@ The index also persists its optional WSL distribution in metadata. It comes
 from an explicit index option, `WSL_DISTRO_NAME`, or an existing snapshot value
 (in that order). HTML export uses that source-filesystem context for VS Code
 links when it is later generated on Windows, where `WSL_DISTRO_NAME` is
-unavailable; an explicit export option can override it.
+unavailable; an explicit export option can override it. A Windows UNC source
+root (`\\wsl.localhost\\<distro>\\...`) is normalized back to its WSL path before
+the URI is emitted, so the hostname and distribution are never duplicated.
 
 ## Export snapshot contract
 

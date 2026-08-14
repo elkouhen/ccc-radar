@@ -12,7 +12,7 @@ from systemlens.modules import (
     MongoPersistenceClass,
     discover_modules,
 )
-from systemlens.render import render_graph_html
+from systemlens.render import _vscode_file_uri, render_graph_html
 from systemlens.store import Store
 
 
@@ -318,6 +318,21 @@ def test_graph_html_uses_the_java_wsl_prefix_for_module_directories(tmp_path: Pa
     assert service["vscode_uri"] == f"{wsl_prefix}{module_root.as_posix()}"
     assert service["kafka_endpoints"][0]["vscode_uri"] == (
         f"{wsl_prefix}{source.as_posix()}:1"
+    )
+
+
+def test_vscode_wsl_uri_does_not_duplicate_a_windows_unc_prefix() -> None:
+    unc_module = Path("//wsl.localhost/Ubuntu/home/user/projects/orders")
+    wsl_prefix = "vscode://file//wsl.localhost/Ubuntu"
+
+    assert _vscode_file_uri(unc_module, "Ubuntu") == (
+        f"{wsl_prefix}/home/user/projects/orders"
+    )
+    assert _vscode_file_uri(unc_module / "src/openapi/orders.yaml", "Ubuntu") == (
+        f"{wsl_prefix}/home/user/projects/orders/src/openapi/orders.yaml"
+    )
+    assert _vscode_file_uri(unc_module / "src/Order.java", "Ubuntu", 14) == (
+        f"{wsl_prefix}/home/user/projects/orders/src/Order.java:14"
     )
 
 
