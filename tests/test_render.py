@@ -240,16 +240,21 @@ def test_graph_html_colours_topics_and_mongodb_collections_by_connectivity() -> 
         ),),
     )
 
-    graph_data = _html_graph_data(render_graph_html(
+    graph_document = render_graph_html(
         {"orders": [producer], "payments": [consumer]},
         [GraphEdge("kafka", "orders", "payments", producer, consumer)],
         collections_by_service={"orders": ["orders"]},
         modules_by_service={"orders": orders_module},
-    ))
+    )
+    graph_data = _html_graph_data(graph_document)
     nodes = {node["id"]: node for node in graph_data["nodes"]}
 
+    service = nodes["microservice:orders"]
     topic = nodes["kafka_topic:orders.created"]
     collection = nodes["mongodb_collection:orders:orders"]
+    assert service["build_system"] == "maven"
+    assert service["vscode_uri"] == "vscode://file//workspace/orders"
+    assert "Ouvrir le module ${buildSystem} dans VS Code" in graph_document
     assert topic["complexity"] == {
         "score": 2,
         "level": "low",

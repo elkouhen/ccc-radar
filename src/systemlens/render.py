@@ -928,7 +928,14 @@ def render_graph_html(
                     for endpoint in endpoints
                     if endpoint.system == "kafka"
                 ],
-                **({"vscode_uri": _vscode_file_uri(module.path, vscode_wsl_distro)} if module else {}),
+                **(
+                    {
+                        "build_system": module.build_system,
+                        "vscode_uri": _vscode_file_uri(module.path, vscode_wsl_distro),
+                    }
+                    if module
+                    else {}
+                ),
                 "resources": resources,
                 "openapi_files": openapi_files,
                 "openapi_contracts": [
@@ -1756,6 +1763,9 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
     .detail-badge.complexity.low { color: #2563eb; background: #eff6ff; }
     .detail-badge.complexity.medium { color: #b45309; background: #fffbeb; }
     .detail-badge.complexity.high { color: #dc2626; background: #fef2f2; }
+    .module-open-action { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 12px 16px; padding: 10px 12px; border: 1px solid #bfdbfe; border-radius: 8px; color: #1d4f91; background: #eff6ff; font-weight: 700; text-decoration: none; }
+    .module-open-action::after { content: "↗"; flex: 0 0 auto; font-size: 15px; }
+    .module-open-action:hover, .module-open-action:focus-visible { border-color: #60a5fa; background: #dbeafe; outline: none; }
     .details-section { padding: 12px 16px; border-bottom: 1px solid #edf2f7; }
     .details-section:last-child { border-bottom: 0; }
     .details-section h2 { margin: 0 0 7px; color: #64748b; font-size: 10px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
@@ -3895,6 +3905,15 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
       header.append(kicker, title, meta);
       details.append(header);
       if (node.kind === "microservice") {
+        if (node.vscode_uri) {
+          const moduleAction = document.createElement("a");
+          moduleAction.className = "module-open-action";
+          moduleAction.href = node.vscode_uri;
+          const buildSystem = node.build_system === "gradle" ? "Gradle" : "Maven";
+          moduleAction.textContent = `Ouvrir le module ${buildSystem} dans VS Code`;
+          moduleAction.title = `Ouvrir le repertoire racine du module ${node.name}`;
+          details.append(moduleAction);
+        }
         const httpCalls = edges.filter(link => link.kind === "rest" && link.source === id);
         const kafkaPublications = edges.filter(link => link.kind === "kafka" && link.source === id);
         const kafkaConsumptions = edges.filter(link => link.kind === "kafka" && link.target === id);

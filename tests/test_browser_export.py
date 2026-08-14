@@ -171,6 +171,9 @@ def test_html_export_resources_are_usable_in_a_constrained_browser_viewport(tmp_
         assert not page.get_by_text("Flux de donnees").count()
         orders_stop.click()
         assert page.locator(".details-title").inner_text() == "orders"
+        module_action = page.get_by_role("link", name="Ouvrir le module Maven dans VS Code")
+        assert module_action.is_visible()
+        assert module_action.get_attribute("href") == "vscode://file//workspace/orders"
         assert page.locator("#details .details-group > summary").all_text_contents() == ["Relations", "Sources"]
         assert page.get_by_text("Topics publies", exact=True).is_visible()
         assert page.get_by_role("button", name="orders.created", exact=True).is_visible()

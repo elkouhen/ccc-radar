@@ -125,9 +125,11 @@ ordinary detail view, including the indexed Kafka source links where present.
 Every graph resource detail starts with indexed and visible relation counts,
 then a `Relations` section. For a microservice, that section separates
 consumed and published API and Kafka resources, plus MongoDB collections. Each
-Kafka topic lists its applicable DTOs. A collapsed `Sources` section lists the
-indexed OpenAPI and Kafka files that provide the evidence, avoiding repetition
-in every topic.
+microservice resolved to an indexed Maven or Gradle module also provides a
+visible action that opens the module root directory in VS Code. Kafka topics
+list their applicable DTOs. A collapsed `Sources` section lists the indexed
+OpenAPI and Kafka files that provide the evidence, avoiding repetition in every
+topic.
 MongoDB collection details list indexed Java persistence classes resolved from
 `@Document`, Mongo repository entity generics, or unambiguous `Type.class`
 arguments passed to `MongoTemplate`. They include their qualified name, source
