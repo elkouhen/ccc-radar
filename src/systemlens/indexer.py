@@ -398,6 +398,10 @@ def _index_repo(
     store.set_meta("endpoint_inventory_indexed", "1")
     store.set_meta("topic_strategy", topic_strategy)
     store.set_meta("analysis_inputs_signature", analysis_inputs_signature)
+    # The HTML may later be generated on Windows while this snapshot was
+    # indexed from WSL. Preserve the source filesystem context for VS Code
+    # links instead of relying on the exporter process environment.
+    store.set_meta("vscode_wsl_distro", os.environ.get("WSL_DISTRO_NAME", ""))
 
     # Persist only after the scan path has completed.  The inventory remains
     # transactional with the rest of the index and represents the audited

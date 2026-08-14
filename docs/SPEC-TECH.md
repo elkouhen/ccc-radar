@@ -75,6 +75,11 @@ The SQLite store is standard-library-only: it does not load native vector
 extensions or persist/query vector representations. The retained findings
 search compatibility path uses deterministic lexical matching.
 
+The index also persists its optional WSL distribution in metadata. HTML export
+uses that source-filesystem context for VS Code links when it is later generated
+on Windows, where `WSL_DISTRO_NAME` is unavailable; an explicit export option
+can override it.
+
 ## Export snapshot contract
 
 HTML and JSON graph exports only consume the loaded architecture snapshot.

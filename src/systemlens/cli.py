@@ -922,6 +922,7 @@ class _MicroserviceGraphData:
     diagnostics: list[ExtractionDiagnostic]
     strategy1: bool
     result: GraphResult
+    vscode_wsl_distro: str | None = None
 
 
 def _is_exportable_microservice(name: str) -> bool:
@@ -985,6 +986,7 @@ def _load_microservice_graph(
         inventory.diagnostics,
         inventory.strategy1,
         result,
+        inventory.vscode_wsl_distro,
     )
 
 
@@ -1088,7 +1090,11 @@ def export_microservices_cmd(
         typer.echo(json.dumps(graph_data.result))
         return
     if html is not None:
-        effective_vscode_wsl_distro = vscode_wsl_distro or os.environ.get("WSL_DISTRO_NAME")
+        effective_vscode_wsl_distro = (
+            vscode_wsl_distro
+            or graph_data.vscode_wsl_distro
+            or os.environ.get("WSL_DISTRO_NAME")
+        )
         html.write_text(
             render_graph_html(
                 graph_data.services_by_name,

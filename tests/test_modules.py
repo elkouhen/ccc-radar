@@ -25,7 +25,7 @@ def test_microservice_html_export_uses_the_current_wsl_distribution(
     graph_data = SimpleNamespace(
         services_by_name={}, edges=[], collections_by_service={}, modules_by_service={},
         warnings=[], build_modules=[], module_dependencies=[], source_roots=[],
-        strategy1=False, diagnostics=[], result={"note": None},
+        strategy1=False, diagnostics=[], result={"note": None}, vscode_wsl_distro=None,
     )
     monkeypatch.setenv("WSL_DISTRO_NAME", "Ubuntu-24.04")
     monkeypatch.setattr(cli, "_load_microservice_graph", lambda *_args, **_kwargs: graph_data)
@@ -40,6 +40,30 @@ def test_microservice_html_export_uses_the_current_wsl_distribution(
     )
 
     assert captured["args"][9] == "Ubuntu-24.04"
+
+
+def test_microservice_html_export_keeps_the_indexed_wsl_distribution(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    captured: dict[str, object] = {}
+    graph_data = SimpleNamespace(
+        services_by_name={}, edges=[], collections_by_service={}, modules_by_service={},
+        warnings=[], build_modules=[], module_dependencies=[], source_roots=[],
+        strategy1=False, diagnostics=[], result={"note": None}, vscode_wsl_distro="Ubuntu-22.04",
+    )
+    monkeypatch.setenv("WSL_DISTRO_NAME", "Different-Distro")
+    monkeypatch.setattr(cli, "_load_microservice_graph", lambda *_args, **_kwargs: graph_data)
+    monkeypatch.setattr(
+        cli, "render_graph_html",
+        lambda *args, **_kwargs: captured.update({"args": args}) or "<html></html>",
+    )
+
+    cli.export_microservices_cmd(
+        workspace=None, html=tmp_path / "architecture.html", c4=None,
+        vscode_wsl_distro=None, json_output=False,
+    )
+
+    assert captured["args"][9] == "Ubuntu-22.04"
 
 
 def _write_pom(
@@ -158,8 +182,9 @@ def test_duplicate_artifact_names_are_persisted_with_distinct_identities(tmp_pat
 
 
 def test_workspace_federation_namespaces_direct_indexes_with_duplicate_artifacts(
-    tmp_path: Path,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.setenv("WSL_DISTRO_NAME", "Ubuntu-24.04")
     workspace = tmp_path / "workspace"
     for directory in ("north", "south"):
         service = workspace / directory
@@ -180,6 +205,7 @@ def test_workspace_federation_namespaces_direct_indexes_with_duplicate_artifacts
         for endpoints in federation.endpoints_by_module.values()
         for endpoint in endpoints
     } == {"orders@north", "orders@south"}
+    assert federation.vscode_wsl_distros == ("Ubuntu-24.04",)
 
 
 def test_discover_modules_excludes_maven_and_gradle_mock_projects(tmp_path: Path) -> None:
