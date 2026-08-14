@@ -151,6 +151,50 @@ enum PaymentStatus { AUTHORIZED, DECLINED }
     assert "@media (max-width: 700px)" in document
 
 
+def test_graph_html_uses_persisted_kafka_dto_source_definitions(tmp_path: Path) -> None:
+    module_root = tmp_path / "orders"
+    module = DiscoveredModule(
+        name="orders", path=module_root, build_system="maven", version=None,
+        kind="application", starts_application=True, configuration_example="",
+    )
+    endpoint = _kafka_endpoint("produce", "com.example.OrderCreated", "Publisher.java")
+    document = render_graph_html(
+        {"orders": [endpoint]}, [], modules_by_service={"orders": module},
+        build_modules=[module],
+        kafka_dto_definitions=[{
+            "id": "com.example.OrderCreated", "name": "OrderCreated",
+            "qualified_name": "com.example.OrderCreated", "module": "orders",
+            "source": "src/main/java/com/example/OrderCreated.java", "root": True,
+            "fields": [{"name": "id", "type": "String"}],
+            "producers": ["orders"], "consumers": [], "topics": ["orders.created"],
+        }],
+    )
+
+    dto = _html_graph_data(document)["kafka_dtos"][0]
+    assert dto["source"] == "src/main/java/com/example/OrderCreated.java"
+    assert dto["fields"] == [{"name": "id", "type": "String"}]
+    assert dto["vscode_uri"].endswith("/src/main/java/com/example/OrderCreated.java")
+
+
+def test_graph_html_uses_persisted_openapi_specs() -> None:
+    module = DiscoveredModule(
+        name="orders", path=Path("/workspace/orders"), build_system="maven", version=None,
+        kind="application", starts_application=True, configuration_example="",
+        openapi_files=("src/main/resources/openapi.yaml",),
+    )
+    graph_data = _html_graph_data(render_graph_html(
+        {"orders": []}, [], modules_by_service={"orders": module},
+        openapi_contracts=[{
+            "module": "orders", "path": "src/main/resources/openapi.yaml",
+            "spec": {"openapi": "3.0.0", "paths": {}},
+        }],
+    ))
+
+    assert graph_data["nodes"][0]["openapi_contracts"][0]["spec"] == {
+        "openapi": "3.0.0", "paths": {}
+    }
+
+
 def test_graph_html_does_not_infer_dto_packages_from_live_sources(tmp_path: Path) -> None:
     source_root = tmp_path / "service" / "src" / "main" / "java"
     (source_root / "com" / "acme" / "one").mkdir(parents=True)

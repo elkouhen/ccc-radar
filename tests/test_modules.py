@@ -26,6 +26,8 @@ def test_microservice_html_export_uses_the_current_wsl_distribution(
         services_by_name={}, edges=[], collections_by_service={}, modules_by_service={},
         warnings=[], build_modules=[], module_dependencies=[], source_roots=[],
         strategy1=False, diagnostics=[], result={"note": None}, vscode_wsl_distro=None,
+        kafka_dto_definitions=None,
+        openapi_contracts=None,
     )
     monkeypatch.setenv("WSL_DISTRO_NAME", "Ubuntu-24.04")
     monkeypatch.setattr(cli, "_load_microservice_graph", lambda *_args, **_kwargs: graph_data)
@@ -50,6 +52,8 @@ def test_microservice_html_export_keeps_the_indexed_wsl_distribution(
         services_by_name={}, edges=[], collections_by_service={}, modules_by_service={},
         warnings=[], build_modules=[], module_dependencies=[], source_roots=[],
         strategy1=False, diagnostics=[], result={"note": None}, vscode_wsl_distro="Ubuntu-22.04",
+        kafka_dto_definitions=None,
+        openapi_contracts=None,
     )
     monkeypatch.setenv("WSL_DISTRO_NAME", "Different-Distro")
     monkeypatch.setattr(cli, "_load_microservice_graph", lambda *_args, **_kwargs: graph_data)

@@ -188,6 +188,40 @@ def test_index_keeps_an_explicit_wsl_distribution_without_environment(
         assert store.get_meta("vscode_wsl_distro") == "Ubuntu-24.04"
 
 
+def test_index_persists_kafka_dto_source_definitions(tmp_path: Path) -> None:
+    (tmp_path / "pom.xml").write_text(
+        "<project><modelVersion>4.0.0</modelVersion><artifactId>orders</artifactId></project>",
+        encoding="utf-8",
+    )
+    source_root = tmp_path / "src" / "main" / "java" / "com" / "example"
+    source_root.mkdir(parents=True)
+    (source_root / "OrderCreated.java").write_text(
+        "package com.example; public record OrderCreated(String id) {}",
+        encoding="utf-8",
+    )
+    (source_root / "Publisher.java").write_text(
+        "package com.example; class Publisher { KafkaTemplate<String, OrderCreated> kafkaTemplate; "
+        "void publish(OrderCreated event) { kafkaTemplate.send(\"orders.created\", event); } }",
+        encoding="utf-8",
+    )
+    contract = tmp_path / "src" / "main" / "resources" / "openapi.yaml"
+    contract.parent.mkdir(parents=True)
+    contract.write_text("openapi: 3.0.0\npaths: {}\n", encoding="utf-8")
+
+    with Store(tmp_path) as store:
+        index_repo(tmp_path, Config(), store, full=True)
+        definitions = store.all_kafka_dto_definitions()
+        contracts = store.all_openapi_contracts()
+
+    assert definitions[0]["name"] == "OrderCreated"
+    assert definitions[0]["source"] == "src/main/java/com/example/OrderCreated.java"
+    assert definitions[0]["fields"] == [{"type": "String", "name": "id"}]
+    assert contracts == [{
+        "module": "orders", "path": "src/main/resources/openapi.yaml",
+        "spec": {"openapi": "3.0.0", "paths": {}},
+    }]
+
+
 def test_index_rollback_keeps_the_previous_complete_snapshot(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

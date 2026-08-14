@@ -632,6 +632,7 @@ class _JavaDtoCandidate:
     source_file: Path
     package: str
     imports: frozenset[str]
+    module: str
 
 
 def _java_package_and_imports(source: str) -> tuple[str, frozenset[str]]:
@@ -680,14 +681,15 @@ def _live_kafka_dto_views(
                 qualified_name = f"{package}.{dto_name}" if package else dto_name
                 candidates.setdefault(
                     qualified_name,
-                    _JavaDtoCandidate(
+                _JavaDtoCandidate(
                         qualified_name=qualified_name,
                         name=dto_name,
                         source_path=relative_path,
                         source=source,
                         source_file=java_path,
                         package=package,
-                        imports=imports,
+                    imports=imports,
+                    module=module_identity(module),
                     ),
                 )
                 source_contexts.setdefault(qualified_name, (package, imports))
@@ -749,6 +751,7 @@ def _live_kafka_dto_views(
             "qualified_name": candidate.qualified_name if candidate else None,
             "fields": [],
             "source": None,
+            "module": None,
         }
         if candidate:
             fields, references_by_field = _java_dto_fields(candidate.source, candidate.name)
@@ -767,6 +770,7 @@ def _live_kafka_dto_views(
             if enum_values := _java_enum_values(candidate.source, candidate.name):
                 definition["enum_values"] = enum_values
             definition["source"] = candidate.source_path
+            definition["module"] = candidate.module
             definition["vscode_uri"] = _vscode_file_uri(candidate.source_file, vscode_wsl_distro)
         definitions[dto_id] = definition
 
@@ -801,6 +805,8 @@ def render_graph_html(
     vscode_wsl_distro: str | None = None,
     request_reply_strategy1: bool = False,
     diagnostics: list[ExtractionDiagnostic] | None = None,
+    kafka_dto_definitions: list[dict[str, object]] | None = None,
+    openapi_contracts: list[dict[str, object]] | None = None,
 ) -> str:
     """Render an interactive Sigma.js graph as a self-contained HTML document.
 
@@ -838,6 +844,10 @@ def render_graph_html(
         for module in [*(build_modules or []), *module_details.values()]
     }.values())
     module_by_identity = {module_identity(module): module for module in all_modules}
+    openapi_specs = {
+        (str(contract["module"]), str(contract["path"])): contract["spec"]
+        for contract in openapi_contracts or []
+    }
     dependencies_by_source: dict[str, set[str]] = {}
     for dependency in module_dependencies or []:
         dependencies_by_source.setdefault(dependency.source, set()).add(dependency.target)
@@ -942,6 +952,8 @@ def render_graph_html(
                     {
                         "path": path,
                         "resources": sorted(contract_resources.get(path, set())),
+                        **({"spec": openapi_specs[(module_identity(module), path)]}
+                           if module and (module_identity(module), path) in openapi_specs else {}),
                         **({"vscode_uri": _vscode_file_uri(module.path / path, vscode_wsl_distro)} if module else {}),
                     }
                     for path in openapi_files
@@ -1113,7 +1125,20 @@ def render_graph_html(
         node["label"] = str(node["name"])
         node["color"] = {"low": "#2563eb", "medium": "#d97706", "high": "#dc2626"}[level]
         node["size"] = base_size + {"low": 0, "medium": 2, "high": 4}[level]
-    kafka_dtos, project_dto_definitions = kafka_dto_views(endpoints_by_service)
+    if kafka_dto_definitions is None:
+        kafka_dtos, project_dto_definitions = kafka_dto_views(endpoints_by_service)
+    else:
+        for definition in kafka_dto_definitions:
+            module = module_by_identity.get(str(definition.get("module") or ""))
+            dto_source = definition.get("source")
+            if module is not None and isinstance(dto_source, str):
+                definition["vscode_uri"] = _vscode_file_uri(
+                    module.path / dto_source, vscode_wsl_distro
+                )
+        kafka_dtos = [item for item in kafka_dto_definitions if item.get("root", True)]
+        project_dto_definitions = [
+            item for item in kafka_dto_definitions if not item.get("root", True)
+        ]
     graph_data = json.dumps(
         {
             "nodes": nodes,

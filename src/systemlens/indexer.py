@@ -1,11 +1,14 @@
 import fnmatch
 import hashlib
+import json
 import os
 import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
+
+import yaml
 
 from systemlens.config import Config
 from systemlens.inventory_freshness import current_endpoint_inventory_signature
@@ -427,6 +430,34 @@ def _index_repo(
     relation_dependencies = (
         module_dependencies if "properties" not in disabled else store.all_module_dependencies()
     )
+    from systemlens.render import _live_kafka_dto_views
+
+    endpoints_by_service: dict[str, list[MessageEndpoint]] = {}
+    for endpoint in store.all_endpoints():
+        if endpoint.module:
+            endpoints_by_service.setdefault(endpoint.module, []).append(endpoint)
+    root_dtos, nested_dtos = _live_kafka_dto_views(endpoints_by_service, relation_modules)
+    for definition in root_dtos:
+        definition.pop("vscode_uri", None)
+        definition["root"] = True
+    for definition in nested_dtos:
+        definition.pop("vscode_uri", None)
+        definition["root"] = False
+    store.replace_kafka_dto_definitions([*root_dtos, *nested_dtos])
+    openapi_contracts: list[dict[str, object]] = []
+    for module in relation_modules:
+        for path in module.openapi_files:
+            try:
+                spec = yaml.safe_load((module.path / path).read_text(encoding="utf-8"))
+            except (OSError, yaml.YAMLError):
+                continue
+            if isinstance(spec, dict) and ("openapi" in spec or "swagger" in spec):
+                openapi_contracts.append({
+                    "module": module.identity or module.name,
+                    "path": path,
+                    "spec": json.loads(json.dumps(spec, default=str)),
+                })
+    store.replace_openapi_contracts(openapi_contracts)
     relations = build_architecture_relations(
         relation_modules,
         store.all_endpoints(),

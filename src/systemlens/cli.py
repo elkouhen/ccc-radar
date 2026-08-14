@@ -928,6 +928,8 @@ class _MicroserviceGraphData:
     strategy1: bool
     result: GraphResult
     vscode_wsl_distro: str | None = None
+    kafka_dto_definitions: list[dict[str, object]] | None = None
+    openapi_contracts: list[dict[str, object]] | None = None
 
 
 def _is_exportable_microservice(name: str) -> bool:
@@ -992,6 +994,8 @@ def _load_microservice_graph(
         inventory.strategy1,
         result,
         inventory.vscode_wsl_distro,
+        inventory.kafka_dto_definitions,
+        inventory.openapi_contracts,
     )
 
 
@@ -1114,6 +1118,8 @@ def export_microservices_cmd(
                 effective_vscode_wsl_distro,
                 request_reply_strategy1=graph_data.strategy1,
                 diagnostics=graph_data.diagnostics,
+                kafka_dto_definitions=graph_data.kafka_dto_definitions,
+                openapi_contracts=graph_data.openapi_contracts,
             ),
             encoding="utf-8",
         )

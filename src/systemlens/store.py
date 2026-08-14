@@ -20,7 +20,7 @@ from systemlens.modules import (
 )
 from systemlens.paths import db_path
 
-SCHEMA_VERSION = "20"
+SCHEMA_VERSION = "22"
 SEVERITY_ORDER = ["INFO", "WARNING", "ERROR"]
 _COUNTABLE_DIMENSIONS = ("rule_id", "severity")
 _SQLITE_BIND_LIMIT = 900
@@ -275,6 +275,16 @@ class Store:
                 detail TEXT NOT NULL,
                 PRIMARY KEY (path, extractor, category)
             );
+            CREATE TABLE IF NOT EXISTS kafka_dto_definitions (
+                id TEXT PRIMARY KEY,
+                definition TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS openapi_contracts (
+                module TEXT NOT NULL,
+                path TEXT NOT NULL,
+                spec TEXT NOT NULL,
+                PRIMARY KEY (module, path)
+            );
             """
         )
         self._migrate_module_columns()
@@ -340,6 +350,42 @@ class Store:
             "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
             (key, value),
         )
+
+    def replace_kafka_dto_definitions(self, definitions: list[dict[str, object]]) -> None:
+        self.conn.execute("DELETE FROM kafka_dto_definitions")
+        self.conn.executemany(
+            "INSERT INTO kafka_dto_definitions (id, definition) VALUES (?, ?)",
+            [
+                (str(definition["id"]), json.dumps(definition))
+                for definition in definitions
+            ],
+        )
+
+    def all_kafka_dto_definitions(self) -> list[dict[str, object]]:
+        return [
+            json.loads(row["definition"])
+            for row in self.conn.execute(
+                "SELECT definition FROM kafka_dto_definitions ORDER BY id"
+            )
+        ]
+
+    def replace_openapi_contracts(self, contracts: list[dict[str, object]]) -> None:
+        self.conn.execute("DELETE FROM openapi_contracts")
+        self.conn.executemany(
+            "INSERT INTO openapi_contracts (module, path, spec) VALUES (?, ?, ?)",
+            [
+                (str(contract["module"]), str(contract["path"]), json.dumps(contract["spec"]))
+                for contract in contracts
+            ],
+        )
+
+    def all_openapi_contracts(self) -> list[dict[str, object]]:
+        return [
+            {"module": row["module"], "path": row["path"], "spec": json.loads(row["spec"])}
+            for row in self.conn.execute(
+                "SELECT module, path, spec FROM openapi_contracts ORDER BY module, path"
+            )
+        ]
 
     # -- modules --
 

@@ -80,8 +80,9 @@ issues rather than being linked to a coincidentally similar route.
 
 The HTML microservice export provides an inspector for each statically typed
 Kafka message. It shows the indexed payload-type identity, message topic, and
-producer and consumer services. DTO fields, enum values, and recursive project
-type navigation are not part of the current indexed contract.
+producer and consumer services. When the matching Java type is indexed, its
+inspector also shows its source, declared fields, enum values, and conservative
+recursive project-type navigation.
 The export uses a responsive workspace layout with a four-tab navigation rail,
 compact architecture counters, task-oriented starting actions, a floating
 context panel, and a full-size resource inspector. On narrow viewports the

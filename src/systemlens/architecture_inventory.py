@@ -56,6 +56,8 @@ class ArchitectureInventory:
     source_roots: list[Path]
     profile: AnalysisProfile
     vscode_wsl_distro: str | None = None
+    kafka_dto_definitions: list[dict[str, object]] | None = None
+    openapi_contracts: list[dict[str, object]] | None = None
 
     @property
     def strategy1(self) -> bool:
@@ -151,6 +153,8 @@ def load_architecture_inventory(
         dependencies = store.all_module_dependencies()
         relations = store.all_architecture_relations()
         diagnostics = store.all_extraction_diagnostics()
+        kafka_dto_definitions = store.all_kafka_dto_definitions()
+        openapi_contracts = store.all_openapi_contracts()
         warning = endpoint_inventory_warning(
             store.get_meta("endpoint_inventory_signature"),
             scope="ce projet",
@@ -194,4 +198,6 @@ def load_architecture_inventory(
         source_roots=[repo_root],
         profile=AnalysisProfile(cast(Literal["default", "strategy1"], stored_strategy)),
         vscode_wsl_distro=stored_wsl_distro,
+        kafka_dto_definitions=kafka_dto_definitions,
+        openapi_contracts=openapi_contracts,
     )

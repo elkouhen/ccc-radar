@@ -54,7 +54,7 @@ The HTML snapshot resolves these classes from the collection-owning module and
 its transitive build dependencies. A unique collection-wide fallback covers
 snapshots without dependency metadata while preserving ambiguity when several
 modules declare the same collection name.
-Persistence-class extraction is part of schema version 20. Older snapshots are
+Persistence-class extraction is part of schema version 21. Older snapshots are
 rejected on read and must be regenerated, preventing a valid-looking HTML
 export from silently presenting the empty pre-extractor inventory.
 For each MongoDB root class, indexing persists the recursive closure of uniquely
@@ -82,6 +82,13 @@ links when it is later generated on Windows, where `WSL_DISTRO_NAME` is
 unavailable; an explicit export option can override it. A Windows UNC source
 root (`\\wsl.localhost\\<distro>\\...`) is normalized back to its WSL path before
 the URI is emitted, so the hostname and distribution are never duplicated.
+
+Kafka DTO definitions and OpenAPI/Swagger document contents are materialized at
+index time. A DTO definition retains
+its qualified name, owning module, module-relative Java source path, declared
+fields, enum values, and conservative nested-type references. The HTML export
+uses those stored facts and only derives its VS Code URI at render time; it
+does not reopen a Java or OpenAPI source file.
 
 ## Export snapshot contract
 
