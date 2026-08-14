@@ -10,8 +10,10 @@ from systemlens.modules import (
     ModuleDependency,
     MongoField,
     MongoPersistenceClass,
+    discover_modules,
 )
 from systemlens.render import render_graph_html
+from systemlens.store import Store
 
 
 def _kafka_endpoint(
@@ -322,6 +324,51 @@ def test_graph_html_resolves_mongo_class_from_dependent_persistence_module() -> 
     assert persistence_classes[0]["module"] == "orders-model"
     collection = next(node for node in graph_data["nodes"] if node["kind"] == "mongodb_collection")
     assert collection["persistence_classes"] == persistence_classes
+
+
+def test_graph_html_lists_document_class_from_persisted_maven_module(tmp_path: Path) -> None:
+    module_root = tmp_path / "orders"
+    (module_root / "pom.xml").parent.mkdir(parents=True, exist_ok=True)
+    (module_root / "pom.xml").write_text(
+        "<project><modelVersion>4.0.0</modelVersion>"
+        "<groupId>com.example</groupId><artifactId>orders</artifactId>"
+        "<version>1.0.0</version></project>"
+    )
+    source_root = module_root / "src" / "main" / "java" / "com" / "example"
+    source_root.mkdir(parents=True)
+    (source_root / "OrdersApplication.java").write_text(
+        "package com.example; class OrdersApplication { public static void main(String[] args) { SpringApplication.run(OrdersApplication.class, args); } }"
+    )
+    (source_root / "Order.java").write_text(
+        "package com.example; import org.springframework.data.mongodb.core.mapping.Document; "
+        "@Document(collection = \"orders\") class Order { String id; }"
+    )
+
+    with Store(tmp_path) as store:
+        store.replace_modules(discover_modules(tmp_path))
+        persisted_module = store.all_modules()[0]
+
+    graph_data = _html_graph_data(render_graph_html(
+        {"orders": []}, [],
+        collections_by_service={"orders": ["orders"]},
+        modules_by_service={"orders": persisted_module},
+        build_modules=[persisted_module],
+    ))
+
+    assert graph_data["mongo_persistence_classes"] == [
+        {
+            "id": "orders:orders:com.example.Order",
+            "service": "orders",
+            "module": "orders",
+            "collection": "orders",
+            "name": "Order",
+            "qualified_name": "com.example.Order",
+            "source": "src/main/java/com/example/Order.java",
+            "line": 1,
+            "vscode_uri": graph_data["mongo_persistence_classes"][0]["vscode_uri"],
+            "fields": [{"name": "id", "type": "String"}],
+        }
+    ]
 
 
 def test_graph_html_microservice_complexity_counts_distinct_direct_clients() -> None:

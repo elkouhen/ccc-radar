@@ -54,6 +54,9 @@ The HTML snapshot resolves these classes from the collection-owning module and
 its transitive build dependencies. A unique collection-wide fallback covers
 snapshots without dependency metadata while preserving ambiguity when several
 modules declare the same collection name.
+Persistence-class extraction is part of schema version 19. Older snapshots are
+rejected on read and must be regenerated, preventing a valid-looking HTML
+export from silently presenting the empty pre-extractor inventory.
 
 `ExtractionDiagnostic` is a safe, persisted extraction outcome with its file
 path, extractor, category, severity and a non-source-code detail. The initial

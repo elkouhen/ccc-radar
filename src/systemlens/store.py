@@ -20,7 +20,7 @@ from systemlens.modules import (
 )
 from systemlens.paths import db_path
 
-SCHEMA_VERSION = "18"
+SCHEMA_VERSION = "19"
 SEVERITY_ORDER = ["INFO", "WARNING", "ERROR"]
 _COUNTABLE_DIMENSIONS = ("rule_id", "severity")
 _SQLITE_BIND_LIMIT = 900
