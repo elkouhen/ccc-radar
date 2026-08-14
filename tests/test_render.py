@@ -281,8 +281,10 @@ def test_graph_html_colours_topics_and_mongodb_collections_by_connectivity() -> 
         {"orders": [producer], "payments": [consumer]},
         [GraphEdge("kafka", "orders", "payments", producer, consumer)],
     )
-    assert "Kafka topics use the connectivity colour as their fill" in document
-    assert "gl_FragColor = vec4(v_color.rgb, v_color.a * alpha);" in document
+    assert "Topics keep a neutral interior" in document
+    assert "connectivity is encoded only by the" in document
+    assert "float border = smoothstep(.33, .42, shape);" in document
+    assert "gl_FragColor = vec4(v_color.rgb, v_color.a * alpha);" not in document
     assert "kafka_topic: createNodeProgram(KAFKA_TOPIC_FRAGMENT_SHADER)" in document
 
 
