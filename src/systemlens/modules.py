@@ -270,6 +270,11 @@ def _first_string_value(node, source: bytes) -> str | None:
     return None
 
 
+def _has_parse_error(node) -> bool:
+    """Whether a syntax subtree contains an error or a missing token."""
+    return any(child.type == "ERROR" or child.is_missing for child in _walk(node))
+
+
 def _kafka_topic_value(node, source: bytes) -> str | None:
     literal = _first_string_value(node, source)
     if literal is None:
@@ -469,8 +474,6 @@ def _extract_java_architecture(
             continue
         production_files.append((path, rel, source))
         root_node = parser.parse(source).root_node
-        if root_node.has_error:
-            continue
         package = ""
         for child in root_node.named_children:
             if child.type == "package_declaration":
@@ -480,6 +483,8 @@ def _extract_java_architecture(
                 )
                 break
         for declaration in java_parser.type_declarations(root_node):
+            if _has_parse_error(declaration):
+                continue
             declaration_name = java_parser.declaration_name(declaration, source)
             if declaration_name is None:
                 continue
@@ -578,12 +583,12 @@ def _extract_java_architecture(
         _trace("module.architecture.error_check.begin", module=module_dir, path=rel)
         has_error = root_node.has_error
         _trace("module.architecture.error_check.end", module=module_dir, path=rel, has_error=has_error)
-        if has_error:
-            continue
         repository_receivers: dict[str, str | None] = {}
         _trace("module.architecture.walk_metadata.begin", module=module_dir, path=rel)
         for node in _walk(root_node):
             if node.type == "field_declaration":
+                if _has_parse_error(node):
+                    continue
                 type_node = node.child_by_field_name("type")
                 if type_node is None:
                     continue
@@ -607,6 +612,8 @@ def _extract_java_architecture(
         _trace("module.architecture.walk_methods.begin", module=module_dir, path=rel)
         for method_node in _walk(root_node):
             if method_node.type != "method_declaration":
+                continue
+            if _has_parse_error(method_node):
                 continue
             method_name_node = method_node.child_by_field_name("name")
             if method_name_node is None:
@@ -651,6 +658,8 @@ def _extract_java_architecture(
         _trace("module.architecture.walk_mongo.begin", module=module_dir, path=rel)
         for node in _walk(root_node):
             if node.type != "method_invocation":
+                continue
+            if _has_parse_error(node):
                 continue
             call = _invocation_receiver_and_operation(node, source)
             if call is None:

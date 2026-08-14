@@ -62,6 +62,10 @@ export from silently presenting the empty pre-extractor inventory.
 path, extractor, category, severity and a non-source-code detail. The initial
 implementation records Tree-sitter Java parse failures; `analyze
 indexing-issues` exposes them alongside unresolved architecture facts.
+MongoDB extraction keeps structurally valid declarations and invocations from
+a partially parsed Java file while ignoring subtrees that contain an error or
+missing token. The file-level diagnostic remains visible so partial coverage is
+never presented as a complete parse.
 
 The SQLite store is standard-library-only: it does not load native vector
 extensions or persist/query vector representations. The retained findings

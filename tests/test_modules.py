@@ -461,6 +461,28 @@ def test_modules_infer_mongo_classes_without_document_annotation(tmp_path: Path)
     ]
 
 
+def test_modules_keep_valid_document_when_another_declaration_has_parse_errors(
+    tmp_path: Path,
+) -> None:
+    module = tmp_path / "orders"
+    source = module / "src" / "main" / "java" / "Order.java"
+    source.parent.mkdir(parents=True)
+    _write_pom(module / "pom.xml", "orders-api", "1.0.0")
+    source.write_text(
+        "import org.springframework.data.mongodb.core.mapping.Document;\n"
+        "@Document(collection = \"orders\") class Order { String id; }\n"
+        "class Broken { void incomplete( { }\n"
+    )
+
+    indexed = discover_modules(tmp_path)[0]
+
+    assert indexed.mongo_collections == ("orders",)
+    assert [
+        (item.collection, item.qualified_name)
+        for item in indexed.mongo_persistence_classes
+    ] == [("orders", "Order")]
+
+
 def test_modules_index_kafka_send_and_receive_methods_from_java_ast(tmp_path: Path) -> None:
     module = tmp_path / "orders"
     source = module / "src" / "main" / "java" / "OrderMessaging.java"
