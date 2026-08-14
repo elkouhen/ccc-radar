@@ -30,7 +30,7 @@ but does not alter AST endpoint extraction.
 |---|---|
 | `systemlens init` | Creates `.systemlens/config.yml`; it never overwrites an existing file. |
 | `systemlens doctor [--json]` | Read-only check of configuration, local AST readiness and index state. |
-| `systemlens index [MANIFEST]... [--full] [--topic-strategy default\|strategy1] [--manifest FILE]...` | Incrementally extracts and persists architecture facts. Kafka manifests may be passed positionally or through repeatable `--manifest FILE`. |
+| `systemlens index [MANIFEST]... [--full] [--topic-strategy default\|strategy1] [--manifest FILE]... [--vscode-wsl-distro NAME]` | Incrementally extracts and persists architecture facts. Kafka manifests may be passed positionally or through repeatable `--manifest FILE`. `--vscode-wsl-distro` explicitly persists the WSL distribution used by HTML VS Code links. |
 | `systemlens microservices`, `topics`, `apis`, `dtos`, `mongodb`, `modules` | Browse the indexed catalog; `microservices`, `topics` and `mongodb` list the corresponding architecture objects directly, each with a `kind` and `name`, and support the documented list/show/neighbors actions and JSON output where applicable. |
 | `systemlens analyze audit` | Reports static architecture risks. |
 | `systemlens analyze coverage [--json]` | Reports inventory coverage and unresolved integrations. |
@@ -135,6 +135,9 @@ generated or opened from Windows still uses the
 `vscode://file//wsl.localhost/<distro>` prefix. For legacy indexes without this
 context, an export running in WSL uses the current `WSL_DISTRO_NAME`.
 `--vscode-wsl-distro` overrides both values.
+If the indexing process does not expose `WSL_DISTRO_NAME`, pass
+`systemlens index --vscode-wsl-distro <distro>` once; a later incremental
+index run keeps that value unless it receives a replacement.
 MongoDB collection details list indexed Java persistence classes resolved from
 `@Document`, Mongo repository entity generics, or unambiguous `Type.class`
 arguments passed to `MongoTemplate`. They include their qualified name, source

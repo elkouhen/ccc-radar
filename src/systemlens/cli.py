@@ -844,6 +844,11 @@ def index_cmd(
         "--topic-strategy",
         help="Stratégie de conventions : default ou strategy1 (Kafka getTopics/KafkaListener et constantes REST en majuscules).",
     ),
+    vscode_wsl_distro: Optional[str] = typer.Option(
+        None,
+        "--vscode-wsl-distro",
+        help="Distribution WSL à conserver pour les liens VS Code de l'export HTML.",
+    ),
     disable: list[str] = typer.Option(
         None,
         "--disable",
@@ -887,7 +892,7 @@ def index_cmd(
         report = index_repo(
             repo_root, config, store, full=full, progress=_echo_index_progress,
             disabled=disabled, extra_files=explicit_manifests,
-            topic_strategy=topic_strategy,
+            topic_strategy=topic_strategy, vscode_wsl_distro=vscode_wsl_distro,
         )
         store.set_meta("index_engine", "manual")
         _trace_index("store.close.begin")
