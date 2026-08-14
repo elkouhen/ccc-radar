@@ -18,11 +18,13 @@ from systemlens.modules import (
     KafkaMethod,
     ModuleDependency,
     MongoMethod,
+    MongoField,
+    MongoPersistenceClass,
     SourceEvidence,
 )
 from systemlens.paths import db_path
 
-SCHEMA_VERSION = "17"
+SCHEMA_VERSION = "18"
 SEVERITY_ORDER = ["INFO", "WARNING", "ERROR"]
 _COUNTABLE_DIMENSIONS = ("rule_id", "severity")
 _SQLITE_BIND_LIMIT = 900
@@ -70,6 +72,12 @@ def _mongo_method_from_json(data: dict[str, Any]) -> MongoMethod:
     data = dict(data)
     evidence = _evidence_from_json(data)
     return MongoMethod(**data, evidence=evidence)
+
+
+def _mongo_persistence_class_from_json(data: dict[str, Any]) -> MongoPersistenceClass:
+    data = dict(data)
+    data["fields"] = tuple(MongoField(**field) for field in data.get("fields", []))
+    return MongoPersistenceClass(**data)
 
 
 def _kafka_method_from_json(data: dict[str, Any]) -> KafkaMethod:
@@ -241,6 +249,7 @@ class Store:
                 application_entrypoint TEXT,
                 mongo_collections TEXT NOT NULL DEFAULT '[]',
                 mongo_methods TEXT NOT NULL DEFAULT '[]',
+                mongo_persistence_classes TEXT NOT NULL DEFAULT '[]',
                 openapi_files TEXT NOT NULL DEFAULT '[]',
                 kafka_methods TEXT NOT NULL DEFAULT '[]',
                 blocking_points TEXT NOT NULL DEFAULT '[]'
@@ -320,7 +329,12 @@ class Store:
 
     def _migrate_module_architecture_columns(self) -> None:
         cols = {row["name"] for row in self.conn.execute("PRAGMA table_info(modules)")}
-        for name in ("starts_application", "application_entrypoint", "mongo_collections", "mongo_methods", "openapi_files", "kafka_methods", "blocking_points", "rest_controllers", "openapi_generated_clients"):
+        for name in (
+            "starts_application", "application_entrypoint", "mongo_collections",
+            "mongo_methods", "mongo_persistence_classes", "openapi_files",
+            "kafka_methods", "blocking_points", "rest_controllers",
+            "openapi_generated_clients",
+        ):
             if name not in cols:
                 if name == "application_entrypoint":
                     self.conn.execute("ALTER TABLE modules ADD COLUMN application_entrypoint TEXT")
@@ -366,8 +380,8 @@ class Store:
             self.conn.execute(
                 """
                 INSERT INTO modules (path, name, identity, build_system, version, kind, starts_application, configuration_example, application_entrypoint,
-                                     mongo_collections, mongo_methods, openapi_files, kafka_methods, blocking_points, rest_controllers, openapi_generated_clients)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                     mongo_collections, mongo_methods, mongo_persistence_classes, openapi_files, kafka_methods, blocking_points, rest_controllers, openapi_generated_clients)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     relative_path,
@@ -381,6 +395,10 @@ class Store:
                     json.dumps(module.application_entrypoint.__dict__) if module.application_entrypoint else None,
                     json.dumps(module.mongo_collections),
                     json.dumps([_method_to_json(method) for method in module.mongo_methods]),
+                    json.dumps([{
+                        **item.__dict__,
+                        "fields": [field.__dict__ for field in item.fields],
+                    } for item in module.mongo_persistence_classes]),
                     json.dumps(module.openapi_files),
                     json.dumps([_method_to_json(method) for method in module.kafka_methods]),
                     json.dumps([_method_to_json(point) for point in module.blocking_points]),
@@ -391,7 +409,7 @@ class Store:
 
     def all_modules(self) -> list[DiscoveredModule]:
         rows = self.conn.execute(
-            "SELECT path, name, identity, build_system, version, kind, starts_application, configuration_example, application_entrypoint, mongo_collections, mongo_methods, openapi_files, kafka_methods, blocking_points, rest_controllers, openapi_generated_clients "
+            "SELECT path, name, identity, build_system, version, kind, starts_application, configuration_example, application_entrypoint, mongo_collections, mongo_methods, mongo_persistence_classes, openapi_files, kafka_methods, blocking_points, rest_controllers, openapi_generated_clients "
             "FROM modules ORDER BY path"
         ).fetchall()
         return [
@@ -407,6 +425,7 @@ class Store:
                 application_entrypoint=SourceEvidence(**json.loads(row["application_entrypoint"])) if row["application_entrypoint"] else None,
                 mongo_collections=tuple(json.loads(row["mongo_collections"])),
                 mongo_methods=tuple(_mongo_method_from_json(method) for method in json.loads(row["mongo_methods"])),
+                mongo_persistence_classes=tuple(_mongo_persistence_class_from_json(item) for item in json.loads(row["mongo_persistence_classes"])),
                 openapi_files=tuple(json.loads(row["openapi_files"])),
                 kafka_methods=tuple(_kafka_method_from_json(method) for method in json.loads(row["kafka_methods"])),
                 blocking_points=tuple(_blocking_point_from_json(point) for point in json.loads(row["blocking_points"])),

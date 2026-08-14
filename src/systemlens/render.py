@@ -828,6 +828,21 @@ def render_graph_html(
                         endpoint.message_type
                     )
     module_details = modules_by_service or {}
+    mongo_persistence_classes = [
+        {
+            "id": f"{service}:{item.qualified_name}",
+            "service": service,
+            "collection": item.collection,
+            "name": item.name,
+            "qualified_name": item.qualified_name,
+            "source": item.path,
+            "line": item.line,
+            "vscode_uri": _vscode_file_uri(module.path / item.path, vscode_wsl_distro),
+            "fields": [{"name": field.name, "type": field.type} for field in item.fields],
+        }
+        for service, module in sorted(module_details.items())
+        for item in module.mongo_persistence_classes
+    ]
     all_modules = list({
         module.path.resolve(): module
         for module in [*(build_modules or []), *module_details.values()]
@@ -922,6 +937,10 @@ def render_graph_html(
             "name": collection,
             "owner": service,
             "label": collection,
+            "persistence_classes": [
+                item for item in mongo_persistence_classes
+                if item["service"] == service and item["collection"] == collection
+            ],
             "width": 190,
             "height": 42,
         }
@@ -1045,6 +1064,7 @@ def render_graph_html(
             "build_dependencies": _module_dependency_view(build_modules, module_dependencies),
             "kafka_dtos": kafka_dtos,
             "project_dto_definitions": project_dto_definitions,
+            "mongo_persistence_classes": mongo_persistence_classes,
             "indexing_issues": _indexing_issues(
                 endpoints_by_service,
                 edges,
@@ -1880,6 +1900,12 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
         <p class="references-description">Inspectez les classes Java échangées via Kafka.</p>
       </div>
       <section class="references-section"><input id="dto-reference-filter" class="reference-filter-input" type="search" placeholder="Filtrer les DTO par nom ou package" autocomplete="off" aria-label="Filtrer les DTO Kafka"><ul id="dto-references" class="references-list"></ul><p id="dto-references-empty" class="references-empty">Aucun DTO Kafka détecté.</p></section>
+      <div class="references-header">
+        <p class="references-kicker">Persistance MongoDB</p>
+        <h2 id="mongo-class-references-title" class="references-title">Classes de persistance</h2>
+        <p class="references-description">Inspectez les classes Java associées aux collections MongoDB.</p>
+      </div>
+      <section class="references-section"><input id="mongo-class-reference-filter" class="reference-filter-input" type="search" placeholder="Filtrer par classe, package ou collection" autocomplete="off" aria-label="Filtrer les classes de persistance MongoDB"><ul id="mongo-class-references" class="references-list"></ul><p id="mongo-class-references-empty" class="references-empty">Aucune classe de persistance MongoDB détectée.</p></section>
       <details class="resource-analyses">
         <summary>Analyses complémentaires</summary>
         <div class="resource-analysis-actions">
@@ -2427,6 +2453,10 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
     const dtoReferencesFilter = document.getElementById("dto-reference-filter");
     const openapiReferencesTitle = document.getElementById("openapi-references-title");
     const dtoReferencesTitle = document.getElementById("dto-references-title");
+    const mongoClassReferencesList = document.getElementById("mongo-class-references");
+    const mongoClassReferencesEmpty = document.getElementById("mongo-class-references-empty");
+    const mongoClassReferencesFilter = document.getElementById("mongo-class-reference-filter");
+    const mongoClassReferencesTitle = document.getElementById("mongo-class-references-title");
     const requestReplyPatternsList = document.getElementById("request-reply-patterns");
     const requestReplyEmpty = document.getElementById("request-reply-empty");
     const requestReplyTitle = document.getElementById("request-reply-title");
@@ -2734,6 +2764,23 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
       });
       openapiReferencesTitle.textContent = `Contrats OpenAPI (${visibleContracts.length}/${contracts.length})`;
       dtoReferencesTitle.textContent = `DTO Kafka (${visibleDtos.length}/${dtos.length})`;
+      mongoClassReferencesList.replaceChildren();
+      const persistenceClasses = graphData.mongo_persistence_classes || [];
+      const mongoQuery = mongoClassReferencesFilter.value.trim().toLocaleLowerCase();
+      const visiblePersistenceClasses = persistenceClasses.filter(item => (
+        !mongoQuery || `${item.qualified_name} ${item.collection} ${item.service}`.toLocaleLowerCase().includes(mongoQuery)
+      ));
+      mongoClassReferencesEmpty.hidden = visiblePersistenceClasses.length > 0;
+      mongoClassReferencesEmpty.textContent = mongoQuery && !visiblePersistenceClasses.length
+        ? "Aucune classe de persistance ne correspond à ce filtre."
+        : "Aucune classe de persistance MongoDB détectée.";
+      visiblePersistenceClasses.forEach(item => mongoClassReferencesList.append(referenceItem(
+        item.qualified_name,
+        `${item.collection} · ${item.service} · ${item.fields?.length || 0} champ(s)`,
+        "Inspecter",
+        () => openMongoPersistenceInspector(item.id),
+      )));
+      mongoClassReferencesTitle.textContent = `Classes de persistance (${visiblePersistenceClasses.length}/${persistenceClasses.length})`;
     }
     function renderRequestReplyPatterns() {
       const patterns = graphData.links.filter(link => link.kind === "request_reply");
@@ -2999,6 +3046,26 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
     function openDtoInspector(dtoName) {
       dtoNavigation.splice(0);
       renderDtoInspector(dtoName);
+    }
+    function openMongoPersistenceInspector(classId) {
+      const item = (graphData.mongo_persistence_classes || []).find(candidate => candidate.id === classId);
+      if (!item) return;
+      openInspector(`Persistance MongoDB · ${item.name}`);
+      inspectorBody.classList.add("dto-inspector");
+      const summary = document.createElement("p");
+      summary.className = "dto-summary";
+      summary.textContent = `${item.qualified_name} · collection ${item.collection} · ${item.source}:${item.line}`;
+      inspectorBody.append(summary);
+      if (item.vscode_uri) {
+        const sourceLink = document.createElement("a");
+        sourceLink.href = item.vscode_uri;
+        sourceLink.className = "dto-summary";
+        sourceLink.textContent = "Ouvrir la classe dans VS Code";
+        inspectorBody.append(sourceLink);
+      }
+      appendDtoInspectorSection("Champs déclarés", (item.fields || []).map(field => `${field.type} ${field.name}`), "dto-field");
+      appendDtoInspectorSection("Collection", [item.collection]);
+      appendDtoInspectorSection("Microservice", [item.service]);
     }
     function openNestedDtoInspector(dtoName, parentDtoName) {
       dtoNavigation.push(parentDtoName);
@@ -3626,6 +3693,11 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
         appendList("Stockee par", [node.owner], relationsGroup);
         appendRelationList("Services utilisant cette collection", edges.filter(link => link.kind === "mongodb" && link.target === id), id,
           link => nodeDataById.get(link.source).name, relationsGroup);
+        appendActionList("Classes Java de persistance", (node.persistence_classes || []).map(item => ({
+          label: item.qualified_name,
+          title: "Afficher les champs et la source de cette classe",
+          action: () => openMongoPersistenceInspector(item.id),
+        })), relationsGroup);
         discardEmptyDetailsGroup(relationsGroup);
       }
     }
@@ -3756,6 +3828,7 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
     }));
     openApiReferencesFilter.addEventListener("input", renderReferences);
     dtoReferencesFilter.addEventListener("input", renderReferences);
+    mongoClassReferencesFilter.addEventListener("input", renderReferences);
     pathLock.addEventListener("change", persistState);
     pathQuery.addEventListener("keydown", event => {
       if (event.key === "Enter") showShortestPath();

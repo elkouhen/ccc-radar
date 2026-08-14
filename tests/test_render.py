@@ -5,7 +5,7 @@ from pathlib import Path
 
 from systemlens.models import MessageEndpoint, compute_endpoint_id
 from systemlens.graph import GraphEdge
-from systemlens.modules import DiscoveredModule
+from systemlens.modules import DiscoveredModule, MongoField, MongoPersistenceClass
 from systemlens.render import render_graph_html
 
 
@@ -217,11 +217,22 @@ def test_graph_html_reports_an_ambiguous_explicit_http_target() -> None:
 def test_graph_html_colours_topics_and_mongodb_collections_by_connectivity() -> None:
     producer = _kafka_endpoint("produce", "OrderCreated", "Publisher.java")
     consumer = _kafka_endpoint("consume", "OrderCreated", "Consumer.java")
+    orders_module = DiscoveredModule(
+        name="orders", path=Path("/workspace/orders"), build_system="maven",
+        version=None, kind="application", starts_application=True,
+        configuration_example="", mongo_collections=("orders",),
+        mongo_persistence_classes=(MongoPersistenceClass(
+            collection="orders", name="Order", qualified_name="com.example.Order",
+            path="src/main/java/com/example/Order.java", line=7,
+            fields=(MongoField("id", "String"),),
+        ),),
+    )
 
     graph_data = _html_graph_data(render_graph_html(
         {"orders": [producer], "payments": [consumer]},
         [GraphEdge("kafka", "orders", "payments", producer, consumer)],
         collections_by_service={"orders": ["orders"]},
+        modules_by_service={"orders": orders_module},
     ))
     nodes = {node["id"]: node for node in graph_data["nodes"]}
 
@@ -252,6 +263,8 @@ def test_graph_html_colours_topics_and_mongodb_collections_by_connectivity() -> 
     }
     assert collection["color"] == "#2563eb"
     assert collection["label"] == "orders"
+    assert collection["persistence_classes"][0]["qualified_name"] == "com.example.Order"
+    assert graph_data["mongo_persistence_classes"][0]["fields"] == [{"name": "id", "type": "String"}]
     document = render_graph_html(
         {"orders": [producer], "payments": [consumer]},
         [GraphEdge("kafka", "orders", "payments", producer, consumer)],

@@ -123,6 +123,10 @@ consumed and published API and Kafka resources, plus MongoDB collections. Each
 Kafka topic lists its applicable DTOs. A collapsed `Sources` section lists the
 indexed OpenAPI and Kafka files that provide the evidence, avoiding repetition
 in every topic.
+MongoDB collection details list the indexed Java persistence classes declared
+with `@Document`, including their qualified name, source location, and declared
+fields. The Resources view provides the same inventory with filtering by class,
+package, collection, or service and opens a dedicated inspector.
 The topic detail lists resolved Kafka DTOs once. It lists message types only
 when no matching DTO has been resolved, avoiding duplicate published and
 consumed type lists when they describe the same contract.

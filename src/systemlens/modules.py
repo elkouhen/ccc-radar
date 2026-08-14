@@ -28,6 +28,7 @@ class DiscoveredModule:
     application_entrypoint: "SourceEvidence | None" = None
     mongo_collections: tuple[str, ...] = ()
     mongo_methods: tuple["MongoMethod", ...] = ()
+    mongo_persistence_classes: tuple["MongoPersistenceClass", ...] = ()
     openapi_files: tuple[str, ...] = ()
     kafka_methods: tuple["KafkaMethod", ...] = ()
     blocking_points: tuple["BlockingPoint", ...] = ()
@@ -61,6 +62,22 @@ class MongoMethod:
     collection: str | None = None
     evidence: "SourceEvidence | None" = None
     owner_method: str | None = None
+
+
+@dataclass(frozen=True, order=True)
+class MongoField:
+    name: str
+    type: str
+
+
+@dataclass(frozen=True, order=True)
+class MongoPersistenceClass:
+    collection: str
+    name: str
+    qualified_name: str
+    path: str
+    line: int
+    fields: tuple[MongoField, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -397,7 +414,7 @@ JAVA_ARCHITECTURE_EXTENSIONS: tuple[JavaArchitectureExtension, ...] = (KafkaArch
 
 def _extract_java_architecture(
     module_dir: Path, module_roots: set[Path]
-) -> tuple[tuple[str, ...], tuple[MongoMethod, ...], tuple[KafkaMethod, ...], tuple[BlockingPoint, ...]]:
+) -> tuple[tuple[str, ...], tuple[MongoMethod, ...], tuple[MongoPersistenceClass, ...], tuple[KafkaMethod, ...], tuple[BlockingPoint, ...]]:
     """Extract Mongo facts from Java syntax trees.
 
     This deliberately uses AST node boundaries rather than line regexes: comments,
@@ -412,6 +429,7 @@ def _extract_java_architecture(
     production_files: list[tuple[Path, str, bytes]] = []
     collections: set[str] = set()
     entity_collections: dict[str, str] = {}
+    persistence_classes: set[MongoPersistenceClass] = set()
     repository_entities: dict[str, str] = {}
     for path in java_files:
         rel = _module_relative(module_dir, path)
@@ -448,9 +466,56 @@ def _extract_java_architecture(
                     or java_parser.annotation_argument(document_annotation, source),
                     source,
                 )
-                if collection is not None:
+                if collection is None:
+                    collection = declaration_name[:1].lower() + declaration_name[1:]
+                if collection:
                     collections.add(collection)
                     entity_collections[declaration_name] = collection
+                    package = ""
+                    for child in root_node.named_children:
+                        if child.type == "package_declaration":
+                            package = (
+                                _node_text(source, child).strip().rstrip(";")
+                                .removeprefix("package").strip()
+                            )
+                            break
+                    fields: list[MongoField] = []
+                    if declaration.type == "record_declaration":
+                        parameters = java_parser.child_by_type(declaration, "formal_parameters")
+                        for parameter in parameters.named_children if parameters is not None else ():
+                            if parameter.type != "formal_parameter":
+                                continue
+                            type_node = parameter.child_by_field_name("type")
+                            name_node = parameter.child_by_field_name("name")
+                            if type_node is not None and name_node is not None:
+                                fields.append(MongoField(
+                                    _node_text(source, name_node),
+                                    _node_text(source, type_node).strip(),
+                                ))
+                    for field_node in _walk(declaration):
+                        if field_node.type != "field_declaration" or java_parser.enclosing(
+                            field_node, "class_declaration", "record_declaration", "enum_declaration"
+                        ) != declaration:
+                            continue
+                        type_node = field_node.child_by_field_name("type")
+                        if type_node is None:
+                            continue
+                        for declarator in field_node.children:
+                            if declarator.type == "variable_declarator":
+                                name_node = declarator.child_by_field_name("name")
+                                if name_node is not None:
+                                    fields.append(MongoField(
+                                        _node_text(source, name_node),
+                                        _node_text(source, type_node).strip(),
+                                    ))
+                    persistence_classes.add(MongoPersistenceClass(
+                        collection=collection,
+                        name=declaration_name,
+                        qualified_name=f"{package}.{declaration_name}" if package else declaration_name,
+                        path=rel,
+                        line=declaration.start_point.row + 1,
+                        fields=tuple(fields),
+                    ))
             if declaration.type == "interface_declaration":
                 entity = _repository_entity(declaration, source)
                 if entity is not None:
@@ -586,7 +651,7 @@ def _extract_java_architecture(
     ))
     _trace("module.architecture.sort_blocking.end", module=module_dir)
     _trace("module.architecture.end", module=module_dir)
-    return sorted_collections, sorted_methods, kafka_methods, sorted_blocking_points
+    return sorted_collections, sorted_methods, tuple(sorted(persistence_classes)), kafka_methods, sorted_blocking_points
 
 
 def _discover_openapi_files(
@@ -655,11 +720,12 @@ def _enrich_module(
 ) -> DiscoveredModule:
     _trace("module.enrich.begin", module=module.path)
     if enrich_architecture:
-        collections, methods, kafka_methods, blocking_points = _extract_java_architecture(module.path, module_roots)
+        collections, methods, persistence_classes, kafka_methods, blocking_points = _extract_java_architecture(module.path, module_roots)
     else:
         _trace("module.enrich.architecture.disabled", module=module.path)
         collections = ()
         methods = ()
+        persistence_classes = ()
         kafka_methods = ()
         blocking_points = ()
 
@@ -683,6 +749,7 @@ def _enrich_module(
 
     enriched = DiscoveredModule(
         **{**module.__dict__, "mongo_collections": collections, "mongo_methods": methods,
+           "mongo_persistence_classes": persistence_classes,
            "openapi_files": openapi_files,
            "kafka_methods": kafka_methods, "blocking_points": blocking_points,
            "rest_controllers": rest_controllers, "openapi_generated_clients": openapi_generated_clients}

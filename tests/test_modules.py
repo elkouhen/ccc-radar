@@ -344,11 +344,12 @@ def test_modules_index_mongo_facts_and_openapi_files_from_java_ast(tmp_path: Pat
     source.parent.mkdir(parents=True)
     _write_pom(module / "pom.xml", "orders-api", "3.1.0")
     source.write_text(
-        """import org.springframework.data.annotation.Id;
+        """package com.example.orders;
+import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.mapping.Document;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.repository.MongoRepository;
-@Document(collection = \"orders\") class Order {}
+@Document(collection = \"orders\") class Order { String id; int quantity; }
 class OrderStore {
   MongoTemplate mongoTemplate;
   OrderRepository orderRepository;
@@ -371,6 +372,14 @@ interface OrderRepository extends MongoRepository<Order, String> {}
         indexed = store.all_modules()[0]
 
     assert indexed.mongo_collections == ("audit", "orders", "orders_archive")
+    assert len(indexed.mongo_persistence_classes) == 1
+    persistence_class = indexed.mongo_persistence_classes[0]
+    assert (persistence_class.collection, persistence_class.qualified_name, persistence_class.path) == (
+        "orders", "com.example.orders.Order", "src/main/java/OrderStore.java"
+    )
+    assert [(field.type, field.name) for field in persistence_class.fields] == [
+        ("String", "id"), ("int", "quantity")
+    ]
     assert [(item.operation, item.receiver, item.collection) for item in indexed.mongo_methods] == [
         ("save", "mongoTemplate", None),
         ("getCollection", "mongoTemplate", "audit"),
@@ -381,7 +390,7 @@ interface OrderRepository extends MongoRepository<Order, String> {}
     assert indexed.openapi_files == ("src/main/resources/openapi.yaml",)
     proof = indexed.mongo_methods[0].evidence
     assert proof is not None
-    assert proof.start_line == 10
+    assert proof.start_line == 11
     assert proof.snippet == "mongoTemplate.save(order)"
     assert proof.source_hash.startswith("sha256:")
 

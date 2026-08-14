@@ -280,6 +280,19 @@ def collection_summary(catalog: ArchitectureCatalog, collection: str) -> dict[st
         "operations": sum(
             1 for module in modules for method in module.mongo_methods if method.collection == collection
         ),
+        "persistence_classes": [
+            {
+                "module": module_identity(module),
+                "name": item.name,
+                "qualified_name": item.qualified_name,
+                "path": item.path,
+                "line": item.line,
+                "fields": [field.__dict__ for field in item.fields],
+            }
+            for module in modules
+            for item in module.mongo_persistence_classes
+            if item.collection == collection
+        ],
     }
 
 

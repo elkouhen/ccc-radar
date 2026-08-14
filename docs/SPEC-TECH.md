@@ -43,6 +43,11 @@ inventory, currently the `default` or `strategy1` topic convention. CLI, MCP,
 export, graph, and audit adapters consume this profile. A workspace federation
 retains source profiles and rejects a mixture of incompatible topic strategies.
 
+MongoDB persistence-class metadata is extracted from Java `@Document`
+declarations at index time and stored with each module. The immutable snapshot
+records the collection, qualified class name, source location, and declared
+fields so HTML exports never reopen Java sources to build this view.
+
 `ExtractionDiagnostic` is a safe, persisted extraction outcome with its file
 path, extractor, category, severity and a non-source-code detail. The initial
 implementation records Tree-sitter Java parse failures; `analyze
