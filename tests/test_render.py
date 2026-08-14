@@ -276,7 +276,9 @@ def test_graph_html_colours_topics_and_mongodb_collections_by_connectivity() -> 
     assert collection["color"] == "#2563eb"
     assert collection["label"] == "orders"
     assert collection["persistence_classes"][0]["qualified_name"] == "com.example.Order"
-    assert graph_data["mongo_persistence_classes"][0]["fields"] == [{"name": "id", "type": "String"}]
+    assert graph_data["mongo_persistence_classes"][0]["fields"] == [
+        {"name": "id", "type": "String", "references": []}
+    ]
     document = render_graph_html(
         {"orders": [producer], "payments": [consumer]},
         [GraphEdge("kafka", "orders", "payments", producer, consumer)],
@@ -343,7 +345,8 @@ def test_graph_html_lists_document_class_from_persisted_maven_module(tmp_path: P
     )
     (source_root / "Order.java").write_text(
         "package com.example; import org.springframework.data.mongodb.core.mapping.Document; "
-        "@Document(collection = \"orders\") class Order { String id; }"
+        "@Document(collection = \"orders\") class Order { String id; Address address; } "
+        "record Address(String city) {}"
     )
 
     with Store(tmp_path) as store:
@@ -357,20 +360,40 @@ def test_graph_html_lists_document_class_from_persisted_maven_module(tmp_path: P
         build_modules=[persisted_module],
     ))
 
-    assert graph_data["mongo_persistence_classes"] == [
+    definitions = {
+        item["qualified_name"]: item
+        for item in graph_data["mongo_persistence_classes"]
+    }
+    order = definitions["com.example.Order"]
+    address = definitions["com.example.Address"]
+    assert order["root"] is True
+    assert address["root"] is False
+    assert order["fields"] == [
+        {"name": "id", "type": "String", "references": []},
         {
-            "id": "orders:orders:com.example.Order",
-            "service": "orders",
-            "module": "orders",
-            "collection": "orders",
-            "name": "Order",
-            "qualified_name": "com.example.Order",
-            "source": "src/main/java/com/example/Order.java",
-            "line": 1,
-            "vscode_uri": graph_data["mongo_persistence_classes"][0]["vscode_uri"],
-            "fields": [{"name": "id", "type": "String"}],
-        }
+            "name": "address",
+            "type": "Address",
+            "references": [address["id"]],
+        },
     ]
+    assert address["fields"] == [
+        {"name": "city", "type": "String", "references": []}
+    ]
+    collection = next(
+        node for node in graph_data["nodes"]
+        if node["kind"] == "mongodb_collection"
+    )
+    assert [item["qualified_name"] for item in collection["persistence_classes"]] == [
+        "com.example.Order"
+    ]
+    document = render_graph_html(
+        {"orders": []}, [],
+        collections_by_service={"orders": ["orders"]},
+        modules_by_service={"orders": persisted_module},
+        build_modules=[persisted_module],
+    )
+    assert "function openNestedMongoPersistenceInspector" in document
+    assert "returnToContainingMongoClass" in document
 
 
 def test_graph_html_microservice_complexity_counts_distinct_direct_clients() -> None:

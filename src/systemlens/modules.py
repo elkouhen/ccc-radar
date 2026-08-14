@@ -68,6 +68,7 @@ class MongoMethod:
 class MongoField:
     name: str
     type: str
+    references: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, order=True)
@@ -78,6 +79,7 @@ class MongoPersistenceClass:
     path: str
     line: int
     fields: tuple[MongoField, ...] = ()
+    root: bool = True
 
 
 @dataclass(frozen=True)
@@ -87,6 +89,77 @@ class _JavaPersistenceCandidate:
     path: str
     line: int
     fields: tuple[MongoField, ...]
+
+
+def _resolve_persistence_field_references(
+    field_type: str,
+    containing_type: _JavaPersistenceCandidate,
+    candidates: dict[str, list[_JavaPersistenceCandidate]],
+) -> tuple[str, ...]:
+    """Resolve project types conservatively, preferring the containing package."""
+    package = containing_type.qualified_name.rpartition(".")[0]
+    references: list[str] = []
+    for token in re.findall(r"(?:[A-Za-z_]\w*\.)*[A-Za-z_]\w*", field_type):
+        simple_name = token.rsplit(".", 1)[-1]
+        matches = candidates.get(simple_name, [])
+        if "." in token:
+            matches = [candidate for candidate in matches if candidate.qualified_name == token]
+        elif package:
+            same_package = [
+                candidate for candidate in matches
+                if candidate.qualified_name.rpartition(".")[0] == package
+            ]
+            if len(same_package) == 1:
+                matches = same_package
+        if len(matches) == 1 and matches[0].qualified_name not in references:
+            references.append(matches[0].qualified_name)
+    return tuple(references)
+
+
+def _expand_persistence_classes(
+    roots: set[MongoPersistenceClass],
+    candidates: dict[str, list[_JavaPersistenceCandidate]],
+) -> tuple[MongoPersistenceClass, ...]:
+    """Persist the recursive project-type closure for every Mongo root class."""
+    candidates_by_qualified_name = {
+        candidate.qualified_name: candidate
+        for matches in candidates.values()
+        for candidate in matches
+    }
+    root_keys = {(item.collection, item.qualified_name) for item in roots}
+    pending = list(sorted(root_keys))
+    definitions: dict[tuple[str, str], MongoPersistenceClass] = {}
+    while pending:
+        collection, qualified_name = pending.pop(0)
+        key = (collection, qualified_name)
+        if key in definitions:
+            continue
+        candidate = candidates_by_qualified_name.get(qualified_name)
+        if candidate is None:
+            continue
+        fields = tuple(MongoField(
+            name=field.name,
+            type=field.type,
+            references=_resolve_persistence_field_references(
+                field.type, candidate, candidates
+            ),
+        ) for field in candidate.fields)
+        definitions[key] = MongoPersistenceClass(
+            collection=collection,
+            name=candidate.name,
+            qualified_name=candidate.qualified_name,
+            path=candidate.path,
+            line=candidate.line,
+            fields=fields,
+            root=key in root_keys,
+        )
+        for reference in fields:
+            pending.extend(
+                (collection, qualified_reference)
+                for qualified_reference in reference.references
+                if (collection, qualified_reference) not in definitions
+            )
+    return tuple(sorted(definitions.values()))
 
 
 @dataclass(frozen=True)
@@ -711,7 +784,16 @@ def _extract_java_architecture(
     ))
     _trace("module.architecture.sort_blocking.end", module=module_dir)
     _trace("module.architecture.end", module=module_dir)
-    return sorted_collections, sorted_methods, tuple(sorted(persistence_classes)), kafka_methods, sorted_blocking_points
+    expanded_persistence_classes = _expand_persistence_classes(
+        persistence_classes, persistence_candidates
+    )
+    return (
+        sorted_collections,
+        sorted_methods,
+        expanded_persistence_classes,
+        kafka_methods,
+        sorted_blocking_points,
+    )
 
 
 def _discover_openapi_files(

@@ -20,7 +20,7 @@ from systemlens.modules import (
 )
 from systemlens.paths import db_path
 
-SCHEMA_VERSION = "19"
+SCHEMA_VERSION = "20"
 SEVERITY_ORDER = ["INFO", "WARNING", "ERROR"]
 _COUNTABLE_DIMENSIONS = ("rule_id", "severity")
 _SQLITE_BIND_LIMIT = 900
@@ -70,7 +70,9 @@ def _mongo_method_from_json(data: dict[str, Any]) -> MongoMethod:
 
 def _mongo_persistence_class_from_json(data: dict[str, Any]) -> MongoPersistenceClass:
     data = dict(data)
-    data["fields"] = tuple(MongoField(**field) for field in data.get("fields", []))
+    data["fields"] = tuple(MongoField(
+        **{**field, "references": tuple(field.get("references", []))}
+    ) for field in data.get("fields", []))
     return MongoPersistenceClass(**data)
 
 

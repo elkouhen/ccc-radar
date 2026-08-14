@@ -880,11 +880,20 @@ def render_graph_html(
                     "qualified_name": item.qualified_name,
                     "source": item.path,
                     "line": item.line,
+                    "root": item.root,
                     "vscode_uri": _vscode_file_uri(
                         candidate_module.path / item.path, vscode_wsl_distro
                     ),
                     "fields": [
-                        {"name": field.name, "type": field.type} for field in item.fields
+                        {
+                            "name": field.name,
+                            "type": field.type,
+                            "references": [
+                                f"{service}:{identity}:{reference}"
+                                for reference in field.references
+                            ],
+                        }
+                        for field in item.fields
                     ],
                 })
     nodes: list[dict[str, object]] = []
@@ -980,6 +989,7 @@ def render_graph_html(
             "persistence_classes": [
                 item for item in mongo_persistence_classes
                 if item["service"] == service and item["collection"] == collection
+                and item["root"]
             ],
             "width": 190,
             "height": 42,
@@ -2984,7 +2994,9 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
       openapiReferencesTitle.textContent = `Contrats OpenAPI (${visibleContracts.length}/${contracts.length})`;
       dtoReferencesTitle.textContent = `DTO Kafka (${visibleDtos.length}/${dtos.length})`;
       mongoClassReferencesList.replaceChildren();
-      const persistenceClasses = graphData.mongo_persistence_classes || [];
+      const persistenceClasses = (graphData.mongo_persistence_classes || []).filter(
+        item => item.root !== false
+      );
       const mongoQuery = mongoClassReferencesFilter.value.trim().toLocaleLowerCase();
       const visiblePersistenceClasses = persistenceClasses.filter(item => (
         !mongoQuery || `${item.qualified_name} ${item.collection} ${item.service}`.toLocaleLowerCase().includes(mongoQuery)
@@ -3199,11 +3211,13 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
     const inspectorTitle = document.getElementById("inspector-title");
     const inspectorBody = document.getElementById("inspector-body");
     const dtoNavigation = [];
+    const mongoNavigation = [];
     function closeInspector() {
       inspectorModal.hidden = true;
       inspectorBody.replaceChildren();
       inspectorBody.className = "inspector-body";
       dtoNavigation.splice(0);
+      mongoNavigation.splice(0);
     }
     function openInspector(title) {
       inspectorTitle.textContent = title;
@@ -3267,10 +3281,33 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
       renderDtoInspector(dtoName);
     }
     function openMongoPersistenceInspector(classId) {
+      mongoNavigation.splice(0);
+      renderMongoPersistenceInspector(classId);
+    }
+    function openNestedMongoPersistenceInspector(classId, parentClassId) {
+      mongoNavigation.push(parentClassId);
+      renderMongoPersistenceInspector(classId);
+    }
+    function returnToContainingMongoClass() {
+      const parentClassId = mongoNavigation.pop();
+      if (parentClassId) renderMongoPersistenceInspector(parentClassId);
+    }
+    function renderMongoPersistenceInspector(classId) {
       const item = (graphData.mongo_persistence_classes || []).find(candidate => candidate.id === classId);
       if (!item) return;
       openInspector(`Persistance MongoDB · ${item.name}`);
       inspectorBody.classList.add("dto-inspector");
+      if (mongoNavigation.length) {
+        const navigation = document.createElement("div");
+        navigation.className = "dto-navigation";
+        const back = document.createElement("button");
+        back.className = "dto-back";
+        back.type = "button";
+        back.textContent = "← Retour";
+        back.addEventListener("click", returnToContainingMongoClass);
+        navigation.append(back);
+        inspectorBody.append(navigation);
+      }
       const summary = document.createElement("p");
       summary.className = "dto-summary";
       summary.textContent = `${item.qualified_name} · collection ${item.collection} · ${item.source}:${item.line}`;
@@ -3282,7 +3319,37 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
         sourceLink.textContent = "Ouvrir la classe dans VS Code";
         inspectorBody.append(sourceLink);
       }
-      appendDtoInspectorSection("Champs déclarés", (item.fields || []).map(field => `${field.type} ${field.name}`), "dto-field");
+      const fields = item.fields || [];
+      if (fields.length) {
+        const section = document.createElement("section");
+        section.className = "dto-section";
+        const heading = document.createElement("h2");
+        heading.textContent = "Champs déclarés";
+        const list = document.createElement("ul");
+        list.className = "dto-fields";
+        fields.forEach(field => {
+          const row = document.createElement("li");
+          row.className = "dto-field";
+          const references = field.references || [];
+          const type = document.createElement(references.length ? "button" : "span");
+          type.className = "dto-field-type";
+          type.textContent = field.type;
+          if (references.length) {
+            type.type = "button";
+            type.title = "Ouvrir le type projet référencé";
+            type.addEventListener("click", () => (
+              openNestedMongoPersistenceInspector(references[0], item.id)
+            ));
+          }
+          const name = document.createElement("span");
+          name.className = "dto-field-name";
+          name.textContent = field.name;
+          row.append(type, name);
+          list.append(row);
+        });
+        section.append(heading, list);
+        inspectorBody.append(section);
+      }
       appendDtoInspectorSection("Collection", [item.collection]);
       appendDtoInspectorSection("Microservice", [item.service]);
       appendDtoInspectorSection("Module de persistance", [item.module]);

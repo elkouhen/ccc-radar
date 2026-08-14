@@ -8,7 +8,7 @@ from playwright.sync_api import sync_playwright
 
 from systemlens.models import MessageEndpoint, compute_endpoint_id
 from systemlens.graph import GraphEdge
-from systemlens.modules import DiscoveredModule
+from systemlens.modules import DiscoveredModule, MongoField, MongoPersistenceClass
 from systemlens.render import render_graph_html
 
 
@@ -61,6 +61,19 @@ def test_html_export_resources_are_usable_in_a_constrained_browser_viewport(tmp_
         kind="application",
         starts_application=True,
         configuration_example="",
+        mongo_collections=("orders",),
+        mongo_persistence_classes=(
+            MongoPersistenceClass(
+                collection="orders", name="Order", qualified_name="com.example.Order",
+                path="src/main/java/com/example/Order.java", line=1,
+                fields=(MongoField("address", "Address", ("com.example.Address",)),),
+            ),
+            MongoPersistenceClass(
+                collection="orders", name="Address", qualified_name="com.example.Address",
+                path="src/main/java/com/example/Address.java", line=1,
+                fields=(MongoField("city", "String"),), root=False,
+            ),
+        ),
     )
     consumer = MessageEndpoint(
         id=compute_endpoint_id("consume", "orders.created", "Consumer.java", 8),
@@ -90,6 +103,8 @@ def test_html_export_resources_are_usable_in_a_constrained_browser_viewport(tmp_
             GraphEdge("kafka", "orders", "payments", _producer("com.example.OrderCreated"), consumer),
             GraphEdge("rest", "orders", "payments", rest_call, rest_server),
         ],
+        collections_by_service={"orders": ["orders"]},
+        modules_by_service={"orders": module},
         build_modules=[module],
     )
 
@@ -103,16 +118,16 @@ def test_html_export_resources_are_usable_in_a_constrained_browser_viewport(tmp_
         assert not errors
 
         graph = page.locator("#graph")
-        assert graph.get_attribute("data-relation-count") == "3"
+        assert graph.get_attribute("data-relation-count") == "4"
         assert "1 ressource isolée" in page.locator("#graph-summary").inner_text()
         assert page.locator("#inventory-status").inner_text() == "Inventaire : aucun fait non résolu"
         assert page.locator("#node-suggestions option").count() == 4
         page.locator("#relation-http").uncheck()
-        assert graph.get_attribute("data-relation-count") == "2"
+        assert graph.get_attribute("data-relation-count") == "3"
         page.locator("#relation-kafka").uncheck()
-        assert graph.get_attribute("data-relation-count") == "0"
-        page.locator("#relation-http").check()
         assert graph.get_attribute("data-relation-count") == "1"
+        page.locator("#relation-http").check()
+        assert graph.get_attribute("data-relation-count") == "2"
 
         page.get_by_role("tab", name="Ressources").click()
         page.locator("#resources-panel").wait_for(state="visible")
@@ -132,6 +147,18 @@ def test_html_export_resources_are_usable_in_a_constrained_browser_viewport(tmp_
         dto_box = dto.bounding_box()
         assert toolbar is not None and toolbar["y"] + toolbar["height"] <= 450
         assert dto_box is not None and dto_box["y"] + dto_box["height"] <= 450
+
+        mongo_filter = page.locator("#mongo-class-reference-filter")
+        mongo_filter.fill("Order")
+        mongo_class = page.locator("#mongo-class-references li")
+        assert mongo_class.count() == 1
+        mongo_class.get_by_role("button", name="Inspecter").click()
+        assert page.locator("#inspector-title").inner_text() == "Persistance MongoDB · Order"
+        page.get_by_role("button", name="Address", exact=True).click()
+        assert page.locator("#inspector-title").inner_text() == "Persistance MongoDB · Address"
+        page.get_by_role("button", name="← Retour").click()
+        assert page.locator("#inspector-title").inner_text() == "Persistance MongoDB · Order"
+        page.locator("#inspector-close").click()
 
         page.get_by_role("tab", name="Explorer").click()
         search = page.locator("#search")

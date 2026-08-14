@@ -133,7 +133,9 @@ MongoDB collection details list indexed Java persistence classes resolved from
 arguments passed to `MongoTemplate`. They include their qualified name, source
 location, and declared fields. The Resources view provides the same inventory
 with filtering by class, package, collection, or service and opens a dedicated
-inspector.
+inspector. Fields whose type resolves uniquely to another indexed project class
+are navigable recursively; the inspector provides a return action to the
+containing class. External and ambiguous field types remain plain text.
 Persistence classes declared in a dependent build module are attached to the
 owning service collection through the indexed module-dependency graph. When
 dependency metadata is unavailable, a workspace-wide class is used only if it
