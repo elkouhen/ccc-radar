@@ -43,10 +43,13 @@ inventory, currently the `default` or `strategy1` topic convention. CLI, MCP,
 export, graph, and audit adapters consume this profile. A workspace federation
 retains source profiles and rejects a mixture of incompatible topic strategies.
 
-MongoDB persistence-class metadata is extracted from Java `@Document`
-declarations at index time and stored with each module. The immutable snapshot
-records the collection, qualified class name, source location, and declared
-fields so HTML exports never reopen Java sources to build this view.
+MongoDB persistence-class metadata is extracted at index time from Java
+`@Document` declarations, entity generic types of Mongo repositories, and
+unambiguous `Type.class` arguments of `MongoTemplate` operations. Repository
+entities without `@Document` use Spring Data's lower-camel simple-name default;
+ambiguous simple names are not resolved. The immutable snapshot records the
+collection, qualified class name, source location, and declared fields so HTML
+exports never reopen Java sources to build this view.
 The HTML snapshot resolves these classes from the collection-owning module and
 its transitive build dependencies. A unique collection-wide fallback covers
 snapshots without dependency metadata while preserving ambiguity when several
@@ -56,6 +59,10 @@ modules declare the same collection name.
 path, extractor, category, severity and a non-source-code detail. The initial
 implementation records Tree-sitter Java parse failures; `analyze
 indexing-issues` exposes them alongside unresolved architecture facts.
+
+The SQLite store is standard-library-only: it does not load native vector
+extensions or persist/query vector representations. The retained findings
+search compatibility path uses deterministic lexical matching.
 
 ## Export snapshot contract
 

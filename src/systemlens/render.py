@@ -856,10 +856,10 @@ def render_graph_html(
     persistence_candidates_by_collection: dict[
         str, list[tuple[str, DiscoveredModule, MongoPersistenceClass]]
     ] = {}
-    for identity, module in module_by_identity.items():
-        for item in module.mongo_persistence_classes:
+    for identity, candidate_module in module_by_identity.items():
+        for item in candidate_module.mongo_persistence_classes:
             persistence_candidates_by_collection.setdefault(item.collection, []).append(
-                (identity, module, item)
+                (identity, candidate_module, item)
             )
     mongo_persistence_classes: list[dict[str, object]] = []
     for service, collections in sorted((collections_by_service or {}).items()):
@@ -870,7 +870,7 @@ def render_graph_html(
             # A unique workspace-wide candidate is safe when dependency metadata
             # is absent (common in small Gradle builds and federated snapshots).
             selected = scoped or (candidates if len(candidates) == 1 else [])
-            for identity, module, item in selected:
+            for identity, candidate_module, item in selected:
                 mongo_persistence_classes.append({
                     "id": f"{service}:{identity}:{item.qualified_name}",
                     "service": service,
@@ -880,7 +880,9 @@ def render_graph_html(
                     "qualified_name": item.qualified_name,
                     "source": item.path,
                     "line": item.line,
-                    "vscode_uri": _vscode_file_uri(module.path / item.path, vscode_wsl_distro),
+                    "vscode_uri": _vscode_file_uri(
+                        candidate_module.path / item.path, vscode_wsl_distro
+                    ),
                     "fields": [
                         {"name": field.name, "type": field.type} for field in item.fields
                     ],
@@ -3919,7 +3921,7 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
         })), relationsGroup);
         if (!persistenceClasses.length) {
           appendList("Classes Java de persistance", [
-            "Aucune classe @Document associée dans l’index. Relancez systemlens index après la mise à jour.",
+            "Aucune classe Java associée dans l’index. Relancez systemlens index après la mise à jour.",
           ], relationsGroup);
         }
         discardEmptyDetailsGroup(relationsGroup);

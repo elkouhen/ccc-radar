@@ -60,20 +60,3 @@ Until explicitly reprioritized by the user, do not propose, implement, or
 block work on the generated HTML export's CDN dependencies, ARIA semantics, or
 keyboard navigation. These concerns are intentionally deferred and must not
 expand the scope of an otherwise requested UX or graph-rendering change.
-
-## Hugging Face model downloads
-
-When a model must be downloaded with `hf`, **disable `SSL_CERT_FILE` first** in
-the current shell, otherwise environments with proxy/intercepted TLS often fail
-with `CERTIFICATE_VERIFY_FAILED`.
-
-Reference command for the repository's default model:
-
-```bash
-env -u SSL_CERT_FILE uvx --from huggingface_hub hf download \
-  jinaai/jina-code-embeddings-1.5b \
-  --local-dir ~/models/jina-code-embeddings-1.5b
-```
-
-The local path expected by default on the `systemlens` side is
-`~/models/jina-code-embeddings-1.5b`.

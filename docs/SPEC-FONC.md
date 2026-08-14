@@ -128,10 +128,12 @@ consumed and published API and Kafka resources, plus MongoDB collections. Each
 Kafka topic lists its applicable DTOs. A collapsed `Sources` section lists the
 indexed OpenAPI and Kafka files that provide the evidence, avoiding repetition
 in every topic.
-MongoDB collection details list the indexed Java persistence classes declared
-with `@Document`, including their qualified name, source location, and declared
-fields. The Resources view provides the same inventory with filtering by class,
-package, collection, or service and opens a dedicated inspector.
+MongoDB collection details list indexed Java persistence classes resolved from
+`@Document`, Mongo repository entity generics, or unambiguous `Type.class`
+arguments passed to `MongoTemplate`. They include their qualified name, source
+location, and declared fields. The Resources view provides the same inventory
+with filtering by class, package, collection, or service and opens a dedicated
+inspector.
 Persistence classes declared in a dependent build module are attached to the
 owning service collection through the indexed module-dependency graph. When
 dependency metadata is unavailable, a workspace-wide class is used only if it

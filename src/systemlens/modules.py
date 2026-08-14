@@ -81,6 +81,15 @@ class MongoPersistenceClass:
 
 
 @dataclass(frozen=True)
+class _JavaPersistenceCandidate:
+    name: str
+    qualified_name: str
+    path: str
+    line: int
+    fields: tuple[MongoField, ...]
+
+
+@dataclass(frozen=True)
 class KafkaMethod:
     role: str  # send | receive
     mechanism: str
@@ -283,6 +292,19 @@ def _mongo_collection_literal(invocation, source: bytes) -> str | None:
     return java_parser.string_value(arguments[-1], source)
 
 
+def _mongo_entity_class_literal(invocation, source: bytes) -> str | None:
+    """Return the Java type used as an unambiguous ``Type.class`` argument."""
+    matches = {
+        match.group(1).rsplit(".", 1)[-1]
+        for argument in java_parser.argument_nodes(invocation)
+        for match in re.finditer(
+            r"\b((?:[A-Za-z_]\w*\.)*[A-Za-z_]\w*)\s*\.\s*class\b",
+            _node_text(source, argument),
+        )
+    }
+    return next(iter(matches)) if len(matches) == 1 else None
+
+
 def _invocation_receiver_and_operation(invocation, source: bytes) -> tuple[str, str] | None:
     """Extract a direct Java call receiver and its operation from the AST."""
     receiver, operation, _arguments = java_parser.invocation_parts(invocation, source)
@@ -430,6 +452,7 @@ def _extract_java_architecture(
     collections: set[str] = set()
     entity_collections: dict[str, str] = {}
     persistence_classes: set[MongoPersistenceClass] = set()
+    persistence_candidates: dict[str, list[_JavaPersistenceCandidate]] = {}
     repository_entities: dict[str, str] = {}
     for path in java_files:
         rel = _module_relative(module_dir, path)
@@ -448,10 +471,55 @@ def _extract_java_architecture(
         root_node = parser.parse(source).root_node
         if root_node.has_error:
             continue
+        package = ""
+        for child in root_node.named_children:
+            if child.type == "package_declaration":
+                package = (
+                    _node_text(source, child).strip().rstrip(";")
+                    .removeprefix("package").strip()
+                )
+                break
         for declaration in java_parser.type_declarations(root_node):
             declaration_name = java_parser.declaration_name(declaration, source)
             if declaration_name is None:
                 continue
+            fields: list[MongoField] = []
+            if declaration.type == "record_declaration":
+                parameters = java_parser.child_by_type(declaration, "formal_parameters")
+                for parameter in parameters.named_children if parameters is not None else ():
+                    if parameter.type != "formal_parameter":
+                        continue
+                    type_node = parameter.child_by_field_name("type")
+                    name_node = parameter.child_by_field_name("name")
+                    if type_node is not None and name_node is not None:
+                        fields.append(MongoField(
+                            _node_text(source, name_node),
+                            _node_text(source, type_node).strip(),
+                        ))
+            for field_node in _walk(declaration):
+                if field_node.type != "field_declaration" or java_parser.enclosing(
+                    field_node, "class_declaration", "record_declaration", "enum_declaration"
+                ) != declaration:
+                    continue
+                type_node = field_node.child_by_field_name("type")
+                if type_node is None:
+                    continue
+                for declarator in field_node.children:
+                    if declarator.type == "variable_declarator":
+                        name_node = declarator.child_by_field_name("name")
+                        if name_node is not None:
+                            fields.append(MongoField(
+                                _node_text(source, name_node),
+                                _node_text(source, type_node).strip(),
+                            ))
+            candidate = _JavaPersistenceCandidate(
+                name=declaration_name,
+                qualified_name=f"{package}.{declaration_name}" if package else declaration_name,
+                path=rel,
+                line=declaration.start_point.row + 1,
+                fields=tuple(fields),
+            )
+            persistence_candidates.setdefault(declaration_name, []).append(candidate)
             document_annotation = next(
                 (
                     annotation
@@ -471,55 +539,27 @@ def _extract_java_architecture(
                 if collection:
                     collections.add(collection)
                     entity_collections[declaration_name] = collection
-                    package = ""
-                    for child in root_node.named_children:
-                        if child.type == "package_declaration":
-                            package = (
-                                _node_text(source, child).strip().rstrip(";")
-                                .removeprefix("package").strip()
-                            )
-                            break
-                    fields: list[MongoField] = []
-                    if declaration.type == "record_declaration":
-                        parameters = java_parser.child_by_type(declaration, "formal_parameters")
-                        for parameter in parameters.named_children if parameters is not None else ():
-                            if parameter.type != "formal_parameter":
-                                continue
-                            type_node = parameter.child_by_field_name("type")
-                            name_node = parameter.child_by_field_name("name")
-                            if type_node is not None and name_node is not None:
-                                fields.append(MongoField(
-                                    _node_text(source, name_node),
-                                    _node_text(source, type_node).strip(),
-                                ))
-                    for field_node in _walk(declaration):
-                        if field_node.type != "field_declaration" or java_parser.enclosing(
-                            field_node, "class_declaration", "record_declaration", "enum_declaration"
-                        ) != declaration:
-                            continue
-                        type_node = field_node.child_by_field_name("type")
-                        if type_node is None:
-                            continue
-                        for declarator in field_node.children:
-                            if declarator.type == "variable_declarator":
-                                name_node = declarator.child_by_field_name("name")
-                                if name_node is not None:
-                                    fields.append(MongoField(
-                                        _node_text(source, name_node),
-                                        _node_text(source, type_node).strip(),
-                                    ))
                     persistence_classes.add(MongoPersistenceClass(
                         collection=collection,
-                        name=declaration_name,
-                        qualified_name=f"{package}.{declaration_name}" if package else declaration_name,
-                        path=rel,
-                        line=declaration.start_point.row + 1,
-                        fields=tuple(fields),
+                        **candidate.__dict__,
                     ))
             if declaration.type == "interface_declaration":
                 entity = _repository_entity(declaration, source)
                 if entity is not None:
                     repository_entities[declaration_name] = entity
+
+    for entity in sorted(set(repository_entities.values())):
+        candidates = persistence_candidates.get(entity, [])
+        if len(candidates) != 1:
+            continue
+        collection = entity_collections.setdefault(
+            entity, entity[:1].lower() + entity[1:]
+        )
+        collections.add(collection)
+        persistence_classes.add(MongoPersistenceClass(
+            collection=collection,
+            **candidates[0].__dict__,
+        ))
 
     methods: set[MongoMethod] = set()
     kafka_methods = next(
@@ -621,13 +661,24 @@ def _extract_java_architecture(
             if (is_template and operation in _MONGO_TEMPLATE_OPERATIONS) or (
                 is_repository and operation in _REPOSITORY_OPERATIONS
             ):
+                entity = _mongo_entity_class_literal(node, source) if is_template else None
                 collection = (
                     repository_receivers.get(receiver)
                     if is_repository
                     else _mongo_collection_literal(node, source)
                 )
+                candidates = persistence_candidates.get(entity or "", [])
+                if collection is None and entity is not None:
+                    collection = entity_collections.get(entity)
+                    if collection is None and len(candidates) == 1:
+                        collection = entity[:1].lower() + entity[1:]
                 if collection:
                     collections.add(collection)
+                    if len(candidates) == 1:
+                        persistence_classes.add(MongoPersistenceClass(
+                            collection=collection,
+                            **candidates[0].__dict__,
+                        ))
                 methods.add(MongoMethod(
                     operation=operation,
                     receiver=receiver,

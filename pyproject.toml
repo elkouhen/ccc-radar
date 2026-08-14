@@ -1,15 +1,13 @@
 [project]
 name = "systemlens"
 version = "0.1.0"
-description = "Indexe findings, code et signaux d'architecture interrogeables par agent"
+description = "Indexe les contrats et signaux d'architecture interrogeables par agent"
 requires-python = ">=3.10"
 license = "Apache-2.0"
 dependencies = [
     "typer>=0.12",
     "pyyaml>=6.0",
-    "numpy>=1.26",
     "mcp>=1.0",
-    "sqlite-vec>=0.1.9",
     "tree-sitter>=0.24,<0.25",
     "tree-sitter-java>=0.23",
 ]

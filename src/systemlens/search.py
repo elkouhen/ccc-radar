@@ -104,7 +104,6 @@ def _keyword_hits(candidates: list[Finding], query: str) -> list[SearchHit]:
 
 def search_findings(
     store: Store,
-    embedder: object,
     query: str | None,
     severity: str | None = None,
     rule: str | None = None,
@@ -112,12 +111,7 @@ def search_findings(
     limit: int = 5,
     offset: int = 0,
 ) -> list[SearchHit]:
-    """Precision-first lexical findings search.
-
-    `embedder` is retained in the public signature for compatibility with the
-    CLI/MCP callers, but findings search no longer consults vector embeddings.
-    """
-    _ = embedder
+    """Precision-first lexical findings search."""
     if severity is not None and severity not in VALID_SEVERITIES:
         raise SearchError(
             f"Sévérité invalide : {severity!r}. Valeurs autorisées : {VALID_SEVERITIES}."

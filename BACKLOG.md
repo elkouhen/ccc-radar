@@ -26,7 +26,7 @@ risk rather than estimated implementation effort.
 | SL-005 | P1 | Done | Introduce collision-safe module and service identities | SL-003 |
 | SL-006 | P2 | Proposed | Restore a reliable browser acceptance gate | — |
 | SL-007 | P2 | Proposed | Add a portable HTML export without absolute local paths | — |
-| SL-008 | P2 | Proposed | Isolate and retire the legacy findings/vector runtime | — |
+| SL-008 | P2 | Done | Retire the legacy vector runtime | — |
 
 ## P0 — Index correctness
 
@@ -303,23 +303,14 @@ developer-oriented mode if the trade-off is documented.
 - Tests inspect the complete embedded JSON payload and rendered links for path
   disclosure.
 
-### SL-008 — Isolate and retire the legacy findings/vector runtime
+### SL-008 — Retire the legacy vector runtime
 
-**Problem**
+**Resolution**
 
-Security findings and semantic embeddings are outside the delivered product
-scope, but every store open still loads `sqlite-vec`, and the core package still
-requires NumPy and exposes legacy findings, vector tables, search code, and
-metadata. This adds native installation risk and obscures the architecture
-domain boundary.
-
-**Implementation direction**
-
-Inventory the compatibility obligations first. Move any necessary legacy
-database migration into an isolated compatibility layer, then remove vector
-extension loading and unused search/finding APIs from the normal architecture
-path. Update stale product metadata and historical implementation summaries as
-part of the same cleanup.
+The unused vector runtime, its native extension loading, KNN store APIs and
+NumPy/sqlite-vec dependencies were removed. Findings search remains a purely
+lexical compatibility path. Existing indexes may retain unreachable legacy
+vector tables; normal reads no longer load or access their SQLite extension.
 
 **Likely files**
 
@@ -333,11 +324,11 @@ part of the same cleanup.
 
 **Acceptance criteria**
 
-- A fresh architecture index can be created and queried without NumPy or
-  `sqlite-vec` in the normal runtime dependency set.
+- A fresh architecture index can be created and queried without native vector
+  dependencies in the normal runtime dependency set.
 - The supported behavior for an existing legacy database is documented and
   tested: migrate, reject clearly, or provide an explicit conversion command.
-- No public CLI or MCP contract references retired findings or embeddings.
+- No public CLI or MCP contract references the retired vector behavior.
 - Package metadata describes the current SystemLens architecture product.
 - Unit tests, static checks, package build, and a fresh-install smoke test pass.
 

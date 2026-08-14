@@ -7,7 +7,6 @@ from pathlib import Path
 import yaml
 
 from systemlens.config import Config
-from systemlens.embedder import Embedder
 from systemlens.indexer import index_repo
 from systemlens.search import search_findings
 from systemlens.store import Store
@@ -25,7 +24,6 @@ def load_queries() -> list[dict]:
 
 def main() -> int:
     config = Config(rules=["rules/rules.yml"])
-    embedder = Embedder(config.embedding_model)
     queries = load_queries()
 
     rows = []
@@ -35,10 +33,10 @@ def main() -> int:
         shutil.copytree(FIXTURE_REPO, repo_root)
 
         with Store(repo_root) as store:
-            index_repo(repo_root, config, store, embedder, full=True)
+            index_repo(repo_root, config, store, full=True)
 
             for q in queries:
-                hits = search_findings(store, embedder, q["query"], limit=TOP_K)
+                hits = search_findings(store, q["query"], limit=TOP_K)
                 rank = next(
                     (
                         i

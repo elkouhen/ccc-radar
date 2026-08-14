@@ -372,14 +372,21 @@ interface OrderRepository extends MongoRepository<Order, String> {}
         indexed = store.all_modules()[0]
 
     assert indexed.mongo_collections == ("audit", "orders", "orders_archive")
-    assert len(indexed.mongo_persistence_classes) == 1
-    persistence_class = indexed.mongo_persistence_classes[0]
+    assert len(indexed.mongo_persistence_classes) == 2
+    persistence_class = next(
+        item for item in indexed.mongo_persistence_classes if item.collection == "orders"
+    )
     assert (persistence_class.collection, persistence_class.qualified_name, persistence_class.path) == (
         "orders", "com.example.orders.Order", "src/main/java/OrderStore.java"
     )
     assert [(field.type, field.name) for field in persistence_class.fields] == [
         ("String", "id"), ("int", "quantity")
     ]
+    assert [
+        item.qualified_name
+        for item in indexed.mongo_persistence_classes
+        if item.collection == "orders_archive"
+    ] == ["com.example.orders.Order"]
     assert [(item.operation, item.receiver, item.collection) for item in indexed.mongo_methods] == [
         ("save", "mongoTemplate", None),
         ("getCollection", "mongoTemplate", "audit"),
@@ -416,6 +423,41 @@ def test_modules_resolve_injected_repository_collection_and_this_receiver(tmp_pa
 
     assert [(item.operation, item.receiver, item.collection, item.line) for item in methods] == [
         ("findById", "orderRepository", "orders", 8),
+    ]
+
+
+def test_modules_infer_mongo_classes_without_document_annotation(tmp_path: Path) -> None:
+    module = tmp_path / "customers"
+    source = module / "src" / "main" / "java" / "CustomerStore.java"
+    source.parent.mkdir(parents=True)
+    _write_pom(module / "pom.xml", "customers-api", "1.0.0")
+    source.write_text(
+        "package com.example.customers;\n"
+        "import org.springframework.data.mongodb.core.MongoTemplate;\n"
+        "import org.springframework.data.mongodb.repository.MongoRepository;\n"
+        "class Customer { String id; }\n"
+        "record CustomerArchive(String id) {}\n"
+        "interface CustomerRepository extends MongoRepository<Customer, String> {}\n"
+        "class CustomerStore {\n"
+        "  MongoTemplate mongoTemplate; CustomerRepository customerRepository;\n"
+        "  void load() { customerRepository.findById(\"id\"); }\n"
+        "  void archive() { mongoTemplate.find(null, CustomerArchive.class, \"customer_archive\"); }\n"
+        "}\n"
+    )
+
+    indexed = discover_modules(tmp_path)[0]
+
+    assert indexed.mongo_collections == ("customer", "customer_archive")
+    assert [
+        (item.collection, item.qualified_name)
+        for item in indexed.mongo_persistence_classes
+    ] == [
+        ("customer", "com.example.customers.Customer"),
+        ("customer_archive", "com.example.customers.CustomerArchive"),
+    ]
+    assert [(item.operation, item.collection) for item in indexed.mongo_methods] == [
+        ("findById", "customer"),
+        ("find", "customer_archive"),
     ]
 
 
