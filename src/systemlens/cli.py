@@ -1088,6 +1088,7 @@ def export_microservices_cmd(
         typer.echo(json.dumps(graph_data.result))
         return
     if html is not None:
+        effective_vscode_wsl_distro = vscode_wsl_distro or os.environ.get("WSL_DISTRO_NAME")
         html.write_text(
             render_graph_html(
                 graph_data.services_by_name,
@@ -1099,7 +1100,7 @@ def export_microservices_cmd(
                 graph_data.module_dependencies,
                 graph_data.source_roots,
                 None,
-                vscode_wsl_distro,
+                effective_vscode_wsl_distro,
                 request_reply_strategy1=graph_data.strategy1,
                 diagnostics=graph_data.diagnostics,
             ),

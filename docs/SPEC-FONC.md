@@ -130,6 +130,9 @@ visible action that opens the module root directory in VS Code. Kafka topics
 list their applicable DTOs. A collapsed `Sources` section lists the indexed
 OpenAPI and Kafka files that provide the evidence, avoiding repetition in every
 topic.
+When the export runs in WSL, VS Code links automatically use the current
+`WSL_DISTRO_NAME` and therefore the `vscode://file//wsl.localhost/<distro>`
+prefix. `--vscode-wsl-distro` overrides that detected distribution.
 MongoDB collection details list indexed Java persistence classes resolved from
 `@Document`, Mongo repository entity generics, or unambiguous `Type.class`
 arguments passed to `MongoTemplate`. They include their qualified name, source

@@ -1,10 +1,12 @@
 import json
 import re
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from typer.testing import CliRunner
 
+from systemlens import cli
 from systemlens.cli import app
 from systemlens.config import Config
 from systemlens.indexer import index_repo
@@ -14,6 +16,30 @@ from systemlens.store import Store
 from systemlens.workspace import discover_workspace_services, load_federation
 
 runner = CliRunner()
+
+
+def test_microservice_html_export_uses_the_current_wsl_distribution(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    captured: dict[str, object] = {}
+    graph_data = SimpleNamespace(
+        services_by_name={}, edges=[], collections_by_service={}, modules_by_service={},
+        warnings=[], build_modules=[], module_dependencies=[], source_roots=[],
+        strategy1=False, diagnostics=[], result={"note": None},
+    )
+    monkeypatch.setenv("WSL_DISTRO_NAME", "Ubuntu-24.04")
+    monkeypatch.setattr(cli, "_load_microservice_graph", lambda *_args, **_kwargs: graph_data)
+    monkeypatch.setattr(
+        cli, "render_graph_html",
+        lambda *args, **_kwargs: captured.update({"args": args}) or "<html></html>",
+    )
+
+    cli.export_microservices_cmd(
+        workspace=None, html=tmp_path / "architecture.html", c4=None,
+        vscode_wsl_distro=None, json_output=False,
+    )
+
+    assert captured["args"][9] == "Ubuntu-24.04"
 
 
 def _write_pom(
