@@ -132,6 +132,11 @@ MongoDB collection details list the indexed Java persistence classes declared
 with `@Document`, including their qualified name, source location, and declared
 fields. The Resources view provides the same inventory with filtering by class,
 package, collection, or service and opens a dedicated inspector.
+Persistence classes declared in a dependent build module are attached to the
+owning service collection through the indexed module-dependency graph. When
+dependency metadata is unavailable, a workspace-wide class is used only if it
+is the unique candidate for that collection name; ambiguous candidates remain
+unassociated rather than being guessed.
 The topic detail lists resolved Kafka DTOs once. It lists message types only
 when no matching DTO has been resolved, avoiding duplicate published and
 consumed type lists when they describe the same contract.

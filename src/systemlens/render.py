@@ -19,7 +19,12 @@ from systemlens.graph import (
 )
 from systemlens import java_parser
 from systemlens.models import ExtractionDiagnostic, Finding, MessageEndpoint
-from systemlens.modules import DiscoveredModule, ModuleDependency
+from systemlens.modules import (
+    DiscoveredModule,
+    ModuleDependency,
+    MongoPersistenceClass,
+    module_identity,
+)
 from systemlens.search import SearchHit, Summary, get_context
 from systemlens.render_snapshot import kafka_dto_views
 from systemlens.workspace import DiscoveredService, FederationResult
@@ -828,25 +833,58 @@ def render_graph_html(
                         endpoint.message_type
                     )
     module_details = modules_by_service or {}
-    mongo_persistence_classes = [
-        {
-            "id": f"{service}:{item.qualified_name}",
-            "service": service,
-            "collection": item.collection,
-            "name": item.name,
-            "qualified_name": item.qualified_name,
-            "source": item.path,
-            "line": item.line,
-            "vscode_uri": _vscode_file_uri(module.path / item.path, vscode_wsl_distro),
-            "fields": [{"name": field.name, "type": field.type} for field in item.fields],
-        }
-        for service, module in sorted(module_details.items())
-        for item in module.mongo_persistence_classes
-    ]
     all_modules = list({
         module.path.resolve(): module
         for module in [*(build_modules or []), *module_details.values()]
     }.values())
+    module_by_identity = {module_identity(module): module for module in all_modules}
+    dependencies_by_source: dict[str, set[str]] = {}
+    for dependency in module_dependencies or []:
+        dependencies_by_source.setdefault(dependency.source, set()).add(dependency.target)
+
+    def reachable_modules(service: str) -> set[str]:
+        reachable = {service}
+        pending = [service]
+        while pending:
+            source = pending.pop()
+            for target in dependencies_by_source.get(source, set()):
+                if target not in reachable:
+                    reachable.add(target)
+                    pending.append(target)
+        return reachable
+
+    persistence_candidates_by_collection: dict[
+        str, list[tuple[str, DiscoveredModule, MongoPersistenceClass]]
+    ] = {}
+    for identity, module in module_by_identity.items():
+        for item in module.mongo_persistence_classes:
+            persistence_candidates_by_collection.setdefault(item.collection, []).append(
+                (identity, module, item)
+            )
+    mongo_persistence_classes: list[dict[str, object]] = []
+    for service, collections in sorted((collections_by_service or {}).items()):
+        reachable = reachable_modules(service)
+        for collection in sorted(set(collections)):
+            candidates = persistence_candidates_by_collection.get(collection, [])
+            scoped = [candidate for candidate in candidates if candidate[0] in reachable]
+            # A unique workspace-wide candidate is safe when dependency metadata
+            # is absent (common in small Gradle builds and federated snapshots).
+            selected = scoped or (candidates if len(candidates) == 1 else [])
+            for identity, module, item in selected:
+                mongo_persistence_classes.append({
+                    "id": f"{service}:{identity}:{item.qualified_name}",
+                    "service": service,
+                    "module": identity,
+                    "collection": item.collection,
+                    "name": item.name,
+                    "qualified_name": item.qualified_name,
+                    "source": item.path,
+                    "line": item.line,
+                    "vscode_uri": _vscode_file_uri(module.path / item.path, vscode_wsl_distro),
+                    "fields": [
+                        {"name": field.name, "type": field.type} for field in item.fields
+                    ],
+                })
     nodes: list[dict[str, object]] = []
     for name in ordered_services:
         endpoints = endpoints_by_service.get(name, [])
@@ -2955,7 +2993,7 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
         : "Aucune classe de persistance MongoDB détectée.";
       visiblePersistenceClasses.forEach(item => mongoClassReferencesList.append(referenceItem(
         item.qualified_name,
-        `${item.collection} · ${item.service} · ${item.fields?.length || 0} champ(s)`,
+        `${item.collection} · ${item.service} / ${item.module} · ${item.fields?.length || 0} champ(s)`,
         "Inspecter",
         () => openMongoPersistenceInspector(item.id),
       )));
@@ -3245,6 +3283,7 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
       appendDtoInspectorSection("Champs déclarés", (item.fields || []).map(field => `${field.type} ${field.name}`), "dto-field");
       appendDtoInspectorSection("Collection", [item.collection]);
       appendDtoInspectorSection("Microservice", [item.service]);
+      appendDtoInspectorSection("Module de persistance", [item.module]);
     }
     function openNestedDtoInspector(dtoName, parentDtoName) {
       dtoNavigation.push(parentDtoName);
@@ -3869,14 +3908,20 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
       }
       if (node.kind === "mongodb_collection") {
         const relationsGroup = createDetailsGroup("Relations");
+        const persistenceClasses = node.persistence_classes || [];
         appendList("Stockee par", [node.owner], relationsGroup);
         appendRelationList("Services utilisant cette collection", edges.filter(link => link.kind === "mongodb" && link.target === id), id,
           link => nodeDataById.get(link.source).name, relationsGroup);
-        appendActionList("Classes Java de persistance", (node.persistence_classes || []).map(item => ({
+        appendActionList("Classes Java de persistance", persistenceClasses.map(item => ({
           label: item.qualified_name,
           title: "Afficher les champs et la source de cette classe",
           action: () => openMongoPersistenceInspector(item.id),
         })), relationsGroup);
+        if (!persistenceClasses.length) {
+          appendList("Classes Java de persistance", [
+            "Aucune classe @Document associée dans l’index. Relancez systemlens index après la mise à jour.",
+          ], relationsGroup);
+        }
         discardEmptyDetailsGroup(relationsGroup);
       }
     }

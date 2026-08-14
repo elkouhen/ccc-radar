@@ -5,7 +5,12 @@ from pathlib import Path
 
 from systemlens.models import MessageEndpoint, compute_endpoint_id
 from systemlens.graph import GraphEdge
-from systemlens.modules import DiscoveredModule, MongoField, MongoPersistenceClass
+from systemlens.modules import (
+    DiscoveredModule,
+    ModuleDependency,
+    MongoField,
+    MongoPersistenceClass,
+)
 from systemlens.render import render_graph_html
 
 
@@ -277,6 +282,46 @@ def test_graph_html_colours_topics_and_mongodb_collections_by_connectivity() -> 
     assert "Kafka topics use the connectivity colour as their fill" in document
     assert "gl_FragColor = vec4(v_color.rgb, v_color.a * alpha);" in document
     assert "kafka_topic: createNodeProgram(KAFKA_TOPIC_FRAGMENT_SHADER)" in document
+
+
+def test_graph_html_resolves_mongo_class_from_dependent_persistence_module() -> None:
+    application = DiscoveredModule(
+        name="orders-app", path=Path("/workspace/orders-app"), build_system="maven",
+        version=None, kind="application", starts_application=True,
+        configuration_example="", mongo_collections=("orders",),
+    )
+    model = DiscoveredModule(
+        name="orders-model", path=Path("/workspace/orders-model"), build_system="maven",
+        version=None, kind="library", starts_application=False,
+        configuration_example="", mongo_persistence_classes=(MongoPersistenceClass(
+            collection="orders", name="Order", qualified_name="com.example.orders.Order",
+            path="src/main/java/com/example/orders/Order.java", line=5,
+        ),),
+    )
+    unrelated = DiscoveredModule(
+        name="legacy-model", path=Path("/workspace/legacy-model"), build_system="maven",
+        version=None, kind="library", starts_application=False,
+        configuration_example="", mongo_persistence_classes=(MongoPersistenceClass(
+            collection="orders", name="LegacyOrder", qualified_name="legacy.LegacyOrder",
+            path="src/main/java/legacy/LegacyOrder.java", line=3,
+        ),),
+    )
+
+    graph_data = _html_graph_data(render_graph_html(
+        {"orders-app": []}, [],
+        collections_by_service={"orders-app": ["orders"]},
+        modules_by_service={"orders-app": application},
+        build_modules=[application, model, unrelated],
+        module_dependencies=[ModuleDependency("orders-app", "orders-model")],
+    ))
+
+    persistence_classes = graph_data["mongo_persistence_classes"]
+    assert [item["qualified_name"] for item in persistence_classes] == [
+        "com.example.orders.Order"
+    ]
+    assert persistence_classes[0]["module"] == "orders-model"
+    collection = next(node for node in graph_data["nodes"] if node["kind"] == "mongodb_collection")
+    assert collection["persistence_classes"] == persistence_classes
 
 
 def test_graph_html_microservice_complexity_counts_distinct_direct_clients() -> None:
