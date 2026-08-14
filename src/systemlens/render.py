@@ -4319,14 +4319,10 @@ def _endpoint_vscode_uri(
     for root in dict.fromkeys(roots):
         candidate = (root / endpoint.path).resolve()
         if candidate.is_file():
-            if wsl_distro:
-                return f"vscode://file//wsl.localhost/{quote(wsl_distro, safe='')}{quote(candidate.as_posix(), safe='/')}:{endpoint.start_line}"
-            return f"vscode://file/{quote(candidate.as_posix(), safe='/')}:{endpoint.start_line}"
+            return _vscode_file_uri(candidate, wsl_distro, endpoint.start_line)
     root = roots[0] if roots else Path.cwd()
     candidate = (root / endpoint.path).resolve()
-    if wsl_distro:
-        return f"vscode://file//wsl.localhost/{quote(wsl_distro, safe='')}{quote(candidate.as_posix(), safe='/')}:{endpoint.start_line}"
-    return f"vscode://file/{quote(candidate.as_posix(), safe='/')}:{endpoint.start_line}"
+    return _vscode_file_uri(candidate, wsl_distro, endpoint.start_line)
 
 
 def _vscode_uri(finding: Finding, module: DiscoveredModule | None, source_roots: list[Path] | None, wsl_distro: str | None = None) -> str:
@@ -4335,21 +4331,21 @@ def _vscode_uri(finding: Finding, module: DiscoveredModule | None, source_roots:
     for root in candidates:
         candidate = (root / finding.path).resolve()
         if candidate.is_file():
-            if wsl_distro:
-                return f"vscode://file//wsl.localhost/{quote(wsl_distro, safe='')}{quote(candidate.as_posix(), safe='/')}:{finding.start_line}"
-            return f"vscode://file/{quote(candidate.as_posix(), safe='/')}:{finding.start_line}"
+            return _vscode_file_uri(candidate, wsl_distro, finding.start_line)
     root = candidates[0] if candidates else Path.cwd()
     candidate = (root / finding.path).resolve()
-    if wsl_distro:
-        return f"vscode://file//wsl.localhost/{quote(wsl_distro, safe='')}{quote(candidate.as_posix(), safe='/')}:{finding.start_line}"
-    return f"vscode://file/{quote(candidate.as_posix(), safe='/')}:{finding.start_line}"
+    return _vscode_file_uri(candidate, wsl_distro, finding.start_line)
 
 
-def _vscode_file_uri(path: Path, wsl_distro: str | None = None) -> str:
+def _vscode_file_uri(
+    path: Path, wsl_distro: str | None = None, line: int | None = None
+) -> str:
+    """Build a VS Code URI for a module directory or a Java source location."""
     resolved = path.resolve()
+    location = f":{line}" if line is not None else ""
     if wsl_distro:
-        return f"vscode://file//wsl.localhost/{quote(wsl_distro, safe='')}{quote(resolved.as_posix(), safe='/')}"
-    return f"vscode://file/{quote(resolved.as_posix(), safe='/')}"
+        return f"vscode://file//wsl.localhost/{quote(wsl_distro, safe='')}{quote(resolved.as_posix(), safe='/')}{location}"
+    return f"vscode://file/{quote(resolved.as_posix(), safe='/')}{location}"
 
 
 def _openapi_contract_evidence_path(endpoint: MessageEndpoint) -> str:

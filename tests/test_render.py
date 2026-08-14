@@ -295,6 +295,32 @@ def test_graph_html_colours_topics_and_mongodb_collections_by_connectivity() -> 
     assert "kafka_topic: createNodeProgram(KAFKA_TOPIC_FRAGMENT_SHADER)" in document
 
 
+def test_graph_html_uses_the_java_wsl_prefix_for_module_directories(tmp_path: Path) -> None:
+    module_root = tmp_path / "orders"
+    module_root.mkdir()
+    source = module_root / "Publisher.java"
+    source.write_text("class Publisher {}", encoding="utf-8")
+    module = DiscoveredModule(
+        name="orders", path=module_root, build_system="gradle", version=None,
+        kind="application", starts_application=True, configuration_example="",
+    )
+    endpoint = _kafka_endpoint("produce", "OrderCreated", "Publisher.java")
+    document = render_graph_html(
+        {"orders": [endpoint]}, [], modules_by_service={"orders": module},
+        build_modules=[module], vscode_wsl_distro="Ubuntu",
+    )
+
+    service = next(
+        node for node in _html_graph_data(document)["nodes"]
+        if node["id"] == "microservice:orders"
+    )
+    wsl_prefix = "vscode://file//wsl.localhost/Ubuntu"
+    assert service["vscode_uri"] == f"{wsl_prefix}{module_root.as_posix()}"
+    assert service["kafka_endpoints"][0]["vscode_uri"] == (
+        f"{wsl_prefix}{source.as_posix()}:1"
+    )
+
+
 def test_graph_html_resolves_mongo_class_from_dependent_persistence_module() -> None:
     application = DiscoveredModule(
         name="orders-app", path=Path("/workspace/orders-app"), build_system="maven",
