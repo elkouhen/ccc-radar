@@ -82,6 +82,11 @@ The HTML microservice export provides an inspector for each statically typed
 Kafka message. It shows the indexed payload-type identity, message topic, and
 producer and consumer services. DTO fields, enum values, and recursive project
 type navigation are not part of the current indexed contract.
+The export uses a responsive workspace layout with a four-tab navigation rail,
+compact architecture counters, task-oriented starting actions, a floating
+context panel, and a full-size resource inspector. On narrow viewports the
+controls and context panel use separate bounded regions so the graph remains
+visible while either panel scrolls independently.
 Its initial view foregrounds task-oriented entry points (Kafka topic, service
 dependencies, service-to-service path and Kafka messages). Relation/resource
 filters, graph layouts, specialized reference views and build dependencies are

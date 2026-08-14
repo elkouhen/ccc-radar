@@ -137,6 +137,11 @@ enum PaymentStatus { AUTHORIZED, DECLINED }
     assert "Connectivité relative :" in document
     assert "Collections use the same visual grammar as microservices and" in document
     assert "legend-resource-mark collection" in document
+    assert 'class="brand-mark">SL</span>' in document
+    assert "grid-template-columns: repeat(4, minmax(0, 1fr))" in document
+    assert "--accent: #3156d3" in document
+    assert "backdrop-filter: blur(18px)" in document
+    assert "@media (max-width: 700px)" in document
 
 
 def test_graph_html_does_not_infer_dto_packages_from_live_sources(tmp_path: Path) -> None:

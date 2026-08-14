@@ -1783,12 +1783,191 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
     button.dto-field-type { border: 0; padding: 0; background: transparent; color: #1d4f91; text-align: left; text-decoration: underline; cursor: pointer; font: inherit; }
     .dto-field-name { color: #334155; font-weight: 700; overflow-wrap: anywhere; }
     .dto-tag { display: inline-flex; width: fit-content; padding: 4px 7px; border-radius: 999px; color: #315f9b; background: #dbeafe; font-size: 12px; }
+
+    /* SystemLens 2026 visual system: calm canvas, crisp tools, dense data. */
+    :root {
+      --ink: #17213a;
+      --muted: #64748b;
+      --line: rgba(148, 163, 184, .28);
+      --surface: rgba(255, 255, 255, .92);
+      --surface-solid: #fff;
+      --surface-soft: #f7f9fc;
+      --accent: #3156d3;
+      --accent-soft: #eef2ff;
+      --accent-line: #c7d2fe;
+      --radius-sm: 9px;
+      --radius-md: 14px;
+      --radius-lg: 20px;
+      color: var(--ink);
+      background: #eef2f8;
+      font-family: Inter, "SF Pro Text", ui-sans-serif, system-ui, sans-serif;
+    }
+    body { background: #eef2f8; }
+    #graph, #dependency-graph {
+      background:
+        radial-gradient(circle at 72% 18%, rgba(199, 210, 254, .34), transparent 28%),
+        radial-gradient(circle at 42% 82%, rgba(186, 230, 253, .24), transparent 30%),
+        linear-gradient(145deg, #f8faff 0%, #f1f5fb 52%, #eef2f8 100%);
+    }
+    .toolbar {
+      top: 18px;
+      left: 18px;
+      gap: 12px;
+      width: min(420px, calc(100vw - 36px));
+      padding: 14px;
+      border: 1px solid rgba(255, 255, 255, .8);
+      border-radius: var(--radius-lg);
+      background: var(--surface);
+      box-shadow: 0 20px 55px rgba(36, 50, 83, .14), 0 2px 8px rgba(36, 50, 83, .06);
+      backdrop-filter: blur(18px) saturate(1.15);
+      scrollbar-width: thin;
+    }
+    .toolbar-header { min-height: 40px; }
+    .brand { display: grid; grid-template-columns: 34px 1fr; column-gap: 9px; align-items: center; }
+    .brand-mark {
+      grid-row: 1 / 3;
+      display: grid;
+      place-items: center;
+      width: 34px;
+      height: 34px;
+      border-radius: 11px;
+      color: #fff;
+      background: linear-gradient(145deg, #405de6, #2742b4);
+      box-shadow: 0 7px 16px rgba(49, 86, 211, .28);
+      font-size: 15px;
+      font-weight: 850;
+    }
+    .brand strong { align-self: end; color: var(--ink); font-size: 14px; letter-spacing: -.01em; }
+    .brand-subtitle { align-self: start; color: var(--muted); font-size: 10px; font-weight: 600; }
+    .graph-actions { gap: 5px; }
+    .toolbar button { transition: border-color .16s ease, background .16s ease, color .16s ease, transform .16s ease, box-shadow .16s ease; }
+    .toolbar button:hover { transform: translateY(-1px); }
+    .toolbar-header .graph-actions button {
+      border-color: var(--line);
+      border-radius: var(--radius-sm);
+      color: #475569;
+      background: rgba(248, 250, 252, .9);
+    }
+    .toolbar-tabs {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 3px;
+      padding: 4px;
+      border: 1px solid rgba(226, 232, 240, .75);
+      border-radius: 12px;
+      background: #f1f4f9;
+    }
+    .toolbar-tab { height: 34px !important; border-radius: 9px !important; color: #64748b !important; }
+    .toolbar-tab.is-active {
+      color: var(--accent) !important;
+      box-shadow: 0 2px 7px rgba(30, 41, 59, .1), inset 0 0 0 1px rgba(255, 255, 255, .8);
+    }
+    .graph-summary {
+      gap: 5px;
+      margin: -2px 0 0;
+      padding: 0;
+      border: 0;
+      background: transparent;
+    }
+    .graph-summary-item {
+      min-height: 23px;
+      padding: 3px 8px;
+      border-color: var(--line);
+      color: #556277;
+      background: rgba(248, 250, 252, .9);
+      font-size: 10px;
+    }
+    .exploration-start {
+      gap: 8px;
+      padding: 13px;
+      border-color: rgba(199, 210, 254, .8);
+      border-radius: var(--radius-md);
+      background: linear-gradient(145deg, rgba(238, 242, 255, .9), rgba(248, 250, 255, .75));
+    }
+    .exploration-start h2 { color: #263fa5; font-size: 13px; letter-spacing: -.01em; }
+    .question-action {
+      min-height: 44px;
+      padding: 9px !important;
+      border-color: rgba(199, 210, 254, .9) !important;
+      border-radius: 10px !important;
+      color: #334bb5 !important;
+      box-shadow: 0 1px 2px rgba(30, 41, 59, .03);
+    }
+    .question-action:hover { border-color: #a5b4fc !important; background: #f4f6ff !important; }
+    .toolbar input:not([type="checkbox"]) {
+      height: 38px;
+      border-color: #cbd5e1;
+      border-radius: 10px;
+      box-shadow: inset 0 1px 2px rgba(15, 23, 42, .03);
+    }
+    .toolbar input:not([type="checkbox"]):focus {
+      border-color: #818cf8;
+      outline: 3px solid rgba(129, 140, 248, .16);
+    }
+    .filter-presets { padding-top: 9px; border-color: var(--line); }
+    .filter-preset { height: 29px !important; border-radius: 999px !important; }
+    .filter-preset.is-active {
+      color: #fff !important;
+      border-color: var(--accent) !important;
+      background: var(--accent) !important;
+      box-shadow: 0 5px 12px rgba(49, 86, 211, .2);
+    }
+    .advanced-controls, .advanced-tools, .resource-analyses { border-color: var(--line); }
+    .relation-filter { border-color: var(--line); background: var(--surface-soft); }
+    .reference-item, .indexing-issue, .service-kafka-item {
+      border-color: var(--line);
+      border-radius: 11px;
+      background: var(--surface-soft);
+    }
+    .reference-item { padding: 10px; }
+    .reference-action { border-radius: 8px !important; }
+    #details {
+      right: 18px;
+      bottom: 18px;
+      width: min(420px, calc(100vw - 36px));
+      border-color: rgba(255, 255, 255, .8);
+      border-radius: var(--radius-lg);
+      background: var(--surface);
+      box-shadow: 0 20px 55px rgba(36, 50, 83, .16), 0 2px 8px rgba(36, 50, 83, .06);
+      backdrop-filter: blur(18px) saturate(1.15);
+      scrollbar-width: thin;
+    }
+    .details-header { padding: 18px; background: linear-gradient(145deg, #fbfcff, #f2f5fb); }
+    .details-title { font-size: 20px; letter-spacing: -.025em; }
+    .details-group > summary { min-height: 43px; letter-spacing: .065em; }
+    .relation-link { border-color: var(--line); border-radius: var(--radius-sm); background: var(--surface-soft); }
+    .legend {
+      left: 18px;
+      bottom: 18px;
+      border-color: rgba(255, 255, 255, .8);
+      border-radius: 12px;
+      background: var(--surface);
+      box-shadow: 0 10px 30px rgba(36, 50, 83, .1);
+      backdrop-filter: blur(16px);
+    }
+    .inspector-modal { background: rgba(18, 28, 52, .58); backdrop-filter: blur(7px); }
+    .inspector-dialog { border: 0; border-radius: 22px; box-shadow: 0 28px 90px rgba(15, 23, 42, .38); }
+    .inspector-header { min-height: 58px; padding: 14px 20px; background: linear-gradient(145deg, #fbfcff, #f2f5fb); }
+    .inspector-title { font-size: 18px; letter-spacing: -.02em; }
+    .inspector-close { border-color: var(--line); border-radius: 10px; }
+    .inspector-body { padding: 22px; }
+    .dto-section { border-color: var(--line); border-radius: 13px; background: var(--surface-soft); }
+    @media (max-width: 700px) {
+      .toolbar { top: 10px; left: 10px; width: calc(100vw - 20px); max-height: calc(62vh - 14px); padding: 12px; border-radius: 16px; }
+      .toolbar-header { align-items: start; }
+      .brand-subtitle { display: none; }
+      .graph-actions .graph-action-label { padding: 0 6px; font-size: 10px; }
+      #details { right: 10px; bottom: 10px; width: calc(100vw - 20px); max-height: 34vh; border-radius: 16px; }
+      .legend { right: 10px; bottom: 10px; left: auto; }
+      .question-actions { grid-template-columns: 1fr; }
+      .inspector-modal { padding: 10px; }
+      .inspector-dialog { border-radius: 16px; }
+    }
   </style>
 </head>
 <body>
   <div class="toolbar">
     <div class="toolbar-header">
-      <strong>SystemLens</strong>
+      <div class="brand"><span class="brand-mark">SL</span><strong>SystemLens</strong><span class="brand-subtitle">Architecture workspace</span></div>
       <div class="graph-actions" aria-label="Navigation du graphe">
         <button id="zoom-out" type="button" aria-label="Dézoomer" title="Dézoomer">−</button>
         <button id="zoom-in" type="button" aria-label="Zoomer" title="Zoomer">+</button>
