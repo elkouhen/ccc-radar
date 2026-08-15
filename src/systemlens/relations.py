@@ -6,6 +6,7 @@ from typing import TypedDict
 from systemlens.models import ArchitectureRelation, MessageEndpoint, compute_architecture_relation_id
 from systemlens.graph import build_graph, group_endpoints_by_module
 from systemlens.modules import DiscoveredModule, ModuleDependency, module_identity
+from systemlens.scanner import _local_spring_application_names
 
 
 class _RelationEvidence(TypedDict):
@@ -181,7 +182,14 @@ def build_architecture_relations(
     # Inter-service links are materialized from the same conservative graph
     # resolver used by all delivery adapters.  They are snapshot facts, not a
     # renderer-specific route coincidence.
-    for edge in build_graph(group_endpoints_by_module(endpoints), strategy1=kafka_reply_strategy1):
+    service_aliases = {
+        module_identity(module): _local_spring_application_names(module.path, None)
+        for module in modules
+    }
+    for edge in build_graph(
+        group_endpoints_by_module(endpoints), strategy1=kafka_reply_strategy1,
+        service_aliases=service_aliases,
+    ):
         relation_name = "calls_service" if edge.kind == "rest" else "publishes_to"
         add(_relation(
             "microservice",

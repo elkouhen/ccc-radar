@@ -218,7 +218,8 @@ def _normalized_service_alias(value: str) -> str:
 
 
 def _services_matching_hint(
-    service_names: list[str], hint: str | None
+    service_names: list[str], hint: str | None,
+    service_aliases: dict[str, tuple[str, ...]] | None = None,
 ) -> list[str]:
     """Return the uniquely evidenced candidates for an explicit REST target.
 
@@ -229,15 +230,23 @@ def _services_matching_hint(
     if hint is None:
         return []
     normalized_hint = _normalized_service_alias(hint)
-    return [
+    matches = [
         service_name
         for service_name in service_names
         if _normalized_service_alias(service_name) == normalized_hint
     ]
+    matches.extend(
+        service_name
+        for service_name, aliases in (service_aliases or {}).items()
+        if service_name in service_names
+        if any(_normalized_service_alias(alias) == normalized_hint for alias in aliases)
+    )
+    return sorted(set(matches))
 
 
 def resolve_rest_target_service(
-    call: MessageEndpoint, service_names: list[str], *, strategy1: bool = False
+    call: MessageEndpoint, service_names: list[str], *, strategy1: bool = False,
+    service_aliases: dict[str, tuple[str, ...]] | None = None,
 ) -> RestTargetResolution:
     """Resolve an explicit REST target without using route similarity.
 
@@ -248,7 +257,7 @@ def resolve_rest_target_service(
     if external_service := external_microservice_name(call):
         return RestTargetResolution("external", service=external_service)
     hint = _rest_target_service_hint(call, strategy1=strategy1)
-    matches = _services_matching_hint(service_names, hint)
+    matches = _services_matching_hint(service_names, hint, service_aliases)
     if len(matches) == 1:
         return RestTargetResolution("resolved", hint=hint, service=matches[0])
     if len(matches) > 1:
@@ -287,7 +296,8 @@ def paths_match(call_topic: str, serve_topic: str) -> bool:
 
 
 def build_graph(
-    endpoints_by_service: dict[str, list[MessageEndpoint]], *, strategy1: bool = False
+    endpoints_by_service: dict[str, list[MessageEndpoint]], *, strategy1: bool = False,
+    service_aliases: dict[str, tuple[str, ...]] | None = None,
 ) -> list[GraphEdge]:
     """Construit les arêtes REST et Kafka entre services distincts.
 
@@ -331,7 +341,7 @@ def build_graph(
     service_names = sorted(endpoints_by_service)
     for call_service, call in calls:
         resolution = resolve_rest_target_service(
-            call, service_names, strategy1=strategy1
+            call, service_names, strategy1=strategy1, service_aliases=service_aliases
         )
         if resolution.status != "resolved" or resolution.service is None:
             continue
