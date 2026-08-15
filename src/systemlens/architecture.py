@@ -172,6 +172,7 @@ def module_summary(catalog: ArchitectureCatalog, name: str) -> dict[str, object]
         "scheduled_tasks_detection": "not_available",
         "dependencies": {"outgoing_modules": outgoing, "incoming_modules": incoming},
         "external_apis": external_apis,
+        "kubernetes_workloads": [workload.__dict__ for workload in module.kubernetes_workloads],
     }
     if identity != module.name:
         summary["id"] = identity

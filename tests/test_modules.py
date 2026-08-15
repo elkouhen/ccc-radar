@@ -143,8 +143,9 @@ def test_microservices_list_uses_the_architecture_catalog_shape(tmp_path: Path) 
             "openapi_files": [],
             "scheduled_tasks": [],
             "scheduled_tasks_detection": "not_available",
-            "dependencies": {"outgoing_modules": [], "incoming_modules": []},
-            "external_apis": [],
+                "dependencies": {"outgoing_modules": [], "incoming_modules": []},
+                "external_apis": [],
+                "kubernetes_workloads": [],
         }
     ]
 

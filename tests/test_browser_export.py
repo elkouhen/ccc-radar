@@ -129,8 +129,8 @@ def test_html_export_resources_are_usable_in_a_constrained_browser_viewport(tmp_
         page.locator("#relation-http").check()
         assert graph.get_attribute("data-relation-count") == "2"
 
-        page.get_by_role("tab", name="Ressources").click()
-        page.locator("#resources-panel").wait_for(state="visible")
+        page.get_by_role("tab", name="Kafka").click()
+        page.locator("#kafka-panel").wait_for(state="visible")
         dto_filter = page.locator("#dto-reference-filter")
         dto_filter.fill("OrderCreated")
         dto = page.locator("#dto-references li")
@@ -148,6 +148,8 @@ def test_html_export_resources_are_usable_in_a_constrained_browser_viewport(tmp_
         assert toolbar is not None and toolbar["y"] + toolbar["height"] <= 450
         assert dto_box is not None and dto_box["y"] + dto_box["height"] <= 450
 
+        page.get_by_role("tab", name="Persistance").click()
+        page.locator("#persistence-panel").wait_for(state="visible")
         mongo_filter = page.locator("#mongo-class-reference-filter")
         mongo_filter.fill("Order")
         mongo_class = page.locator("#mongo-class-references li")

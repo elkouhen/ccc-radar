@@ -4,7 +4,7 @@ import json
 import os
 import sys
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Callable
 
@@ -30,6 +30,7 @@ from systemlens.scanner import (
     apply_kafka_topic_strategy1,
 )
 from systemlens.store import Store
+from systemlens.kubernetes import KubernetesDiscoveryError, discover_workloads
 
 
 ProgressCallback = Callable[[str], None]
@@ -236,6 +237,8 @@ def _index_repo(
     extra_files: list[str] | None = None,
     topic_strategy: str = "default",
     progress: ProgressCallback | None = None,
+    kubernetes: bool = False,
+    kubernetes_namespace: str | None = None,
 ) -> IndexReport:
     # BACKLOG-16 P2 : purge les lru_cache d'analyse best-effort (package
     # Java, propriétés Spring, module Maven/Gradle) avant de relire le
@@ -285,6 +288,19 @@ def _index_repo(
         config,
         excluded_module_paths=excluded_module_paths,
     )
+    if kubernetes:
+        _report_progress(progress, "→ Indexation : découverte des workloads Kubernetes...")
+        try:
+            workloads = discover_workloads(namespace=kubernetes_namespace)
+        except KubernetesDiscoveryError as exc:
+            raise RuntimeError(str(exc)) from exc
+        by_name = {workload.name: [] for workload in workloads}
+        for workload in workloads:
+            by_name[workload.name].append(workload)
+        discovered_modules = [
+            replace(module, kubernetes_workloads=tuple(by_name.get(module.name, [])))
+            for module in discovered_modules
+        ]
     for rel_path in extra_files or []:
         candidate = repo_root / rel_path
         if candidate.is_file() and not _is_in_excluded_module(candidate, excluded_module_paths):
@@ -477,6 +493,8 @@ def index_repo(
     extra_files: list[str] | None = None,
     topic_strategy: str = "default",
     progress: ProgressCallback | None = None,
+    kubernetes: bool = False,
+    kubernetes_namespace: str | None = None,
 ) -> IndexReport:
     """Index one repository and publish its facts as an atomic snapshot."""
     with store.transaction():
@@ -489,4 +507,6 @@ def index_repo(
             extra_files=extra_files,
             topic_strategy=topic_strategy,
             progress=progress,
+            kubernetes=kubernetes,
+            kubernetes_namespace=kubernetes_namespace,
         )

@@ -30,7 +30,7 @@ but does not alter AST endpoint extraction.
 |---|---|
 | `systemlens init` | Creates `.systemlens/config.yml`; it never overwrites an existing file. |
 | `systemlens doctor [--json]` | Read-only check of configuration, local AST readiness and index state. |
-| `systemlens index [MANIFEST]... [--full] [--topic-strategy default\|strategy1] [--manifest FILE]...` | Incrementally extracts and persists architecture facts. Kafka manifests may be passed positionally or through repeatable `--manifest FILE`. |
+| `systemlens index [MANIFEST]... [--full] [--topic-strategy default\|strategy1] [--manifest FILE]... [--kubernetes] [--kubernetes-namespace NAME]` | Incrementally extracts and persists architecture facts. `--kubernetes` queries the active `kubectl` context for Deployments and StatefulSets; `--kubernetes-namespace` restricts it to one namespace. |
 | `systemlens microservices`, `topics`, `apis`, `dtos`, `mongodb`, `modules` | Browse the indexed catalog; `microservices`, `topics` and `mongodb` list the corresponding architecture objects directly, each with a `kind` and `name`, and support the documented list/show/neighbors actions and JSON output where applicable. |
 | `systemlens analyze audit` | Reports static architecture risks. |
 | `systemlens analyze coverage [--json]` | Reports inventory coverage and unresolved integrations. |
@@ -152,10 +152,10 @@ The topic detail lists resolved Kafka DTOs once. It lists message types only
 when no matching DTO has been resolved, avoiding duplicate published and
 consumed type lists when they describe the same contract.
 Indexing issues that have a source endpoint expose a VS Code link to the
-associated file and line. The `Resources` view groups distinct OpenAPI and
-Kafka DTO sections; both support filtering their complete list (OpenAPI by
-path or service, DTOs by simple name or package). Request/reply and build
-dependencies remain available as complementary analyses from that view. A
+associated file and line. The HTML export provides dedicated OpenAPI, Kafka,
+Persistence, Request/reply, and Build views. OpenAPI and Kafka both support
+filtering their complete list (OpenAPI by path or service, DTOs by simple name
+or package); Persistence filters by class, package, collection, or service. A
 persistent inventory status reports whether unresolved indexing facts exist and
 opens their review view.
 

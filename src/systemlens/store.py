@@ -18,9 +18,10 @@ from systemlens.modules import (
     MongoPersistenceClass,
     SourceEvidence,
 )
+from systemlens.kubernetes import KubernetesWorkload
 from systemlens.paths import db_path
 
-SCHEMA_VERSION = "22"
+SCHEMA_VERSION = "23"
 SEVERITY_ORDER = ["INFO", "WARNING", "ERROR"]
 _COUNTABLE_DIMENSIONS = ("rule_id", "severity")
 _SQLITE_BIND_LIMIT = 900
@@ -86,6 +87,10 @@ def _blocking_point_from_json(data: dict[str, Any]) -> BlockingPoint:
     data = dict(data)
     evidence = _evidence_from_json(data)
     return BlockingPoint(**data, evidence=evidence)
+
+
+def _kubernetes_workload_from_json(data: dict[str, Any]) -> KubernetesWorkload:
+    return KubernetesWorkload(**data)
 
 
 class Store:
@@ -241,7 +246,8 @@ class Store:
                 mongo_persistence_classes TEXT NOT NULL DEFAULT '[]',
                 openapi_files TEXT NOT NULL DEFAULT '[]',
                 kafka_methods TEXT NOT NULL DEFAULT '[]',
-                blocking_points TEXT NOT NULL DEFAULT '[]'
+                blocking_points TEXT NOT NULL DEFAULT '[]',
+                kubernetes_workloads TEXT NOT NULL DEFAULT '[]'
             );
             CREATE TABLE IF NOT EXISTS module_dependencies (
                 source TEXT NOT NULL,
@@ -316,6 +322,7 @@ class Store:
             "mongo_methods", "mongo_persistence_classes", "openapi_files",
             "kafka_methods", "blocking_points", "rest_controllers",
             "openapi_generated_clients",
+            "kubernetes_workloads",
         ):
             if name not in cols:
                 if name == "application_entrypoint":
@@ -402,8 +409,8 @@ class Store:
             self.conn.execute(
                 """
                 INSERT INTO modules (path, name, identity, build_system, version, kind, starts_application, configuration_example, application_entrypoint,
-                                     mongo_collections, mongo_methods, mongo_persistence_classes, openapi_files, kafka_methods, blocking_points, rest_controllers, openapi_generated_clients)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                     mongo_collections, mongo_methods, mongo_persistence_classes, openapi_files, kafka_methods, blocking_points, rest_controllers, openapi_generated_clients, kubernetes_workloads)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     relative_path,
@@ -426,12 +433,13 @@ class Store:
                     json.dumps([_method_to_json(point) for point in module.blocking_points]),
                     json.dumps(module.rest_controllers),
                     json.dumps(module.openapi_generated_clients),
+                    json.dumps([workload.__dict__ for workload in module.kubernetes_workloads]),
                 ),
             )
 
     def all_modules(self) -> list[DiscoveredModule]:
         rows = self.conn.execute(
-            "SELECT path, name, identity, build_system, version, kind, starts_application, configuration_example, application_entrypoint, mongo_collections, mongo_methods, mongo_persistence_classes, openapi_files, kafka_methods, blocking_points, rest_controllers, openapi_generated_clients "
+            "SELECT path, name, identity, build_system, version, kind, starts_application, configuration_example, application_entrypoint, mongo_collections, mongo_methods, mongo_persistence_classes, openapi_files, kafka_methods, blocking_points, rest_controllers, openapi_generated_clients, kubernetes_workloads "
             "FROM modules ORDER BY path"
         ).fetchall()
         return [
@@ -453,6 +461,7 @@ class Store:
                 blocking_points=tuple(_blocking_point_from_json(point) for point in json.loads(row["blocking_points"])),
                 rest_controllers=tuple(json.loads(row["rest_controllers"])),
                 openapi_generated_clients=tuple(json.loads(row["openapi_generated_clients"])),
+                kubernetes_workloads=tuple(_kubernetes_workload_from_json(item) for item in json.loads(row["kubernetes_workloads"])),
             )
             for row in rows
         ]

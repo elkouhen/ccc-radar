@@ -107,15 +107,20 @@ enum PaymentStatus { AUTHORIZED, DECLINED }
     assert "Que voulez-vous comprendre ?" in document
     assert "Qui produit ou consomme un topic Kafka ?" in document
     assert 'id="advanced-controls"' in document
-    assert 'id="resources-tab"' in document
+    assert 'id="openapi-tab"' in document
+    assert 'id="kafka-tab"' in document
+    assert 'id="persistence-tab"' in document
+    assert 'id="request-reply-tab"' in document
+    assert 'id="build-tab"' in document
     assert '>Ajuster</button>' in document
     assert '>Effacer</button>' in document
     assert 'id="dto-reference-filter"' in document
     assert 'id="openapi-reference-filter"' in document
-    assert 'id="resources-tab"' in document
-    assert 'id="resources-panel"' in document
-    assert 'id="show-request-reply"' in document
-    assert 'id="show-dependencies"' in document
+    assert 'id="openapi-panel"' in document
+    assert 'id="kafka-panel"' in document
+    assert 'id="persistence-panel"' in document
+    assert 'id="request-reply-panel"' in document
+    assert 'id="dependencies-panel"' in document
     assert 'id="graph-legend"' in document
     assert 'graphLegend.hidden = !showingGraph' in document
     assert 'issue.vscode_uri ? "a" : "code"' in document

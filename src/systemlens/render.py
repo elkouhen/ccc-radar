@@ -950,6 +950,7 @@ def render_graph_html(
                     else {}
                 ),
                 "resources": resources,
+                "kubernetes_workloads": [workload.__dict__ for workload in module.kubernetes_workloads] if module else [],
                 "openapi_files": openapi_files,
                 "openapi_contracts": [
                     {
@@ -1684,7 +1685,7 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
     .toolbar-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
     .toolbar strong { color: #172033; font-size: 15px; white-space: nowrap; }
     .toolbar input:not([type="checkbox"]) { height: 34px; padding: 0 10px; border: 1px solid #b9c5d6; border-radius: 6px; color: #172033; background: #fff; font: inherit; font-size: 13px; }
-    .toolbar-tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; padding: 3px; border-radius: 8px; background: #edf2f7; }
+    .toolbar-tabs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; padding: 3px; border-radius: 8px; background: #edf2f7; }
     .toolbar-tab { min-width: 0; height: 30px !important; width: auto !important; padding: 0 7px; overflow: hidden; border: 0 !important; border-radius: 6px !important; color: #52616b !important; background: transparent !important; font-size: 11px !important; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
     .toolbar-tab:hover { background: rgba(255, 255, 255, .65) !important; }
     .toolbar-tab.is-active { color: #1d4f91 !important; background: #fff !important; box-shadow: 0 1px 3px rgba(15, 23, 42, .12); }
@@ -2068,7 +2069,11 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
     <div class="toolbar-tabs" role="tablist" aria-label="Vues de l'architecture">
       <button id="graph-tab" class="toolbar-tab is-active" type="button" role="tab" aria-selected="true" aria-controls="graph-panel">Explorer</button>
       <button id="paths-tab" class="toolbar-tab" type="button" role="tab" aria-selected="false" aria-controls="paths-panel">Parcours</button>
-      <button id="resources-tab" class="toolbar-tab" type="button" role="tab" aria-selected="false" aria-controls="resources-panel">Ressources</button>
+      <button id="openapi-tab" class="toolbar-tab" type="button" role="tab" aria-selected="false" aria-controls="openapi-panel">OpenAPI</button>
+      <button id="kafka-tab" class="toolbar-tab" type="button" role="tab" aria-selected="false" aria-controls="kafka-panel">Kafka</button>
+      <button id="persistence-tab" class="toolbar-tab" type="button" role="tab" aria-selected="false" aria-controls="persistence-panel">Persistance</button>
+      <button id="request-reply-tab" class="toolbar-tab" type="button" role="tab" aria-selected="false" aria-controls="request-reply-panel">Request/reply</button>
+      <button id="build-tab" class="toolbar-tab" type="button" role="tab" aria-selected="false" aria-controls="dependencies-panel">Build</button>
       <button id="issues-tab" class="toolbar-tab" type="button" role="tab" aria-selected="false" aria-controls="issues-panel" title="Problemes d'indexation">Qualité</button>
     </div>
     <div id="graph-panel" class="toolbar-panel" role="tabpanel" aria-labelledby="graph-tab">
@@ -2131,7 +2136,7 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
       </details>
       </details>
     </div>
-    <div id="dependencies-panel" class="toolbar-panel dependency-view" role="tabpanel" aria-label="Dépendances de build" hidden>
+    <div id="dependencies-panel" class="toolbar-panel dependency-view" role="tabpanel" aria-labelledby="build-tab" hidden>
       <p class="dependency-view-kicker">Structure de build</p>
       <h2>Arbre des dépendances</h2>
       <p>Disposition Sugiyama : les modules sont rangés par niveaux de dépendance. Un lien part du module dépendant, à gauche, vers le module requis, à droite. Les interactions HTTP, Kafka et MongoDB restent dans la vue Interactions.</p>
@@ -2154,34 +2159,31 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
       <ul id="analyzed-paths" class="path-history-list" aria-label="Chemins analyses"></ul>
       <p id="analyzed-paths-empty" class="path-history-empty">Aucun chemin analyse pour le moment.</p>
     </div>
-    <div id="resources-panel" class="toolbar-panel references-view" role="tabpanel" aria-labelledby="resources-tab" hidden>
+    <div id="openapi-panel" class="toolbar-panel references-view" role="tabpanel" aria-labelledby="openapi-tab" hidden>
       <div class="references-header">
         <p class="references-kicker">Documentation d'API</p>
         <h2 id="openapi-references-title" class="references-title">Contrats OpenAPI</h2>
         <p class="references-description">Ouvrez une spécification locale dans Swagger UI.</p>
       </div>
       <section class="references-section"><input id="openapi-reference-filter" class="reference-filter-input" type="search" placeholder="Filtrer les contrats par chemin ou service" autocomplete="off" aria-label="Filtrer les contrats OpenAPI"><ul id="openapi-references" class="references-list"></ul><p id="openapi-references-empty" class="references-empty">Aucun contrat OpenAPI détecté.</p></section>
+    </div>
+    <div id="kafka-panel" class="toolbar-panel references-view" role="tabpanel" aria-labelledby="kafka-tab" hidden>
       <div class="references-header">
         <p class="references-kicker">Événements Kafka</p>
         <h2 id="dto-references-title" class="references-title">DTO Kafka</h2>
         <p class="references-description">Inspectez les classes Java échangées via Kafka.</p>
       </div>
       <section class="references-section"><input id="dto-reference-filter" class="reference-filter-input" type="search" placeholder="Filtrer les DTO par nom ou package" autocomplete="off" aria-label="Filtrer les DTO Kafka"><ul id="dto-references" class="references-list"></ul><p id="dto-references-empty" class="references-empty">Aucun DTO Kafka détecté.</p></section>
+    </div>
+    <div id="persistence-panel" class="toolbar-panel references-view" role="tabpanel" aria-labelledby="persistence-tab" hidden>
       <div class="references-header">
         <p class="references-kicker">Persistance MongoDB</p>
         <h2 id="mongo-class-references-title" class="references-title">Classes de persistance</h2>
         <p class="references-description">Inspectez les classes Java associées aux collections MongoDB.</p>
       </div>
       <section class="references-section"><input id="mongo-class-reference-filter" class="reference-filter-input" type="search" placeholder="Filtrer par classe, package ou collection" autocomplete="off" aria-label="Filtrer les classes de persistance MongoDB"><ul id="mongo-class-references" class="references-list"></ul><p id="mongo-class-references-empty" class="references-empty">Aucune classe de persistance MongoDB détectée.</p></section>
-      <details class="resource-analyses">
-        <summary>Analyses complémentaires</summary>
-        <div class="resource-analysis-actions">
-          <button id="show-request-reply" type="button">Request/reply Kafka</button>
-          <button id="show-dependencies" type="button">Dépendances build</button>
-        </div>
-      </details>
     </div>
-    <div id="request-reply-panel" class="toolbar-panel request-reply-view" role="tabpanel" aria-label="Patterns request/reply Kafka" hidden>
+    <div id="request-reply-panel" class="toolbar-panel request-reply-view" role="tabpanel" aria-labelledby="request-reply-tab" hidden>
       <div class="references-header">
         <p class="references-kicker">Convention Strategy1</p>
         <h2 id="request-reply-title" class="references-title">Patterns request/reply Kafka</h2>
@@ -2658,7 +2660,11 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
     const pathQuery = document.getElementById("path-query");
     const pathLock = document.getElementById("path-lock");
     const graphTab = document.getElementById("graph-tab");
-    const resourcesTab = document.getElementById("resources-tab");
+    const openApiTab = document.getElementById("openapi-tab");
+    const kafkaTab = document.getElementById("kafka-tab");
+    const persistenceTab = document.getElementById("persistence-tab");
+    const requestReplyTab = document.getElementById("request-reply-tab");
+    const buildTab = document.getElementById("build-tab");
     const issuesTab = document.getElementById("issues-tab");
     const pathsTab = document.getElementById("paths-tab");
     const graphLegend = document.getElementById("graph-legend");
@@ -2666,7 +2672,9 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
     const dependenciesPanel = document.getElementById("dependencies-panel");
     const issuesPanel = document.getElementById("issues-panel");
     const pathsPanel = document.getElementById("paths-panel");
-    const resourcesPanel = document.getElementById("resources-panel");
+    const openApiPanel = document.getElementById("openapi-panel");
+    const kafkaPanel = document.getElementById("kafka-panel");
+    const persistencePanel = document.getElementById("persistence-panel");
     const requestReplyPanel = document.getElementById("request-reply-panel");
     const advancedControls = document.getElementById("advanced-controls");
     const graphCanvas = document.getElementById("graph");
@@ -2852,13 +2860,22 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
       const showingDependencies = tab === "dependencies";
       const showingIssues = tab === "issues";
       const showingPaths = tab === "paths";
+      const showingOpenApi = tab === "openapi";
+      const showingKafka = tab === "kafka";
+      const showingPersistence = tab === "persistence";
       const showingRequestReply = tab === "request-reply";
-      const showingResources = ["resources", "dependencies", "request-reply"].includes(tab);
-      const showingResourceContent = tab === "resources";
       graphTab.classList.toggle("is-active", showingGraph);
       graphTab.setAttribute("aria-selected", String(showingGraph));
-      resourcesTab.classList.toggle("is-active", showingResources);
-      resourcesTab.setAttribute("aria-selected", String(showingResources));
+      openApiTab.classList.toggle("is-active", showingOpenApi);
+      openApiTab.setAttribute("aria-selected", String(showingOpenApi));
+      kafkaTab.classList.toggle("is-active", showingKafka);
+      kafkaTab.setAttribute("aria-selected", String(showingKafka));
+      persistenceTab.classList.toggle("is-active", showingPersistence);
+      persistenceTab.setAttribute("aria-selected", String(showingPersistence));
+      requestReplyTab.classList.toggle("is-active", showingRequestReply);
+      requestReplyTab.setAttribute("aria-selected", String(showingRequestReply));
+      buildTab.classList.toggle("is-active", showingDependencies);
+      buildTab.setAttribute("aria-selected", String(showingDependencies));
       issuesTab.classList.toggle("is-active", showingIssues);
       issuesTab.setAttribute("aria-selected", String(showingIssues));
       pathsTab.classList.toggle("is-active", showingPaths);
@@ -2867,7 +2884,9 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
       dependenciesPanel.hidden = !showingDependencies;
       issuesPanel.hidden = !showingIssues;
       pathsPanel.hidden = !showingPaths;
-      resourcesPanel.hidden = !showingResourceContent;
+      openApiPanel.hidden = !showingOpenApi;
+      kafkaPanel.hidden = !showingKafka;
+      persistencePanel.hidden = !showingPersistence;
       requestReplyPanel.hidden = !showingRequestReply;
       graphLegend.hidden = !showingGraph;
       graphCanvas.hidden = showingDependencies;
@@ -3947,7 +3966,17 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
         const kafkaConsumptions = edges.filter(link => link.kind === "kafka" && link.target === id);
         const mongoCollections = edges.filter(link => link.kind === "mongodb" && link.source === id);
         const openApiContracts = node.openapi_contracts || [];
+        const kubernetesWorkloads = node.kubernetes_workloads || [];
         appendFindings(node.findings || []);
+        if (kubernetesWorkloads.length) {
+          const kubernetesGroup = createDetailsGroup("Kubernetes");
+          appendList("Workloads", kubernetesWorkloads.map(workload => {
+            const request = `requests CPU ${workload.cpu_request_millicores ?? "-"}m · RAM ${workload.memory_request_bytes ?? "-"}B`;
+            const limit = `limits CPU ${workload.cpu_limit_millicores ?? "-"}m · RAM ${workload.memory_limit_bytes ?? "-"}B`;
+            return `${workload.kind} ${workload.namespace}/${workload.name} · replicas ${workload.replicas ?? "-"} · ${request} · ${limit}`;
+          }), kubernetesGroup);
+          discardEmptyDetailsGroup(kubernetesGroup);
+        }
         const publishedApis = [
           ...openApiContracts.map(contract => ({
             label: `${contract.spec ? "Contrat OpenAPI" : "Contrat OpenAPI indisponible"} · ${contract.path}`,
@@ -4140,17 +4169,19 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
       search.focus();
     });
     document.getElementById("question-messages").addEventListener("click", () => {
-      setToolbarTab("resources");
+      setToolbarTab("kafka");
       dtoReferencesFilter.focus();
     });
     layoutButtons.forEach((button, layout) => button.addEventListener("click", () => applyLayout(layout)));
     graphTab.addEventListener("click", () => setToolbarTab("graph"));
-    resourcesTab.addEventListener("click", () => setToolbarTab("resources"));
+    openApiTab.addEventListener("click", () => setToolbarTab("openapi"));
+    kafkaTab.addEventListener("click", () => setToolbarTab("kafka"));
+    persistenceTab.addEventListener("click", () => setToolbarTab("persistence"));
+    requestReplyTab.addEventListener("click", () => setToolbarTab("request-reply"));
+    buildTab.addEventListener("click", () => setToolbarTab("dependencies"));
     issuesTab.addEventListener("click", () => setToolbarTab("issues"));
     pathsTab.addEventListener("click", () => setToolbarTab("paths"));
     inventoryStatus.addEventListener("click", () => setToolbarTab("issues"));
-    document.getElementById("show-request-reply").addEventListener("click", () => setToolbarTab("request-reply"));
-    document.getElementById("show-dependencies").addEventListener("click", () => setToolbarTab("dependencies"));
     filterPresetButtons.forEach(button => button.addEventListener("click", () => applyRelationPreset(button.dataset.preset)));
     [
       relationHttp,

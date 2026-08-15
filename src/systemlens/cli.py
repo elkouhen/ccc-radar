@@ -844,6 +844,12 @@ def index_cmd(
         "--topic-strategy",
         help="Stratégie de conventions : default ou strategy1 (Kafka getTopics/KafkaListener et constantes REST en majuscules).",
     ),
+    kubernetes: bool = typer.Option(
+        False, "--kubernetes", help="Découvre les ressources des Deployments et StatefulSets via kubectl."
+    ),
+    kubernetes_namespace: Optional[str] = typer.Option(
+        None, "--kubernetes-namespace", help="Namespace Kubernetes à interroger (tous par défaut)."
+    ),
     disable: list[str] = typer.Option(
         None,
         "--disable",
@@ -887,7 +893,8 @@ def index_cmd(
         report = index_repo(
             repo_root, config, store, full=full, progress=_echo_index_progress,
             disabled=disabled, extra_files=explicit_manifests,
-            topic_strategy=topic_strategy,
+            topic_strategy=topic_strategy, kubernetes=kubernetes,
+            kubernetes_namespace=kubernetes_namespace,
         )
         store.set_meta("index_engine", "manual")
         _trace_index("store.close.begin")

@@ -8,6 +8,7 @@ import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
+from systemlens.kubernetes import KubernetesWorkload
 
 from systemlens import java_parser
 from systemlens.gradle import discover_gradle_modules, gradle_module_identity
@@ -35,6 +36,7 @@ class DiscoveredModule:
     # REST controllers and OpenAPI-generated clients
     rest_controllers: tuple[str, ...] = ()
     openapi_generated_clients: tuple[str, ...] = ()
+    kubernetes_workloads: tuple[KubernetesWorkload, ...] = ()
     # Stable key carried by endpoints and relations. It equals ``name`` unless
     # another build module in the same index uses the same artifact name.
     identity: str = ""

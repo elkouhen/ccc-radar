@@ -175,3 +175,22 @@ namespaced at the federation boundary.
 services with the same display name coexist without data loss. Existing SQLite
 indexes receive the additive `modules.identity` migration on their next
 writable open.
+
+## ADR-12 — Kubernetes discovery is explicit and snapshot-based
+
+**Status:** Accepted.
+
+**Context:** CPU and memory dimensions are runtime deployment facts, but a
+normal source index must remain usable offline and without cluster credentials.
+
+**Decision:** `systemlens index --kubernetes` invokes the local `kubectl` CLI
+against its active context and records Deployments and StatefulSets. It attaches
+a workload only when its Kubernetes name exactly matches an indexed module
+name, and aggregates requests and limits across regular containers. Init
+containers are excluded because their scheduling resources are not steady-state
+service capacity.
+
+**Consequences:** Kubernetes access is opt-in and may fail if `kubectl`,
+credentials, or API connectivity are unavailable. The resulting dimensions are
+persisted in the SQLite snapshot, so catalog and HTML export do not re-query a
+cluster after indexing.
