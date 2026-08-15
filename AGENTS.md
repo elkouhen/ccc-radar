@@ -1,4 +1,4 @@
-# AGENT.md — How to navigate and maintain this project's documentation
+# AGENTS.md — How to navigate and maintain this project's documentation
 
 This file is for any agent working on `systemlens`. It points to the right
 documents and summarizes the documentation hygiene expected in this repository.
@@ -18,6 +18,18 @@ documents and summarizes the documentation hygiene expected in this repository.
 `README.md` stays intentionally short. The specifications and ADRs hold the
 authoritative detail.
 
+## Source-of-truth and conflict resolution
+
+Apply requirements in this order: explicit user and platform safety
+requirements, accepted ADRs, functional and technical specifications, tests,
+then the current implementation. The PRD provides product intent when those
+sources leave a product decision open.
+
+Do not silently choose when a specification, test, and implementation disagree.
+Report the conflict, preserve the public contract unless the requested change
+explicitly alters it, and update the affected source of truth and regression
+test together.
+
 ## Documentation maintenance rules
 
 1. Write and update user-facing documentation in English, including
@@ -33,6 +45,56 @@ authoritative detail.
    `../ccc-radar-skill/` in the same pass.
 7. Keep changes consistent with the existing codebase and ensure the code is
    correct, including its behavior, contracts, and edge cases.
+
+## Non-negotiable engineering invariants
+
+1. Persist source evidence only as paths relative to the indexed project root.
+   Resolve local paths only at export time through `--root-path`; never persist
+   WSL or machine-specific source roots.
+2. Preserve compatibility with existing SQLite indexes. Schema migrations must
+   be additive where possible and occur before the index transaction.
+3. Exports consume the persisted architecture snapshot; they must not silently
+   re-parse source files or turn unresolved dynamic facts into guessed static
+   dependencies.
+4. Keep extraction conservative: retain ambiguity and confidence in persisted
+   facts instead of inventing a target or relationship.
+5. Never place credentials, tokens, or unredacted secret values in persisted
+   facts, generated exports, fixtures, or documentation.
+
+## Validation
+
+Use the project environment and commands below as the canonical validation
+path. Set up the development environment first when needed:
+
+```bash
+uv sync --group dev
+```
+
+For Python changes, run focused tests and Ruff:
+
+```bash
+uv run ruff check src tests
+uv run pytest tests/path/to_relevant_test.py
+```
+
+Run the full default suite for public contracts, storage migrations, extractor
+changes, or before a release:
+
+```bash
+uv run mypy
+uv run pytest
+```
+
+When changing generated HTML interactions, also run the browser integration
+test when Chrome is available:
+
+```bash
+SYSTEMLENS_CHROME_BIN=/path/to/chrome uv run pytest -m slow tests/test_browser_export.py
+```
+
+If the prescribed environment or command is unavailable, do not substitute an
+unverified setup silently: report the missing prerequisite and the validation
+that could not be performed.
 
 ## Cross-functional review
 
