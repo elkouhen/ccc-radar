@@ -1,0 +1,75 @@
+POST metrics-apm*/_search
+{
+  "size": 0,
+  "track_total_hits": false,
+  "query": {
+    "bool": {
+      "filter": [
+        {
+          "term": {
+            "metricset.name": "service_destination"
+          }
+        },
+        {
+          "range": {
+            "@timestamp": {
+              "gte": "now-1h",
+              "lt": "now"
+            }
+          }
+        }
+      ]
+    }
+  },
+  "aggs": {
+    "relations": {
+      "composite": {
+        "size": 1000,
+        "sources": [
+          {
+            "source": {
+              "terms": {
+                "field": "service.name"
+              }
+            }
+          },
+          {
+            "target": {
+              "terms": {
+                "field": "service.target.name"
+              }
+            }
+          },
+          {
+            "target_type": {
+              "terms": {
+                "field": "service.target.type",
+                "missing_bucket": true
+              }
+            }
+          },
+          {
+            "outcome": {
+              "terms": {
+                "field": "event.outcome",
+                "missing_bucket": true
+              }
+            }
+          }
+        ]
+      },
+      "aggs": {
+        "calls": {
+          "sum": {
+            "field": "span.destination.service.response_time.count"
+          }
+        },
+        "duration_us": {
+          "sum": {
+            "field": "span.destination.service.response_time.sum.us"
+          }
+        }
+      }
+    }
+  }
+}

@@ -76,6 +76,60 @@ The export defaults to 80 relations and 50 KB. Its `coverage` object states
 when either the Elasticsearch aggregation or the output budget truncated the
 result, so Pi can distinguish absence from incomplete coverage.
 
+### Inspect the source aggregation
+
+To validate the input data independently, query the same read-only aggregate
+that `systemlens apm export` consumes. Keep the API key in the environment; do
+not paste it into the command or a report. Supply a trusted CA with `--cacert`.
+For a disposable local POC with a self-signed ingress certificate only, replace
+that option with `--insecure`.
+
+```bash
+curl --fail --silent --show-error \
+  --cacert /path/to/elasticsearch-ca.pem \
+  --header "Authorization: ApiKey ${SYSTEMLENS_ELASTICSEARCH_API_KEY:?set the API key}" \
+  --header 'Content-Type: application/json' \
+  --request POST \
+  --data '{
+    "size": 0,
+    "track_total_hits": false,
+    "query": {
+      "bool": {
+        "filter": [
+          {"term": {"metricset.name": "service_destination"}},
+          {"range": {"@timestamp": {"gte": "now-1h", "lt": "now"}}}
+        ]
+      }
+    },
+    "aggs": {
+      "relations": {
+        "composite": {
+          "size": 1000,
+          "sources": [
+            {"source": {"terms": {"field": "service.name"}}},
+            {"target": {"terms": {"field": "service.target.name"}}},
+            {"target_type": {"terms": {"field": "service.target.type", "missing_bucket": true}}},
+            {"outcome": {"terms": {"field": "event.outcome", "missing_bucket": true}}}
+          ]
+        },
+        "aggs": {
+          "calls": {"sum": {"field": "span.destination.service.response_time.count"}},
+          "duration_us": {"sum": {"field": "span.destination.service.response_time.sum.us"}}
+        }
+      }
+    }
+  }' \
+  "${SYSTEMLENS_ELASTICSEARCH_URL}/metrics-apm*/_search"
+```
+
+The response contains aggregate source/destination buckets only. A zero bucket
+count means no observed outgoing destination metrics in the selected window;
+it does not prove that a static dependency is absent.
+
+For Kibana **Dev Tools → Console**, paste and execute the standalone
+[service-destination request](docs/apm-service-destination-query.http). Adjust
+the `@timestamp` range or add a `service.environment` term filter as needed.
+
 ## MCP
 
 Start the stdio server from an initialized repository:
