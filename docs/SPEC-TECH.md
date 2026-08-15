@@ -25,6 +25,24 @@ incremental transaction. `store.py` owns SQLite persistence.
 
 `cli.py` and `mcp_server.py` are thin delivery layers over the domain modules.
 
+### Elastic APM digest adapter
+
+`apm.py` is deliberately outside the indexing pipeline and SQLite model. The
+explicit `systemlens apm` commands use the Python standard library HTTPS client
+with an Elasticsearch API key to perform only `POST .../_search` requests.
+Credentials come from one-off flags or environment variables, are not persisted,
+and are not included in errors or digest JSON. `apm doctor` uses the same
+read query, so it does not require Elasticsearch `monitor` privileges.
+
+The adapter queries `metrics-apm*` with a composite aggregation over Elastic
+APM `service_destination` metrics. It pages at most `max_buckets` aggregate
+buckets, combines success/failure outcomes by source, target, and target type,
+then ranks relations by call volume. It retains only the prefix that fits both
+the relation and serialized-byte limits. The resulting `apm-digest-v1` payload
+contains its time window, metric field used, aggregate relations, and explicit
+coverage/truncation metadata. It contains no raw span, trace, log, request, or
+source data and is not merged with a snapshot.
+
 ## Data model
 
 `MessageEndpoint` is the primary extracted fact. It records role, system,

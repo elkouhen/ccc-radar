@@ -1,14 +1,15 @@
 # Architecture Decision Records — systemlens (`systemlens`)
 
-## ADR-1 — Local AST extraction is the sole analysis source
+## ADR-1 — Local AST extraction is the sole static architecture analysis source
 
 **Status:** Accepted.
 
 **Context:** Architecture facts need to be reproducible offline and traceable
 to source locations without a separate analysis runtime.
 
-**Decision:** Parse Java source locally with Tree-sitter and derive Spring REST,
-Kafka and module facts from AST nodes and deterministic local configuration.
+**Decision:** Parse Java source locally with Tree-sitter and derive static Spring
+REST, Kafka and module facts from AST nodes and deterministic local
+configuration.
 
 **Consequences:** The project has no external analyzer, rule-pack or source-code
 search dependency. Dynamic values are surfaced as unresolved facts instead of
@@ -194,3 +195,23 @@ service capacity.
 credentials, or API connectivity are unavailable. The resulting dimensions are
 persisted in the SQLite snapshot, so catalog and HTML export do not re-query a
 cluster after indexing.
+
+## ADR-13 — Export Elastic APM as an explicit bounded aggregate
+
+**Status:** Accepted.
+
+**Context:** Distributed traces can reveal deployed behaviour that static source
+analysis cannot prove, but sending raw traces or large log volumes to an
+external analysis model is costly and risks exposing request-level data.
+
+**Decision:** Add a stateless, opt-in `systemlens apm` adapter that uses a
+read-only Elasticsearch API key to aggregate `service_destination` metrics.
+It emits a compact versioned JSON digest limited by relation count, byte budget,
+and upstream aggregation buckets. It does not ingest, persist, or merge APM
+data with the source architecture snapshot.
+
+**Consequences:** APM export requires network access and a separately managed
+read-only credential, but normal indexing and catalog/MCP queries remain offline.
+The digest intentionally cannot reconstruct individual traces, request paths, or
+trace exemplars. Mapping observed APM service names to static module identities,
+historical comparisons, and visual overlays remain future work.

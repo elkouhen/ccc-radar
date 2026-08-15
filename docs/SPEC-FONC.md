@@ -1,8 +1,10 @@
 # Functional specification — systemlens (`systemlens`)
 
 `systemlens` builds a local architecture inventory from Java/Spring source ASTs.
-All commands operate on the current repository unless an explicit workspace
-root is accepted. There is no external code-analysis process in this workflow.
+The inventory commands operate on the current repository unless an explicit
+workspace root is accepted. There is no external code-analysis process in this
+workflow. The separate, opt-in `apm` command group reads configured Elastic APM
+metric aggregates and neither indexes source nor writes the inventory.
 
 ## Configuration
 
@@ -30,6 +32,8 @@ but does not alter AST endpoint extraction.
 |---|---|
 | `systemlens init` | Creates `.systemlens/config.yml`; it never overwrites an existing file. |
 | `systemlens doctor [--json]` | Read-only check of configuration, local AST readiness and index state. |
+| `systemlens apm doctor [--endpoint URL] [--api-key KEY] [--json]` | Read-only validation of Elasticsearch access to the APM metrics. It reports only whether the endpoint and key are configured and their source (`flag` or `env`); it never prints the URL or key. |
+| `systemlens apm export [--since DURATION] [--environment NAME] [--endpoint URL] [--api-key KEY] [--max-relations N] [--max-bytes N] [--max-buckets N] [--out FILE]` | Reads `service_destination` aggregates from Elasticsearch and emits compact JSON to stdout, or writes it to `FILE`. It does not export raw spans, logs, headers, identifiers, or source content. |
 | `systemlens index [MANIFEST]... [--full] [--topic-strategy default\|strategy1] [--manifest FILE]... [--kubernetes] [--kubernetes-namespace NAME]` | Incrementally extracts and persists architecture facts. `--kubernetes` queries the active `kubectl` context for Deployments and StatefulSets; `--kubernetes-namespace` restricts it to one namespace. |
 | `systemlens microservices`, `topics`, `apis`, `dtos`, `mongodb`, `modules` | Browse the indexed catalog; `microservices`, `topics` and `mongodb` list the corresponding architecture objects directly, each with a `kind` and `name`, and support the documented list/show/neighbors actions and JSON output where applicable. |
 | `systemlens analyze audit` | Reports static architecture risks. |
@@ -209,3 +213,25 @@ returned through the standard MCP tool-error path.
 The inventory is static. Reflection, arbitrary string construction, runtime
 routing and undeclared external contracts can remain unresolved. Consumers must
 use `topic_dynamic`, confidence and source evidence when interpreting the graph.
+
+## Elastic APM digest
+
+`apm export` is an explicit read-only integration for a configured Elasticsearch
+endpoint. It accepts `--since` as a positive `s`, `m`, `h`, or `d` duration
+(default `1h`) and an optional exact `service.environment` filter. Command-line
+connection values take precedence over `SYSTEMLENS_ELASTICSEARCH_URL` and
+`SYSTEMLENS_ELASTICSEARCH_API_KEY`. An endpoint must be an absolute HTTP(S) URL.
+
+The command queries only `metrics-apm*` documents with
+`metricset.name=service_destination`. It aggregates source service, destination
+service, destination type, outcome, call count, failure count, error rate, and
+average latency. It first uses `service.target.name`, then retries the legacy
+`span.destination.service.resource` field only when the first query is empty.
+
+The JSON contract has schema version `apm-digest-v1`, a UTC `window`, optional
+`environment`, ordered `relations`, and `coverage`. `coverage` reports the
+number of relations seen and exported plus each truncation reason. Output is
+bounded by `--max-relations` (80 by default), `--max-bytes` (50,000 by default),
+and a protective Elasticsearch `--max-buckets` read limit (5,000 by default).
+No APM result is persisted in SQLite, surfaced through MCP, or merged into an
+HTML export in this release.

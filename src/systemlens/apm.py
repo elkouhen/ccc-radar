@@ -1,0 +1,530 @@
+"""Read-only, bounded Elastic APM exports for external analysis tools."""
+
+from __future__ import annotations
+
+import json
+import os
+import re
+from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
+from urllib.error import HTTPError, URLError
+from urllib.parse import urlsplit
+from urllib.request import Request, urlopen
+
+DEFAULT_MAX_BUCKETS = 5_000
+DEFAULT_MAX_BYTES = 50_000
+DEFAULT_MAX_RELATIONS = 80
+_DURATION_PATTERN = re.compile(r"^(?P<amount>[1-9][0-9]*)(?P<unit>[smhd])$")
+
+
+class ApmError(RuntimeError):
+    """A safe error returned by the read-only Elastic APM adapter."""
+
+
+@dataclass(frozen=True)
+class ApmSettings:
+    """Connection settings, with the credential source retained for doctor."""
+
+    endpoint: str | None
+    api_key: str | None
+    endpoint_source: str
+    api_key_source: str
+
+    @property
+    def configured(self) -> bool:
+        return self.endpoint is not None and self.api_key is not None
+
+
+def load_settings(
+    endpoint: str | None = None, api_key: str | None = None
+) -> ApmSettings:
+    """Load explicit values first, then the documented environment variables."""
+    selected_endpoint = (
+        endpoint
+        if endpoint is not None
+        else os.environ.get("SYSTEMLENS_ELASTICSEARCH_URL")
+    )
+    selected_api_key = (
+        api_key
+        if api_key is not None
+        else os.environ.get("SYSTEMLENS_ELASTICSEARCH_API_KEY")
+    )
+    if selected_endpoint is not None:
+        selected_endpoint = _normalise_endpoint(selected_endpoint)
+    if selected_api_key is not None and not selected_api_key.strip():
+        raise ApmError("La clé d'API Elasticsearch ne doit pas être vide.")
+    return ApmSettings(
+        endpoint=selected_endpoint,
+        api_key=selected_api_key,
+        endpoint_source="flag"
+        if endpoint is not None
+        else ("env" if selected_endpoint else "missing"),
+        api_key_source="flag"
+        if api_key is not None
+        else ("env" if selected_api_key else "missing"),
+    )
+
+
+def _normalise_endpoint(value: str) -> str:
+    try:
+        parsed = urlsplit(value)
+        port = parsed.port
+    except ValueError as exc:
+        raise ApmError("L'endpoint Elasticsearch doit être une URL HTTP(S) valide.") from exc
+    if (
+        parsed.scheme not in {"http", "https"}
+        or not parsed.hostname
+        or port is None and parsed.netloc.endswith(":")
+    ):
+        raise ApmError("L'endpoint Elasticsearch doit être une URL HTTP(S) absolue.")
+    if parsed.username is not None or parsed.password is not None:
+        raise ApmError(
+            "L'endpoint Elasticsearch ne doit pas inclure d'identifiants."
+        )
+    if parsed.query or parsed.fragment:
+        raise ApmError(
+            "L'endpoint Elasticsearch ne doit pas inclure de requête ni de fragment."
+        )
+    return value.rstrip("/")
+
+
+class ElasticApmClient:
+    """Small Elasticsearch JSON client which never performs write requests."""
+
+    def __init__(self, settings: ApmSettings, *, timeout_seconds: float = 15.0) -> None:
+        if not settings.configured:
+            raise ApmError(
+                "Configuration APM incomplète : définissez SYSTEMLENS_ELASTICSEARCH_URL "
+                "et SYSTEMLENS_ELASTICSEARCH_API_KEY."
+            )
+        assert settings.endpoint is not None
+        assert settings.api_key is not None
+        self._endpoint = settings.endpoint
+        self._api_key = settings.api_key
+        self._timeout_seconds = timeout_seconds
+
+    def search_metrics(self, body: dict[str, object]) -> dict[str, object]:
+        return self._request_json("POST", "/metrics-apm*/_search", body)
+
+    def check_metrics_access(self) -> int | None:
+        """Validate index-read access without requiring Elasticsearch monitor rights."""
+        response = self.search_metrics(
+            {
+                "size": 0,
+                "track_total_hits": False,
+                "query": {"term": {"metricset.name": "service_destination"}},
+            }
+        )
+        hits = response.get("hits")
+        if not isinstance(hits, dict):
+            raise ApmError("Réponse Elasticsearch invalide : hits absents.")
+        total = hits.get("total")
+        if isinstance(total, dict) and isinstance(total.get("value"), int):
+            return total["value"]
+        if isinstance(total, int):
+            return total
+        return None
+
+    def _request_json(
+        self, method: str, path: str, body: dict[str, object] | None = None
+    ) -> dict[str, object]:
+        payload = json.dumps(body).encode("utf-8") if body is not None else None
+        headers = {
+            "Accept": "application/json",
+            "Authorization": f"ApiKey {self._api_key}",
+        }
+        if payload is not None:
+            headers["Content-Type"] = "application/json"
+        request = Request(
+            f"{self._endpoint}{path}", data=payload, headers=headers, method=method
+        )
+        try:
+            with urlopen(request, timeout=self._timeout_seconds) as response:
+                decoded = json.loads(response.read().decode("utf-8"))
+        except HTTPError as exc:
+            raise ApmError(f"Elasticsearch a répondu HTTP {exc.code}.") from exc
+        except URLError as exc:
+            raise ApmError("Elasticsearch est inaccessible.") from exc
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise ApmError(
+                "La réponse Elasticsearch n'est pas un JSON exploitable."
+            ) from exc
+        if not isinstance(decoded, dict):
+            raise ApmError("La réponse Elasticsearch doit être un objet JSON.")
+        return decoded
+
+
+def doctor(settings: ApmSettings) -> dict[str, object]:
+    """Report configuration and read access without exposing credentials."""
+    result: dict[str, object] = {
+        "endpoint": {
+            "configured": settings.endpoint is not None,
+            "source": settings.endpoint_source,
+        },
+        "api_key": {
+            "configured": settings.api_key is not None,
+            "source": settings.api_key_source,
+        },
+        "read_access": "not_checked",
+    }
+    if not settings.configured:
+        result["status"] = "error"
+        result["detail"] = (
+            "Définissez SYSTEMLENS_ELASTICSEARCH_URL et "
+            "SYSTEMLENS_ELASTICSEARCH_API_KEY."
+        )
+        return result
+    document_count = ElasticApmClient(settings).check_metrics_access()
+    result["status"] = "ok"
+    result["read_access"] = "ok"
+    result["service_destination_documents"] = document_count
+    return result
+
+
+def parse_since(
+    value: str, *, now: datetime | None = None
+) -> tuple[datetime, datetime]:
+    """Convert a small, deterministic duration syntax into a UTC time window."""
+    match = _DURATION_PATTERN.fullmatch(value)
+    if match is None:
+        raise ApmError("`--since` attend une durée positive comme 15m, 1h ou 1d.")
+    amount = int(match.group("amount"))
+    unit = match.group("unit")
+    seconds = amount * {"s": 1, "m": 60, "h": 3_600, "d": 86_400}[unit]
+    end = (now or datetime.now(UTC)).astimezone(UTC)
+    return end - timedelta(seconds=seconds), end
+
+
+def export_digest(
+    client: ElasticApmClient,
+    *,
+    since: str,
+    environment: str | None,
+    max_relations: int = DEFAULT_MAX_RELATIONS,
+    max_bytes: int = DEFAULT_MAX_BYTES,
+    max_buckets: int = DEFAULT_MAX_BUCKETS,
+    now: datetime | None = None,
+) -> dict[str, object]:
+    """Export a deterministic, bounded service-destination summary for a model."""
+    if max_relations < 1:
+        raise ApmError("`--max-relations` doit être supérieur à zéro.")
+    if max_bytes < 1_024:
+        raise ApmError("`--max-bytes` doit être au moins 1024.")
+    if max_buckets < 1:
+        raise ApmError("`--max-buckets` doit être supérieur à zéro.")
+    start, end = parse_since(since, now=now)
+    buckets, query_truncated, target_field = _read_relation_buckets(
+        client, start, end, environment, max_buckets
+    )
+    relations = _aggregate_relations(buckets)
+    return _bounded_digest(
+        relations,
+        start=start,
+        end=end,
+        environment=environment,
+        target_field=target_field,
+        query_truncated=query_truncated,
+        max_relations=max_relations,
+        max_bytes=max_bytes,
+    )
+
+
+def _read_relation_buckets(
+    client: ElasticApmClient,
+    start: datetime,
+    end: datetime,
+    environment: str | None,
+    max_buckets: int,
+) -> tuple[list[dict[str, object]], bool, str]:
+    for target_field in ("service.target.name", "span.destination.service.resource"):
+        buckets, truncated = _read_buckets_for_target_field(
+            client, start, end, environment, max_buckets, target_field
+        )
+        if buckets or truncated:
+            return buckets, truncated, target_field
+    return [], False, "service.target.name"
+
+
+def _read_buckets_for_target_field(
+    client: ElasticApmClient,
+    start: datetime,
+    end: datetime,
+    environment: str | None,
+    max_buckets: int,
+    target_field: str,
+) -> tuple[list[dict[str, object]], bool]:
+    buckets: list[dict[str, object]] = []
+    after_key: dict[str, object] | None = None
+    while len(buckets) < max_buckets:
+        remaining = max_buckets - len(buckets)
+        response = client.search_metrics(
+            _service_destination_query(
+                start,
+                end,
+                environment,
+                target_field,
+                min(1_000, remaining),
+                after_key,
+            )
+        )
+        aggregations = response.get("aggregations")
+        if not isinstance(aggregations, dict):
+            raise ApmError("Réponse Elasticsearch invalide : agrégations absentes.")
+        relation_aggregation = aggregations.get("relations")
+        if not isinstance(relation_aggregation, dict):
+            raise ApmError(
+                "Réponse Elasticsearch invalide : agrégation relations absente."
+            )
+        page = relation_aggregation.get("buckets")
+        if not isinstance(page, list):
+            raise ApmError("Réponse Elasticsearch invalide : buckets absents.")
+        page_buckets = [item for item in page if isinstance(item, dict)]
+        buckets.extend(page_buckets)
+        next_after = relation_aggregation.get("after_key")
+        if not page_buckets or not isinstance(next_after, dict):
+            return buckets, False
+        after_key = next_after
+    return buckets, True
+
+
+def _service_destination_query(
+    start: datetime,
+    end: datetime,
+    environment: str | None,
+    target_field: str,
+    size: int,
+    after_key: dict[str, object] | None,
+) -> dict[str, object]:
+    filters: list[dict[str, object]] = [
+        {"term": {"metricset.name": "service_destination"}},
+        {
+            "range": {
+                "@timestamp": {
+                    "gte": _iso8601(start),
+                    "lt": _iso8601(end),
+                }
+            }
+        },
+    ]
+    if environment:
+        filters.append({"term": {"service.environment": environment}})
+    composite: dict[str, object] = {
+        "size": size,
+        "sources": [
+            {"source": {"terms": {"field": "service.name"}}},
+            {"target": {"terms": {"field": target_field}}},
+            {
+                "target_type": {
+                    "terms": {"field": "service.target.type", "missing_bucket": True}
+                }
+            },
+            {"outcome": {"terms": {"field": "event.outcome", "missing_bucket": True}}},
+        ],
+    }
+    if after_key is not None:
+        composite["after"] = after_key
+    return {
+        "size": 0,
+        "track_total_hits": False,
+        "query": {"bool": {"filter": filters}},
+        "aggs": {
+            "relations": {
+                "composite": composite,
+                "aggs": {
+                    "calls": {
+                        "sum": {"field": "span.destination.service.response_time.count"}
+                    },
+                    "duration_us": {
+                        "sum": {
+                            "field": "span.destination.service.response_time.sum.us"
+                        }
+                    },
+                },
+            }
+        },
+    }
+
+
+def _aggregate_relations(buckets: list[dict[str, object]]) -> list[dict[str, object]]:
+    aggregated: dict[tuple[str, str, str | None], dict[str, object]] = {}
+    for bucket in buckets:
+        key = bucket.get("key")
+        if not isinstance(key, dict):
+            continue
+        source = key.get("source")
+        target = key.get("target")
+        if (
+            not isinstance(source, str)
+            or not source
+            or not isinstance(target, str)
+            or not target
+        ):
+            continue
+        target_type = key.get("target_type")
+        normalized_target_type = target_type if isinstance(target_type, str) else None
+        calls = _metric_value(bucket, "calls")
+        duration_us = _metric_value(bucket, "duration_us")
+        relation = aggregated.setdefault(
+            (source, target, normalized_target_type),
+            {
+                "source": source,
+                "target": target,
+                "target_type": normalized_target_type,
+                "calls": 0.0,
+                "failure_calls": 0.0,
+                "duration_us": 0.0,
+            },
+        )
+        relation["calls"] = _as_number(relation["calls"]) + calls
+        relation["duration_us"] = _as_number(relation["duration_us"]) + duration_us
+        if key.get("outcome") == "failure":
+            relation["failure_calls"] = _as_number(relation["failure_calls"]) + calls
+    result: list[dict[str, object]] = []
+    for relation in aggregated.values():
+        calls = round(_as_number(relation["calls"]))
+        failures = round(_as_number(relation["failure_calls"]))
+        duration_us = _as_number(relation["duration_us"])
+        item: dict[str, object] = {
+            "source": relation["source"],
+            "target": relation["target"],
+            "calls": calls,
+            "failure_calls": failures,
+            "error_rate": round(failures / calls, 6) if calls else None,
+            "average_ms": round(duration_us / calls / 1_000, 3) if calls else None,
+        }
+        if relation["target_type"] is not None:
+            item["target_type"] = relation["target_type"]
+        result.append(item)
+    return sorted(
+        result,
+        key=lambda item: (
+            -round(_as_number(item["calls"])),
+            str(item["source"]),
+            str(item["target"]),
+        ),
+    )
+
+
+def _metric_value(bucket: dict[str, object], name: str) -> float:
+    metric = bucket.get(name)
+    if not isinstance(metric, dict):
+        return 0.0
+    return _as_number(metric.get("value"))
+
+
+def _as_number(value: object) -> float:
+    return float(value) if isinstance(value, (int, float)) else 0.0
+
+
+def _bounded_digest(
+    relations: list[dict[str, object]],
+    *,
+    start: datetime,
+    end: datetime,
+    environment: str | None,
+    target_field: str,
+    query_truncated: bool,
+    max_relations: int,
+    max_bytes: int,
+) -> dict[str, object]:
+    selected: list[dict[str, object]] = []
+    truncation_reasons = ["query_bucket_limit"] if query_truncated else []
+    for relation in relations:
+        if len(selected) >= max_relations:
+            truncation_reasons.append("max_relations")
+            break
+        candidate = selected + [relation]
+        digest = _digest_payload(
+            candidate,
+            start,
+            end,
+            environment,
+            target_field,
+            len(relations),
+            truncation_reasons,
+            max_relations,
+            max_bytes,
+        )
+        if len(_compact_json(digest)) > max_bytes:
+            truncation_reasons.append("max_bytes")
+            break
+        selected = candidate
+    digest = _digest_payload(
+        selected,
+        start,
+        end,
+        environment,
+        target_field,
+        len(relations),
+        truncation_reasons,
+        max_relations,
+        max_bytes,
+    )
+    # The truncation marker itself consumes bytes.  Keep the public contract
+    # strict even at the boundary by removing lower-priority relations until
+    # the final payload fits the requested budget.
+    while selected and len(_compact_json(digest)) > max_bytes:
+        selected.pop()
+        if "max_bytes" not in truncation_reasons:
+            truncation_reasons.append("max_bytes")
+        digest = _digest_payload(
+            selected,
+            start,
+            end,
+            environment,
+            target_field,
+            len(relations),
+            truncation_reasons,
+            max_relations,
+            max_bytes,
+        )
+    if len(_compact_json(digest)) > max_bytes:
+        raise ApmError(
+            "`--max-bytes` est trop petit pour encoder les métadonnées obligatoires du digest."
+        )
+    return digest
+
+
+def _digest_payload(
+    relations: list[dict[str, object]],
+    start: datetime,
+    end: datetime,
+    environment: str | None,
+    target_field: str,
+    relations_seen: int,
+    truncation_reasons: list[str],
+    max_relations: int,
+    max_bytes: int,
+) -> dict[str, object]:
+    return {
+        "schema_version": "apm-digest-v1",
+        "source": {
+            "kind": "elastic_apm_service_destination_metrics",
+            "target_field": target_field,
+            "raw_spans_exported": False,
+        },
+        "window": {"from": _iso8601(start), "to": _iso8601(end)},
+        "environment": environment,
+        "relations": relations,
+        "coverage": {
+            "relations_seen": relations_seen,
+            "relations_exported": len(relations),
+            "truncated": bool(truncation_reasons),
+            "truncation_reasons": truncation_reasons,
+            "max_relations": max_relations,
+            "max_bytes": max_bytes,
+        },
+    }
+
+
+def compact_json(digest: dict[str, object]) -> str:
+    """Serialize digest JSON predictably so the byte budget is meaningful."""
+    return _compact_json(digest).decode("utf-8")
+
+
+def _compact_json(value: dict[str, object]) -> bytes:
+    return json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+
+
+def _iso8601(value: datetime) -> str:
+    return value.astimezone(UTC).isoformat().replace("+00:00", "Z")

@@ -46,12 +46,16 @@ Delivered:
 - Markdown/JSON Kafka manifests and the opt-in Strategy1 conventions.
 - Optional Kubernetes Deployment and StatefulSet resource dimensions from the
   active local `kubectl` context, matched conservatively to indexed modules.
+- An explicit, stateless Elastic APM digest command for external-agent analysis.
+  It exports bounded service-to-destination metric aggregates only; it does not
+  export raw spans or alter the source inventory.
 
 Not delivered:
 
 - Security or quality scans, severity filtering or automated remediation.
-- Runtime tracing, bytecode analysis, continuous cluster collection,
-  cross-repository source analysis, or a hosted service.
+- Runtime tracing ingestion, raw-span retention, continuous cluster collection,
+  cross-repository source analysis, or a hosted service. The optional APM
+  digest is a one-shot aggregate export, not a tracing store.
 - Guaranteed resolution of dynamic values; unresolved values remain explicitly
   marked as dynamic rather than guessed.
 
@@ -59,14 +63,15 @@ Not delivered:
 
 1. Source facts must be derived from local AST parsing and deterministic local
    configuration only. Optional Kubernetes enrichment is opt-in, retains its
-   workload kind, namespace, and name, and never replaces source evidence.
+   workload kind, namespace, and name, and never replaces source evidence. The
+   optional Elastic APM digest is separate observed data, never a source fact.
 2. Each source fact must carry enough evidence to navigate to its file and line
    range. Every non-source enrichment must identify its acquisition origin.
 3. A changed or deleted source file must update or remove its facts on the next
    index run.
 4. The local inventory and its CLI and MCP queries must operate without network
-   access once indexing is complete. Kubernetes discovery is the explicit
-   exception and runs only when requested.
+   access once indexing is complete. Kubernetes discovery and the explicit
+   Elastic APM digest export are opt-in network exceptions.
 5. Graph, catalog and audit output must make uncertainty visible rather than
    inventing a dependency.
 6. An agent must be able to obtain a bounded answer, evidence and unresolved

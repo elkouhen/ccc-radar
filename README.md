@@ -55,6 +55,27 @@ documented Strategy1 Kafka and REST conventions.
 Dynamic paths and topic values are retained as dynamic facts; the tool does not
 guess a concrete dependency.
 
+## Elastic APM digest for Pi
+
+When read-only Elasticsearch access is available, SystemLens can export a
+small runtime-behaviour digest for an external agent. It reads aggregated Elastic
+APM `service_destination` metrics, never raw spans, logs, request headers, or
+source code. It does not modify the local index.
+
+Set credentials in your shell rather than putting them in a command history:
+
+```bash
+export SYSTEMLENS_ELASTICSEARCH_URL=https://elastic.example
+export SYSTEMLENS_ELASTICSEARCH_API_KEY=...
+systemlens apm doctor --json
+systemlens apm export --since 1h --environment production --out apm-digest.json
+pi -p @apm-digest.json "Analyse the service dependencies, error rates and latency hotspots."
+```
+
+The export defaults to 80 relations and 50 KB. Its `coverage` object states
+when either the Elasticsearch aggregation or the output budget truncated the
+result, so Pi can distinguish absence from incomplete coverage.
+
 ## MCP
 
 Start the stdio server from an initialized repository:
