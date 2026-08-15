@@ -25,7 +25,7 @@ risk rather than estimated implementation effort.
 | SL-004 | P1 | Done | Remove the unsupported recursive DTO contract from current documentation | — |
 | SL-005 | P1 | Done | Introduce collision-safe module and service identities | SL-003 |
 | SL-006 | P2 | Proposed | Restore a reliable browser acceptance gate | — |
-| SL-007 | P2 | Proposed | Add a portable HTML export without absolute local paths | — |
+| SL-007 | P2 | Proposed | Add a shareable HTML export without local deep links | — |
 | SL-008 | P2 | Done | Retire the legacy vector runtime | — |
 
 ## P0 — Index correctness
@@ -270,20 +270,22 @@ a controlled Chromium version.
 - A documented CI command runs the slow browser suite separately from unit
   tests.
 
-### SL-007 — Add a portable HTML export without absolute local paths
+### SL-007 — Add a shareable HTML export without local deep links
 
 **Problem**
 
-HTML exports embed absolute `vscode://file` links for modules, endpoints,
-findings, and OpenAPI contracts. Sharing an export therefore discloses local
-usernames and workspace layout.
+The index now persists source evidence as paths relative to the indexed project
+root and resolves local paths through `--root-path` only at export time. That
+makes the index portable, but the developer-oriented HTML export can still emit
+absolute `vscode://file` links. Sharing that export can disclose local usernames
+and workspace layout.
 
 **Implementation direction**
 
-Add a documented portable mode such as `--portable` or `--no-local-links`.
-Portable output should retain repository-relative evidence but omit absolute
-filesystem and WSL paths. Local deep links can remain available in the default
-developer-oriented mode if the trade-off is documented.
+Add a documented shareable mode such as `--portable` or `--no-local-links`.
+It should retain repository-relative evidence but omit absolute filesystem,
+WSL, and `vscode://file` paths. Local deep links remain available in the
+developer-oriented mode.
 
 **Likely files**
 

@@ -2,9 +2,11 @@
 
 ## Purpose
 
-`systemlens` gives developers and coding agents a local, queryable view of a
-Java/Spring architecture. It derives facts directly from source ASTs, without
-starting an external rule engine or sending source code to a service.
+`systemlens` gives coding agents trustworthy, local architecture context before
+they modify a Java/Spring system. Developers and architects use the same
+evidence to inspect and review the result. It derives source facts directly
+from local ASTs, without starting an external rule engine or sending source
+code to a service.
 
 The product answers questions such as:
 
@@ -18,12 +20,16 @@ The product answers questions such as:
 
 | User | Need | Surface |
 |---|---|---|
-| Coding agent | Obtain bounded, evidenced architecture context before an edit | MCP tools |
-| Developer | Inspect one service, API, topic or module | CLI catalog commands |
-| Architect | Assess topology, dependencies and risks across services | `analyze`, graph export |
+| Coding agent (primary) | Establish proven dependencies, impact and unresolved facts before an edit | MCP tools |
+| Developer | Inspect the evidence behind a service, API, topic or module | CLI catalog commands and HTML export |
+| Architect | Review topology, uncertainty and static architecture risks across services | `analyze`, graph export |
 
-The normal workflow is `systemlens init`, `systemlens index`, then one of `microservices`,
-`topics`, `apis`, `modules`, `analyze`, or the equivalent MCP tool. Indexing is
+The primary workflow is `systemlens init`, `systemlens index`, then an agent
+uses the MCP catalog, graph, coverage and trace tools before making a bounded
+change. Source evidence is available from the catalog and graph; coverage and
+indexing-issue tools expose unresolved facts. The agent then reindexes after
+the edit. Developers can follow the same workflow through `microservices`,
+`topics`, `apis`, `modules`, `analyze`, and HTML export. Indexing is
 incremental; `--full` refreshes every eligible source file.
 
 ## Scope
@@ -38,35 +44,47 @@ Delivered:
 - Local SQLite persistence, architecture relations, graph/audit views and
   workspace federation.
 - Markdown/JSON Kafka manifests and the opt-in Strategy1 conventions.
+- Optional Kubernetes Deployment and StatefulSet resource dimensions from the
+  active local `kubectl` context, matched conservatively to indexed modules.
 
 Not delivered:
 
 - Security or quality scans, severity filtering or automated remediation.
-- Runtime tracing, bytecode analysis, cross-repository source analysis, or a
-  hosted service.
+- Runtime tracing, bytecode analysis, continuous cluster collection,
+  cross-repository source analysis, or a hosted service.
 - Guaranteed resolution of dynamic values; unresolved values remain explicitly
   marked as dynamic rather than guessed.
 
 ## Product requirements
 
 1. Source facts must be derived from local AST parsing and deterministic local
-   configuration only.
-2. Each fact must carry enough evidence to navigate to its file and line range.
+   configuration only. Optional Kubernetes enrichment is opt-in, retains its
+   workload kind, namespace, and name, and never replaces source evidence.
+2. Each source fact must carry enough evidence to navigate to its file and line
+   range. Every non-source enrichment must identify its acquisition origin.
 3. A changed or deleted source file must update or remove its facts on the next
    index run.
-4. The tool must continue to operate without network access once its local
-   architecture inventory is available.
+4. The local inventory and its CLI and MCP queries must operate without network
+   access once indexing is complete. Kubernetes discovery is the explicit
+   exception and runs only when requested.
 5. Graph, catalog and audit output must make uncertainty visible rather than
    inventing a dependency.
+6. An agent must be able to obtain a bounded answer, evidence and unresolved
+   facts before it changes a supported Java/Spring integration.
 
 ## Success measures
 
-- A developer can produce a usable REST/Kafka topology after one local index.
+- On each supported reference repository, an MCP client can answer the primary
+  pre-edit questions (service dependencies, HTTP APIs, Kafka flow and impact)
+  after one local index, with a bounded result and its evidence.
+- Every emitted source integration is traceable to a concrete source location
+  or an explicitly named manifest entry; optional Kubernetes facts identify the
+  matched workload kind, namespace, and name.
+- Coverage output distinguishes resolved relations from unresolved or dynamic
+  facts, so an agent can decline to assume a missing dependency.
 - Incremental indexing touches only changed files unless an extractor signature,
   selected convention, or an analysis dependency (Spring configuration or build
   descriptor) changes.
-- Every emitted integration is traceable to a concrete source location or an
-  explicitly named manifest entry.
 
 For observable command and MCP contracts, see
 [SPEC-FONC.md](./SPEC-FONC.md). For implementation details, see

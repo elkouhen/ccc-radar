@@ -83,17 +83,19 @@ Kafka message. It shows the indexed payload-type identity, message topic, and
 producer and consumer services. When the matching Java type is indexed, its
 inspector also shows its source, declared fields, enum values, and conservative
 recursive project-type navigation.
-The export uses a responsive workspace layout with a four-tab navigation rail,
-compact architecture counters, task-oriented starting actions, a floating
-context panel, and a full-size resource inspector. On narrow viewports the
-controls and context panel use separate bounded regions so the graph remains
-visible while either panel scrolls independently.
+The export uses a responsive workspace layout with eight navigation tabs:
+Explorer, Paths, OpenAPI, Kafka, Persistence, Request/reply, Build, and
+Quality. It includes compact architecture counters, task-oriented starting
+actions, a floating context panel, and a full-size resource inspector. On
+narrow viewports the controls and context panel use separate bounded regions so
+the graph remains visible while either panel scrolls independently.
 Its initial view foregrounds task-oriented entry points (Kafka topic, service
 dependencies, service-to-service path and Kafka messages). Relation/resource
-filters, graph layouts, specialized reference views and build dependencies are
-available as advanced controls. Changing a relation-type filter rebuilds and
-relayouts the graph from only the selected dependency types; excluded relations
-do not influence the resulting graph layout.
+filters and graph layouts are available as advanced controls. Dedicated
+OpenAPI, Kafka, Persistence, Request/reply, and Build views keep their domain
+inventories separate. Changing a relation-type filter rebuilds and relayouts
+the graph from only the selected dependency types; excluded relations do not
+influence the resulting graph layout.
 Microservices with no indexed inter-service relation remain visible in a
 separate isolated area of the graph, so their absence of dependencies is not
 confused with an absent service.
@@ -138,7 +140,7 @@ source path is stored in the index.
 MongoDB collection details list indexed Java persistence classes resolved from
 `@Document`, Mongo repository entity generics, or unambiguous `Type.class`
 arguments passed to `MongoTemplate`. They include their qualified name, source
-location, and declared fields. The Resources view provides the same inventory
+location, and declared fields. The Persistence view provides the same inventory
 with filtering by class, package, collection, or service and opens a dedicated
 inspector. Fields whose type resolves uniquely to another indexed project class
 are navigable recursively; the inspector provides a return action to the
