@@ -159,7 +159,6 @@ def test_mcp_reindex_preserves_the_persisted_topic_strategy(
     repo = tmp_path / "repo"
     shutil.copytree(FIXTURES / "kafka_repo", repo)
     monkeypatch.chdir(repo)
-    monkeypatch.setenv("WSL_DISTRO_NAME", "Ubuntu-24.04")
     assert RUNNER.invoke(app, ["init"]).exit_code == 0
 
     with Store(repo) as store:
@@ -169,23 +168,8 @@ def test_mcp_reindex_preserves_the_persisted_topic_strategy(
 
     with Store(repo, readonly=True) as store:
         assert store.get_meta("topic_strategy") == topic_strategy
-        assert store.get_meta("vscode_wsl_distro") == "Ubuntu-24.04"
     inventory = load_architecture_inventory(repo)
     assert inventory.profile.topic_strategy == topic_strategy
-    assert inventory.vscode_wsl_distro == "Ubuntu-24.04"
-
-
-def test_index_keeps_an_explicit_wsl_distribution_without_environment(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    repo = tmp_path / "repo"
-    shutil.copytree(FIXTURES / "kafka_repo", repo)
-    monkeypatch.delenv("WSL_DISTRO_NAME", raising=False)
-
-    with Store(repo) as store:
-        index_repo(repo, Config(), store, vscode_wsl_distro="Ubuntu-24.04")
-        index_repo(repo, Config(), store)
-        assert store.get_meta("vscode_wsl_distro") == "Ubuntu-24.04"
 
 
 def test_index_persists_kafka_dto_source_definitions(tmp_path: Path) -> None:

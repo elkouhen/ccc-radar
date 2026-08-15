@@ -844,11 +844,6 @@ def index_cmd(
         "--topic-strategy",
         help="Stratégie de conventions : default ou strategy1 (Kafka getTopics/KafkaListener et constantes REST en majuscules).",
     ),
-    vscode_wsl_distro: Optional[str] = typer.Option(
-        None,
-        "--vscode-wsl-distro",
-        help="Distribution WSL à conserver pour les liens VS Code de l'export HTML.",
-    ),
     disable: list[str] = typer.Option(
         None,
         "--disable",
@@ -892,7 +887,7 @@ def index_cmd(
         report = index_repo(
             repo_root, config, store, full=full, progress=_echo_index_progress,
             disabled=disabled, extra_files=explicit_manifests,
-            topic_strategy=topic_strategy, vscode_wsl_distro=vscode_wsl_distro,
+            topic_strategy=topic_strategy,
         )
         store.set_meta("index_engine", "manual")
         _trace_index("store.close.begin")
@@ -927,7 +922,6 @@ class _MicroserviceGraphData:
     diagnostics: list[ExtractionDiagnostic]
     strategy1: bool
     result: GraphResult
-    vscode_wsl_distro: str | None = None
     kafka_dto_definitions: list[dict[str, object]] | None = None
     openapi_contracts: list[dict[str, object]] | None = None
 
@@ -993,7 +987,6 @@ def _load_microservice_graph(
         inventory.diagnostics,
         inventory.strategy1,
         result,
-        inventory.vscode_wsl_distro,
         inventory.kafka_dto_definitions,
         inventory.openapi_contracts,
     )
@@ -1076,8 +1069,8 @@ def export_microservices_cmd(
     c4: Optional[Path] = typer.Option(
         None, "--c4", help="Répertoire du projet LikeC4 à produire."
     ),
-    vscode_wsl_distro: Optional[str] = typer.Option(
-        None, "--vscode-wsl-distro", help="Distribution WSL des liens VS Code."
+    root_path: Optional[Path] = typer.Option(
+        None, "--root-path", help="Chemin racine à joindre aux chemins relatifs indexés."
     ),
     json_output: bool = typer.Option(False, "--json", help="Écrire le graphe structuré sur la sortie standard."),
 ) -> None:
@@ -1099,11 +1092,6 @@ def export_microservices_cmd(
         typer.echo(json.dumps(graph_data.result))
         return
     if html is not None:
-        effective_vscode_wsl_distro = (
-            vscode_wsl_distro
-            or graph_data.vscode_wsl_distro
-            or os.environ.get("WSL_DISTRO_NAME")
-        )
         html.write_text(
             render_graph_html(
                 graph_data.services_by_name,
@@ -1115,7 +1103,7 @@ def export_microservices_cmd(
                 graph_data.module_dependencies,
                 graph_data.source_roots,
                 None,
-                effective_vscode_wsl_distro,
+                root_path or Path.cwd(),
                 request_reply_strategy1=graph_data.strategy1,
                 diagnostics=graph_data.diagnostics,
                 kafka_dto_definitions=graph_data.kafka_dto_definitions,

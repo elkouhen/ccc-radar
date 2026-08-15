@@ -18,18 +18,17 @@ from systemlens.workspace import discover_workspace_services, load_federation
 runner = CliRunner()
 
 
-def test_microservice_html_export_uses_the_current_wsl_distribution(
+def test_microservice_html_export_uses_the_explicit_root_path(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     captured: dict[str, object] = {}
     graph_data = SimpleNamespace(
         services_by_name={}, edges=[], collections_by_service={}, modules_by_service={},
         warnings=[], build_modules=[], module_dependencies=[], source_roots=[],
-        strategy1=False, diagnostics=[], result={"note": None}, vscode_wsl_distro=None,
+        strategy1=False, diagnostics=[], result={"note": None},
         kafka_dto_definitions=None,
         openapi_contracts=None,
     )
-    monkeypatch.setenv("WSL_DISTRO_NAME", "Ubuntu-24.04")
     monkeypatch.setattr(cli, "_load_microservice_graph", lambda *_args, **_kwargs: graph_data)
     monkeypatch.setattr(
         cli, "render_graph_html",
@@ -38,24 +37,23 @@ def test_microservice_html_export_uses_the_current_wsl_distribution(
 
     cli.export_microservices_cmd(
         workspace=None, html=tmp_path / "architecture.html", c4=None,
-        vscode_wsl_distro=None, json_output=False,
+        root_path=Path("/exported/repository"), json_output=False,
     )
 
-    assert captured["args"][9] == "Ubuntu-24.04"
+    assert captured["args"][9] == Path("/exported/repository")
 
 
-def test_microservice_html_export_keeps_the_indexed_wsl_distribution(
+def test_microservice_html_export_defaults_root_path_to_the_current_directory(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     captured: dict[str, object] = {}
     graph_data = SimpleNamespace(
         services_by_name={}, edges=[], collections_by_service={}, modules_by_service={},
         warnings=[], build_modules=[], module_dependencies=[], source_roots=[],
-        strategy1=False, diagnostics=[], result={"note": None}, vscode_wsl_distro="Ubuntu-22.04",
+        strategy1=False, diagnostics=[], result={"note": None},
         kafka_dto_definitions=None,
         openapi_contracts=None,
     )
-    monkeypatch.setenv("WSL_DISTRO_NAME", "Different-Distro")
     monkeypatch.setattr(cli, "_load_microservice_graph", lambda *_args, **_kwargs: graph_data)
     monkeypatch.setattr(
         cli, "render_graph_html",
@@ -64,10 +62,10 @@ def test_microservice_html_export_keeps_the_indexed_wsl_distribution(
 
     cli.export_microservices_cmd(
         workspace=None, html=tmp_path / "architecture.html", c4=None,
-        vscode_wsl_distro=None, json_output=False,
+        root_path=None, json_output=False,
     )
 
-    assert captured["args"][9] == "Ubuntu-22.04"
+    assert captured["args"][9] == Path.cwd()
 
 
 def _write_pom(
@@ -188,7 +186,6 @@ def test_duplicate_artifact_names_are_persisted_with_distinct_identities(tmp_pat
 def test_workspace_federation_namespaces_direct_indexes_with_duplicate_artifacts(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("WSL_DISTRO_NAME", "Ubuntu-24.04")
     workspace = tmp_path / "workspace"
     for directory in ("north", "south"):
         service = workspace / directory
@@ -209,7 +206,6 @@ def test_workspace_federation_namespaces_direct_indexes_with_duplicate_artifacts
         for endpoints in federation.endpoints_by_module.values()
         for endpoint in endpoints
     } == {"orders@north", "orders@south"}
-    assert federation.vscode_wsl_distros == ("Ubuntu-24.04",)
 
 
 def test_discover_modules_excludes_maven_and_gradle_mock_projects(tmp_path: Path) -> None:

@@ -195,6 +195,34 @@ def test_graph_html_uses_persisted_openapi_specs() -> None:
     }
 
 
+def test_graph_html_deduplicates_repository_and_module_relative_openapi_paths() -> None:
+    module = DiscoveredModule(
+        name="products", path=Path("/workspace/products"), build_system="maven", version=None,
+        kind="application", starts_application=True, configuration_example="",
+        openapi_files=("src/main/resources/openapi/products.yaml",),
+    )
+    endpoint = MessageEndpoint(
+        id=compute_endpoint_id("serve", "GET /products", "products/src/main/resources/openapi/products.yaml"),
+        role="serve", system="rest", topic="GET /products", topic_dynamic=False,
+        source="code", framework="openapi",
+        path="products/src/main/resources/openapi/products.yaml", start_line=1, end_line=1,
+        snippet="",
+    )
+
+    graph_data = _html_graph_data(render_graph_html(
+        {"products": [endpoint]}, [], modules_by_service={"products": module},
+        openapi_contracts=[{
+            "module": "products", "path": "src/main/resources/openapi/products.yaml",
+            "spec": {"openapi": "3.0.0", "paths": {"/products": {}}},
+        }],
+    ))
+
+    contracts = graph_data["nodes"][0]["openapi_contracts"]
+    assert [contract["path"] for contract in contracts] == ["src/main/resources/openapi/products.yaml"]
+    assert contracts[0]["resources"] == ["GET /products"]
+    assert contracts[0]["spec"] == {"openapi": "3.0.0", "paths": {"/products": {}}}
+
+
 def test_graph_html_does_not_infer_dto_packages_from_live_sources(tmp_path: Path) -> None:
     source_root = tmp_path / "service" / "src" / "main" / "java"
     (source_root / "com" / "acme" / "one").mkdir(parents=True)
@@ -339,7 +367,7 @@ def test_graph_html_colours_topics_and_mongodb_collections_by_connectivity() -> 
     assert "kafka_topic: createNodeProgram(KAFKA_TOPIC_FRAGMENT_SHADER)" in document
 
 
-def test_graph_html_uses_the_java_wsl_prefix_for_module_directories(tmp_path: Path) -> None:
+def test_graph_html_uses_root_path_for_module_directories(tmp_path: Path) -> None:
     module_root = tmp_path / "orders"
     module_root.mkdir()
     source = module_root / "Publisher.java"
@@ -351,33 +379,25 @@ def test_graph_html_uses_the_java_wsl_prefix_for_module_directories(tmp_path: Pa
     endpoint = _kafka_endpoint("produce", "OrderCreated", "Publisher.java")
     document = render_graph_html(
         {"orders": [endpoint]}, [], modules_by_service={"orders": module},
-        build_modules=[module], vscode_wsl_distro="Ubuntu",
+        build_modules=[module], source_roots=[tmp_path], root_path=Path("/exported/repository"),
     )
 
     service = next(
         node for node in _html_graph_data(document)["nodes"]
         if node["id"] == "microservice:orders"
     )
-    wsl_prefix = "vscode://file//wsl.localhost/Ubuntu"
-    assert service["vscode_uri"] == f"{wsl_prefix}{module_root.as_posix()}"
+    export_root = "vscode://file//exported/repository"
+    assert service["vscode_uri"] == f"{export_root}/orders"
     assert service["kafka_endpoints"][0]["vscode_uri"] == (
-        f"{wsl_prefix}{source.as_posix()}:1"
+        f"{export_root}/orders/Publisher.java:1"
     )
 
 
-def test_vscode_wsl_uri_does_not_duplicate_a_windows_unc_prefix() -> None:
-    unc_module = Path("//wsl.localhost/Ubuntu/home/user/projects/orders")
-    wsl_prefix = "vscode://file//wsl.localhost/Ubuntu"
-
-    assert _vscode_file_uri(unc_module, "Ubuntu") == (
-        f"{wsl_prefix}/home/user/projects/orders"
-    )
-    assert _vscode_file_uri(unc_module / "src/openapi/orders.yaml", "Ubuntu") == (
-        f"{wsl_prefix}/home/user/projects/orders/src/openapi/orders.yaml"
-    )
-    assert _vscode_file_uri(unc_module / "src/Order.java", "Ubuntu", 14) == (
-        f"{wsl_prefix}/home/user/projects/orders/src/Order.java:14"
-    )
+def test_vscode_uri_joins_root_path_with_indexed_relative_path(tmp_path: Path) -> None:
+    source = tmp_path / "orders" / "src" / "Order.java"
+    assert _vscode_file_uri(
+        source, Path("/exported/repository"), [tmp_path], 14
+    ) == "vscode://file//exported/repository/orders/src/Order.java:14"
 
 
 def test_graph_html_resolves_mongo_class_from_dependent_persistence_module() -> None:

@@ -55,7 +55,6 @@ class ArchitectureInventory:
     warnings: list[str]
     source_roots: list[Path]
     profile: AnalysisProfile
-    vscode_wsl_distro: str | None = None
     kafka_dto_definitions: list[dict[str, object]] | None = None
     openapi_contracts: list[dict[str, object]] | None = None
 
@@ -89,13 +88,6 @@ def load_architecture_inventory(
             raise ArchitectureInventoryError(
                 "Fédération impossible : les index sélectionnent des stratégies "
                 f"Kafka incompatibles ({', '.join(federation.topic_strategies)})."
-            )
-        if len(federation.vscode_wsl_distros) > 1:
-            warnings.append(
-                "Liens VS Code WSL non résolus automatiquement : les index "
-                "utilisent plusieurs distributions "
-                f"({', '.join(federation.vscode_wsl_distros)}). "
-                "Utilisez --vscode-wsl-distro."
             )
         profile = AnalysisProfile(cast(
             Literal["default", "strategy1"],
@@ -137,11 +129,6 @@ def load_architecture_inventory(
             warnings=warnings,
             source_roots=[workspace_root, *(service.path.resolve() for service in services)],
             profile=profile,
-            vscode_wsl_distro=(
-                federation.vscode_wsl_distros[0]
-                if len(federation.vscode_wsl_distros) == 1
-                else None
-            ),
         )
 
     if not db_path(repo_root).is_file():
@@ -161,7 +148,6 @@ def load_architecture_inventory(
             inventory_indexed=store.get_meta("endpoint_inventory_indexed") == "1",
         )
         stored_strategy = store.get_meta("topic_strategy") or "default"
-        stored_wsl_distro = store.get_meta("vscode_wsl_distro") or None
         if stored_strategy not in {"default", "strategy1"}:
             raise ArchitectureInventoryError(
                 f"Stratégie Kafka inconnue dans l'index : {stored_strategy!r}."
@@ -197,7 +183,6 @@ def load_architecture_inventory(
         warnings=[warning] if warning else [],
         source_roots=[repo_root],
         profile=AnalysisProfile(cast(Literal["default", "strategy1"], stored_strategy)),
-        vscode_wsl_distro=stored_wsl_distro,
         kafka_dto_definitions=kafka_dto_definitions,
         openapi_contracts=openapi_contracts,
     )

@@ -30,7 +30,7 @@ but does not alter AST endpoint extraction.
 |---|---|
 | `systemlens init` | Creates `.systemlens/config.yml`; it never overwrites an existing file. |
 | `systemlens doctor [--json]` | Read-only check of configuration, local AST readiness and index state. |
-| `systemlens index [MANIFEST]... [--full] [--topic-strategy default\|strategy1] [--manifest FILE]... [--vscode-wsl-distro NAME]` | Incrementally extracts and persists architecture facts. Kafka manifests may be passed positionally or through repeatable `--manifest FILE`. `--vscode-wsl-distro` explicitly persists the WSL distribution used by HTML VS Code links. |
+| `systemlens index [MANIFEST]... [--full] [--topic-strategy default\|strategy1] [--manifest FILE]...` | Incrementally extracts and persists architecture facts. Kafka manifests may be passed positionally or through repeatable `--manifest FILE`. |
 | `systemlens microservices`, `topics`, `apis`, `dtos`, `mongodb`, `modules` | Browse the indexed catalog; `microservices`, `topics` and `mongodb` list the corresponding architecture objects directly, each with a `kind` and `name`, and support the documented list/show/neighbors actions and JSON output where applicable. |
 | `systemlens analyze audit` | Reports static architecture risks. |
 | `systemlens analyze coverage [--json]` | Reports inventory coverage and unresolved integrations. |
@@ -38,7 +38,7 @@ but does not alter AST endpoint extraction.
 | `systemlens analyze microservices impact NAME` | Lists direct and transitive impact paths. |
 | `systemlens analyze microservices path FROM TO` | Lists bounded paths between services. |
 | `systemlens analyze request-reply` | Lists Strategy1 Kafka request/reply candidates. |
-| `systemlens export microservices (--html FILE \| --c4 DIRECTORY \| --json)` | Exports the microservice, Kafka-topic and MongoDB-collection topology. |
+| `systemlens export microservices (--html FILE \| --c4 DIRECTORY \| --json) [--root-path DIRECTORY]` | Exports the microservice, Kafka-topic and MongoDB-collection topology. `--root-path` provides the local source root for HTML VS Code links. |
 | `systemlens export modules --html FILE` | Exports the Maven/Gradle build-dependency view. |
 | `systemlens export request-reply --html FILE` | Exports Strategy1 Kafka request/reply candidates. |
 | `systemlens mcp` | Starts the stdio MCP server. |
@@ -131,14 +131,10 @@ visible action that opens the module root directory in VS Code. Kafka topics
 list their applicable DTOs. A collapsed `Sources` section lists the indexed
 OpenAPI and Kafka files that provide the evidence, avoiding repetition in every
 topic.
-An index created in WSL persists its `WSL_DISTRO_NAME`, so an HTML export later
-generated or opened from Windows still uses the
-`vscode://file//wsl.localhost/<distro>` prefix. For legacy indexes without this
-context, an export running in WSL uses the current `WSL_DISTRO_NAME`.
-`--vscode-wsl-distro` overrides both values.
-If the indexing process does not expose `WSL_DISTRO_NAME`, pass
-`systemlens index --vscode-wsl-distro <distro>` once; a later incremental
-index run keeps that value unless it receives a replacement.
+Indexing persists source evidence only as paths relative to the project root.
+HTML export joins those paths to `--root-path` (the current directory by
+default) when building VS Code links. No WSL distribution or absolute local
+source path is stored in the index.
 MongoDB collection details list indexed Java persistence classes resolved from
 `@Document`, Mongo repository entity generics, or unambiguous `Type.class`
 arguments passed to `MongoTemplate`. They include their qualified name, source

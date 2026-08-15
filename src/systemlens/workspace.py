@@ -40,7 +40,6 @@ class FederationResult:
     module_dependencies: list[ModuleDependency] = field(default_factory=list)
     relations: list[ArchitectureRelation] = field(default_factory=list)
     topic_strategies: tuple[str, ...] = ()
-    vscode_wsl_distros: tuple[str, ...] = ()
 
 
 def missing_indexed_microservices(
@@ -181,7 +180,6 @@ def load_federation(services: list[DiscoveredService]) -> FederationResult:
     module_dependencies: set[ModuleDependency] = set()
     relations: list[ArchitectureRelation] = []
     topic_strategies: set[str] = set()
-    vscode_wsl_distros: set[str] = set()
     warnings: list[str] = []
 
     for service in services:
@@ -193,8 +191,6 @@ def load_federation(services: list[DiscoveredService]) -> FederationResult:
             continue
         try:
             with Store(service.index_root, readonly=True) as store:
-                if wsl_distro := store.get_meta("vscode_wsl_distro"):
-                    vscode_wsl_distros.add(wsl_distro)
                 indexed_modules = {
                     module_identity(module): module for module in store.all_modules()
                 }
@@ -283,5 +279,4 @@ def load_federation(services: list[DiscoveredService]) -> FederationResult:
         sorted(module_dependencies, key=lambda dependency: (dependency.source, dependency.target)),
         _dedupe_by_id(relations),
         tuple(sorted(topic_strategies)),
-        tuple(sorted(vscode_wsl_distros)),
     )

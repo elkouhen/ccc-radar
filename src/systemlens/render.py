@@ -368,7 +368,7 @@ def _indexing_issues(
     warnings: list[str] | None,
     modules: list[DiscoveredModule],
     source_roots: list[Path] | None,
-    vscode_wsl_distro: str | None,
+    root_path: Path | None,
     diagnostics: list[ExtractionDiagnostic] | None = None,
 ) -> list[dict[str, str]]:
     """Return every unresolved inventory fact suitable for the HTML export."""
@@ -381,7 +381,7 @@ def _indexing_issues(
         if endpoint is not None:
             issue["location"] = f"{endpoint.path}:{endpoint.start_line}"
             issue["vscode_uri"] = _endpoint_vscode_uri(
-                endpoint, modules, source_roots, vscode_wsl_distro
+                endpoint, modules, source_roots, root_path
             )
         issues.append(issue)
 
@@ -657,7 +657,7 @@ def _java_package_and_imports(source: str) -> tuple[str, frozenset[str]]:
 def _live_kafka_dto_views(
     endpoints_by_service: dict[str, list[MessageEndpoint]],
     modules: list[DiscoveredModule],
-    vscode_wsl_distro: str | None = None,
+    root_path: Path | None = None,
 ) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
     """Deprecated live DTO enrichment retained only for migration tooling.
 
@@ -771,7 +771,7 @@ def _live_kafka_dto_views(
                 definition["enum_values"] = enum_values
             definition["source"] = candidate.source_path
             definition["module"] = candidate.module
-            definition["vscode_uri"] = _vscode_file_uri(candidate.source_file, vscode_wsl_distro)
+            definition["vscode_uri"] = _vscode_file_uri(candidate.source_file, root_path)
         definitions[dto_id] = definition
 
     root_definitions: list[dict[str, object]] = []
@@ -802,7 +802,7 @@ def render_graph_html(
     module_dependencies: list[ModuleDependency] | None = None,
     source_roots: list[Path] | None = None,
     findings_by_service: dict[str, list[Finding]] | None = None,
-    vscode_wsl_distro: str | None = None,
+    root_path: Path | None = None,
     request_reply_strategy1: bool = False,
     diagnostics: list[ExtractionDiagnostic] | None = None,
     kafka_dto_definitions: list[dict[str, object]] | None = None,
@@ -892,7 +892,7 @@ def render_graph_html(
                     "line": item.line,
                     "root": item.root,
                     "vscode_uri": _vscode_file_uri(
-                        candidate_module.path / item.path, vscode_wsl_distro
+                        candidate_module.path / item.path, root_path, source_roots
                     ),
                     "fields": [
                         {
@@ -911,14 +911,17 @@ def render_graph_html(
         endpoints = endpoints_by_service.get(name, [])
         resources = _rest_resources_served(endpoints)
         contract_resources: dict[str, set[str]] = {}
+        module = module_details.get(name)
         for endpoint in endpoints:
             if (
                 endpoint.system == "rest"
                 and endpoint.role == "serve"
                 and endpoint.framework == "openapi"
             ):
-                contract_resources.setdefault(_openapi_contract_evidence_path(endpoint), set()).add(endpoint.topic)
-        module = module_details.get(name)
+                contract_path = _openapi_contract_evidence_path(endpoint)
+                contract_resources.setdefault(
+                    _module_openapi_contract_path(contract_path, module), set()
+                ).add(endpoint.topic)
         openapi_files = sorted(
             set(module.openapi_files if module else ()) | set(contract_resources)
         )
@@ -933,7 +936,7 @@ def render_graph_html(
                         "topic": endpoint.topic,
                         "message_type": endpoint.message_type,
                         "location": f"{endpoint.path}:{endpoint.start_line}",
-                        "vscode_uri": _endpoint_vscode_uri(endpoint, all_modules, source_roots, vscode_wsl_distro),
+                        "vscode_uri": _endpoint_vscode_uri(endpoint, all_modules, source_roots, root_path),
                     }
                     for endpoint in endpoints
                     if endpoint.system == "kafka"
@@ -941,7 +944,7 @@ def render_graph_html(
                 **(
                     {
                         "build_system": module.build_system,
-                        "vscode_uri": _vscode_file_uri(module.path, vscode_wsl_distro),
+                        "vscode_uri": _vscode_file_uri(module.path, root_path, source_roots),
                     }
                     if module
                     else {}
@@ -954,7 +957,7 @@ def render_graph_html(
                         "resources": sorted(contract_resources.get(path, set())),
                         **({"spec": openapi_specs[(module_identity(module), path)]}
                            if module and (module_identity(module), path) in openapi_specs else {}),
-                        **({"vscode_uri": _vscode_file_uri(module.path / path, vscode_wsl_distro)} if module else {}),
+                        **({"vscode_uri": _vscode_file_uri(module.path / path, root_path, source_roots)} if module else {}),
                     }
                     for path in openapi_files
                 ],
@@ -967,7 +970,7 @@ def render_graph_html(
                                 "message": finding.message,
                                 "path": finding.path,
                                 "start_line": finding.start_line,
-                                "vscode_uri": _vscode_uri(finding, module, source_roots, vscode_wsl_distro),
+                                "vscode_uri": _vscode_uri(finding, module, source_roots, root_path),
                             }
                             for finding in findings_by_service.get(name, [])
                         ]
@@ -1133,7 +1136,7 @@ def render_graph_html(
             dto_source = definition.get("source")
             if module is not None and isinstance(dto_source, str):
                 definition["vscode_uri"] = _vscode_file_uri(
-                    module.path / dto_source, vscode_wsl_distro
+                    module.path / dto_source, root_path, source_roots
                 )
         kafka_dtos = [item for item in kafka_dto_definitions if item.get("root", True)]
         project_dto_definitions = [
@@ -1153,7 +1156,7 @@ def render_graph_html(
                 indexing_warnings,
                 all_modules,
                 source_roots,
-                vscode_wsl_distro,
+                root_path,
                 diagnostics,
             ),
         },
@@ -4336,7 +4339,7 @@ def _endpoint_vscode_uri(
     endpoint: MessageEndpoint,
     modules: list[DiscoveredModule],
     source_roots: list[Path] | None,
-    wsl_distro: str | None = None,
+    root_path: Path | None = None,
 ) -> str:
     """Build a deep link to an endpoint source location when reporting an issue."""
     module_roots = [module.path for module in modules if module.name == endpoint.module]
@@ -4344,44 +4347,40 @@ def _endpoint_vscode_uri(
     for root in dict.fromkeys(roots):
         candidate = (root / endpoint.path).resolve()
         if candidate.is_file():
-            return _vscode_file_uri(candidate, wsl_distro, endpoint.start_line)
+            return _vscode_file_uri(candidate, root_path, source_roots, endpoint.start_line)
     root = roots[0] if roots else Path.cwd()
     candidate = (root / endpoint.path).resolve()
-    return _vscode_file_uri(candidate, wsl_distro, endpoint.start_line)
+    return _vscode_file_uri(candidate, root_path, source_roots, endpoint.start_line)
 
 
-def _vscode_uri(finding: Finding, module: DiscoveredModule | None, source_roots: list[Path] | None, wsl_distro: str | None = None) -> str:
+def _vscode_uri(finding: Finding, module: DiscoveredModule | None, source_roots: list[Path] | None, root_path: Path | None = None) -> str:
     """Build a VS Code deep link for an evidenced finding location."""
     candidates = ([module.path] if module is not None else []) + list(source_roots or [])
     for root in candidates:
         candidate = (root / finding.path).resolve()
         if candidate.is_file():
-            return _vscode_file_uri(candidate, wsl_distro, finding.start_line)
+            return _vscode_file_uri(candidate, root_path, source_roots, finding.start_line)
     root = candidates[0] if candidates else Path.cwd()
     candidate = (root / finding.path).resolve()
-    return _vscode_file_uri(candidate, wsl_distro, finding.start_line)
+    return _vscode_file_uri(candidate, root_path, source_roots, finding.start_line)
 
 
 def _vscode_file_uri(
-    path: Path, wsl_distro: str | None = None, line: int | None = None
+    path: Path,
+    root_path: Path | None = None,
+    source_roots: list[Path] | None = None,
+    line: int | None = None,
 ) -> str:
     """Build a VS Code URI for a module directory or a Java source location."""
     resolved = path.resolve()
-    location = f":{line}" if line is not None else ""
-    if wsl_distro:
-        resolved_path = resolved.as_posix()
-        # A Windows exporter can load the WSL index through a UNC root such
-        # as ``\\\\wsl.localhost\\Ubuntu\\home\\...``. It already names the WSL
-        # filesystem, so adding the URI host again would produce an invalid
-        # ``.../Ubuntu//wsl.localhost/Ubuntu/...`` link.
-        for prefix in (
-            f"//wsl.localhost/{wsl_distro}",
-            f"/wsl.localhost/{wsl_distro}",
-        ):
-            if resolved_path.casefold().startswith(f"{prefix.casefold()}/"):
-                resolved_path = resolved_path[len(prefix):]
+    if root_path is not None:
+        for source_root in source_roots or []:
+            try:
+                resolved = root_path.resolve() / resolved.relative_to(source_root.resolve())
                 break
-        return f"vscode://file//wsl.localhost/{quote(wsl_distro, safe='')}{quote(resolved_path, safe='/')}{location}"
+            except ValueError:
+                continue
+    location = f":{line}" if line is not None else ""
     return f"vscode://file/{quote(resolved.as_posix(), safe='/')}{location}"
 
 
@@ -4391,6 +4390,28 @@ def _openapi_contract_evidence_path(endpoint: MessageEndpoint) -> str:
         if line.startswith("systemlens-openapi-contract:"):
             return line.removeprefix("systemlens-openapi-contract:")
     return endpoint.path
+
+
+def _module_openapi_contract_path(
+    contract_path: str, module: DiscoveredModule | None
+) -> str:
+    """Normalize OpenAPI evidence to the module-relative inventory path.
+
+    Endpoint evidence is repository-relative (``orders/src/...``), while
+    ``DiscoveredModule.openapi_files`` is module-relative (``src/...``).
+    The HTML inspector must use one identity for both representations.
+    """
+    if module is None:
+        return contract_path
+    path = Path(contract_path)
+    if path.is_absolute():
+        try:
+            return path.relative_to(module.path).as_posix()
+        except ValueError:
+            return contract_path
+    if path.parts and path.parts[0] == module.path.name:
+        return Path(*path.parts[1:]).as_posix()
+    return contract_path
 
 
 def _mongodb_collection_nodes(

@@ -236,7 +236,6 @@ def _index_repo(
     extra_files: list[str] | None = None,
     topic_strategy: str = "default",
     progress: ProgressCallback | None = None,
-    vscode_wsl_distro: str | None = None,
 ) -> IndexReport:
     # BACKLOG-16 P2 : purge les lru_cache d'analyse best-effort (package
     # Java, propriétés Spring, module Maven/Gradle) avant de relire le
@@ -402,17 +401,7 @@ def _index_repo(
     store.set_meta("endpoint_inventory_indexed", "1")
     store.set_meta("topic_strategy", topic_strategy)
     store.set_meta("analysis_inputs_signature", analysis_inputs_signature)
-    # The HTML may later be generated on Windows while this snapshot was
-    # indexed from WSL. Preserve the source filesystem context for VS Code
-    # links instead of relying on the exporter process environment.
-    detected_wsl_distro = (
-        vscode_wsl_distro
-        or os.environ.get("WSL_DISTRO_NAME")
-        or store.get_meta("vscode_wsl_distro")
-        or ""
-    )
-    store.set_meta("vscode_wsl_distro", detected_wsl_distro)
-
+    store.delete_meta("vscode_wsl_distro")
     # Persist only after the scan path has completed.  The inventory remains
     # transactional with the rest of the index and represents the audited
     # repository state, not a partially failed scan.
@@ -488,7 +477,6 @@ def index_repo(
     extra_files: list[str] | None = None,
     topic_strategy: str = "default",
     progress: ProgressCallback | None = None,
-    vscode_wsl_distro: str | None = None,
 ) -> IndexReport:
     """Index one repository and publish its facts as an atomic snapshot."""
     with store.transaction():
@@ -501,5 +489,4 @@ def index_repo(
             extra_files=extra_files,
             topic_strategy=topic_strategy,
             progress=progress,
-            vscode_wsl_distro=vscode_wsl_distro,
         )

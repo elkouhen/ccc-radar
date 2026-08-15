@@ -351,6 +351,10 @@ class Store:
             (key, value),
         )
 
+    def delete_meta(self, key: str) -> None:
+        """Remove obsolete metadata from the current index snapshot."""
+        self.conn.execute("DELETE FROM meta WHERE key = ?", (key,))
+
     def replace_kafka_dto_definitions(self, definitions: list[dict[str, object]]) -> None:
         self.conn.execute("DELETE FROM kafka_dto_definitions")
         self.conn.executemany(

@@ -75,13 +75,10 @@ The SQLite store is standard-library-only: it does not load native vector
 extensions or persist/query vector representations. The retained findings
 search compatibility path uses deterministic lexical matching.
 
-The index also persists its optional WSL distribution in metadata. It comes
-from an explicit index option, `WSL_DISTRO_NAME`, or an existing snapshot value
-(in that order). HTML export uses that source-filesystem context for VS Code
-links when it is later generated on Windows, where `WSL_DISTRO_NAME` is
-unavailable; an explicit export option can override it. A Windows UNC source
-root (`\\wsl.localhost\\<distro>\\...`) is normalized back to its WSL path before
-the URI is emitted, so the hostname and distribution are never duplicated.
+The index persists source evidence only as paths relative to the indexed
+project root. HTML export receives a local `--root-path` and joins it to these
+relative paths when building VS Code URIs. This keeps an index portable across
+machines and avoids persisting WSL or other host-specific path context.
 
 Kafka DTO definitions and OpenAPI/Swagger document contents are materialized at
 index time. A DTO definition retains
