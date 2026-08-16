@@ -61,11 +61,13 @@ Delivered:
 - An explicit, stateless Elastic APM digest command for external-agent analysis.
   It exports bounded service-to-destination metric aggregates only; it does not
   export raw spans or alter the source inventory.
+- An explicit, self-contained Elastic APM runtime report. It uses bounded
+  aggregate-only queries to rank service and transaction P95 latency, dependency
+  average latency, and aggregate failure counts; it does not alter the source
+  inventory.
 
 Planned:
 
-- A bounded runtime-analysis view that ranks observed dependency latency,
-  failures, and call volume, and reports the selected time window and coverage.
 - Conservative presentation of observed HTTP, Kafka, MongoDB, and S3 activity
   beside the static architecture, without inventing a source mapping.
 - Explicit Kubernetes capacity context for runtime hotspots where a verified
@@ -78,7 +80,7 @@ Not delivered:
 - Security or quality scans, severity filtering or automated remediation.
 - Runtime tracing ingestion, raw-span retention, continuous cluster collection,
   cross-repository source analysis, or a hosted service. The optional APM
-  digest and planned runtime analysis are one-shot aggregate reads, not a
+  digest and runtime report are one-shot aggregate reads, not a
   tracing store.
 - Guaranteed resolution of dynamic values; unresolved values remain explicitly
   marked as dynamic rather than guessed.

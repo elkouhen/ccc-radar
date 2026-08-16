@@ -9,6 +9,7 @@ from playwright.sync_api import sync_playwright
 from systemlens.models import MessageEndpoint, compute_endpoint_id
 from systemlens.graph import GraphEdge
 from systemlens.modules import DiscoveredModule, MongoField, MongoPersistenceClass
+from systemlens.apm_report import render_runtime_report_html
 from systemlens.render import render_graph_html
 
 
@@ -39,6 +40,52 @@ def _producer(message_type: str) -> MessageEndpoint:
         snippet="",
         message_type=message_type,
     )
+
+
+@pytest.mark.slow
+def test_apm_runtime_report_filters_observed_dependency_flows() -> None:
+    chrome = _chrome_executable()
+    if chrome is None:
+        pytest.skip("Chromium is unavailable; install it with `playwright install chromium`.")
+    document = render_runtime_report_html(
+        {
+            "schema_version": "apm-runtime-report-v1",
+            "window": {"from": "2026-08-15T09:00:00Z", "to": "2026-08-15T10:00:00Z"},
+            "environment": "production",
+            "services": [
+                {"service": "orders", "calls": 10, "failure_calls": 1, "error_rate": 0.1, "average_ms": 80.0, "p95_ms": 240.0}
+            ],
+            "transactions": [
+                {"service": "orders", "transaction": "POST /checkout", "calls": 6, "failure_calls": 1, "error_rate": 0.166667, "average_ms": 90.0, "p95_ms": 250.0}
+            ],
+            "dependencies": [
+                {"source": "orders", "target": "payments", "target_type": "http", "calls": 6, "failure_calls": 1, "error_rate": 0.166667, "average_ms": 70.0},
+                {"source": "catalog", "target": "mongo", "target_type": "db", "calls": 3, "failure_calls": 0, "error_rate": 0.0, "average_ms": 10.0},
+            ],
+            "coverage": {
+                "services": {"items_seen": 1, "items_exported": 1, "truncated": False, "truncation_reasons": []},
+                "transactions": {"items_seen": 1, "items_exported": 1, "truncated": False, "truncation_reasons": []},
+                "dependencies": {"items_seen": 2, "items_exported": 2, "truncated": False, "truncation_reasons": []},
+            },
+        }
+    )
+
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=True, executable_path=chrome)
+        page = browser.new_page(viewport={"width": 800, "height": 450})
+        errors: list[str] = []
+        page.on("pageerror", lambda error: errors.append(str(error)))
+        page.set_content(document, wait_until="load")
+
+        assert "orders" in page.locator("#services").inner_text()
+        assert "POST /checkout" in page.locator("#transactions").inner_text()
+        assert "payments" in page.locator("#flows").inner_text()
+        page.locator("#service-filter").select_option("orders")
+        assert "payments" in page.locator("#flows").inner_text()
+        assert "mongo" not in page.locator("#flows").inner_text()
+        assert "P95 is an approximate percentile" in page.content()
+        assert not errors
+        browser.close()
 
 
 @pytest.mark.slow

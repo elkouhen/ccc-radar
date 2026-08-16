@@ -6,6 +6,7 @@ import pytest
 from typer.testing import CliRunner
 
 from systemlens.apm import ApmError, export_digest, load_settings, parse_since
+from systemlens.apm_report import build_runtime_report, render_runtime_report_html
 from systemlens.cli import app
 
 
@@ -216,6 +217,174 @@ def test_apm_export_writes_machine_readable_digest(
 
     assert result.exit_code == 0, result.output
     assert json.loads(output.read_text(encoding="utf-8")) == expected
+
+
+def test_runtime_report_uses_histogram_p95_for_services_and_transactions() -> None:
+    class RuntimeClient:
+        def __init__(self) -> None:
+            self.queries: list[dict[str, object]] = []
+
+        def search_metrics(self, body: dict[str, object]) -> dict[str, object]:
+            self.queries.append(body)
+            metricset = body["query"]["bool"]["filter"][0]["term"]["metricset.name"]  # type: ignore[index]
+            if metricset == "service_transaction":
+                buckets = [_latency_bucket({"service": "orders"}, 12, 600_000, 900_000, 2)]
+                return {"aggregations": {"items": {"buckets": buckets}}}
+            if metricset == "transaction":
+                buckets = [
+                    _latency_bucket(
+                        {
+                            "service": "orders",
+                            "transaction": "POST /checkout",
+                            "transaction_type": "request",
+                        },
+                        8,
+                        400_000,
+                        750_000,
+                        1,
+                    )
+                ]
+                return {"aggregations": {"items": {"buckets": buckets}}}
+            return {
+                "aggregations": {
+                    "relations": {
+                        "buckets": [_bucket("orders", "mongo", "success", 5, 250_000)]
+                    }
+                }
+            }
+
+    client = RuntimeClient()
+    report = build_runtime_report(
+        client,  # type: ignore[arg-type]
+        since="1h",
+        environment="production",
+        now=datetime(2026, 8, 15, 10, tzinfo=UTC),
+    )
+
+    assert report["services"] == [
+        {
+            "service": "orders",
+            "calls": 12,
+            "failure_calls": 2,
+            "error_rate": 0.166667,
+            "average_ms": 50.0,
+            "p95_ms": 900.0,
+        }
+    ]
+    assert report["transactions"] == [
+        {
+            "service": "orders",
+            "calls": 8,
+            "failure_calls": 1,
+            "error_rate": 0.125,
+            "average_ms": 50.0,
+            "p95_ms": 750.0,
+            "transaction": "POST /checkout",
+            "transaction_type": "request",
+        }
+    ]
+    assert report["dependencies"] == [
+        {
+            "source": "orders",
+            "target": "mongo",
+            "target_type": "http",
+            "calls": 5,
+            "failure_calls": 0,
+            "error_rate": 0.0,
+            "average_ms": 50.0,
+        }
+    ]
+    service_query = client.queries[0]
+    service_aggs = service_query["aggs"]["items"]["aggs"]  # type: ignore[index]
+    assert service_aggs["p95"] == {  # type: ignore[index]
+        "percentiles": {"field": "transaction.duration.histogram", "percents": [95]}
+    }
+    assert {"term": {"service.environment": "production"}} in service_query["query"]["bool"]["filter"]  # type: ignore[index]
+
+
+def _latency_bucket(
+    key: dict[str, object],
+    calls: int,
+    duration_us: int,
+    p95_us: int,
+    failures: int,
+) -> dict[str, object]:
+    return {
+        "key": key,
+        "calls": {"value": calls},
+        "duration_us": {"value": duration_us},
+        "p95": {"values": {"95.0": p95_us}},
+        "failures": {"calls": {"value": failures}},
+    }
+
+
+def test_runtime_report_html_is_self_contained_and_does_not_embed_raw_errors() -> None:
+    report = {
+        "schema_version": "apm-runtime-report-v1",
+        "window": {"from": "2026-08-15T09:00:00Z", "to": "2026-08-15T10:00:00Z"},
+        "environment": None,
+        "services": [],
+        "transactions": [],
+        "dependencies": [{"source": "orders", "target": "payments", "calls": 3, "average_ms": 40.0, "error_rate": 0.0}],
+        "coverage": {
+            "services": {"items_seen": 0, "items_exported": 0, "truncated": False, "truncation_reasons": []},
+            "transactions": {"items_seen": 0, "items_exported": 0, "truncated": False, "truncation_reasons": []},
+            "dependencies": {"items_seen": 1, "items_exported": 1, "truncated": False, "truncation_reasons": []},
+        },
+    }
+
+    document = render_runtime_report_html(report)
+
+    assert '<script id="runtime-data" type="application/json">' in document
+    assert "Focused dependency flow" in document
+    assert "dependency P95 is a separate future pass" in document
+    assert "error.message" not in document
+    assert "_source" not in document
+
+
+def test_runtime_report_escapes_a_telemetry_value_before_embedding_json() -> None:
+    report = {
+        "window": {"from": "2026-08-15T09:00:00Z", "to": "2026-08-15T10:00:00Z"},
+        "environment": None,
+        "services": [],
+        "transactions": [],
+        "dependencies": [{"source": "</script><img src=x>", "target": "payments", "calls": 1, "average_ms": 1.0, "error_rate": 0.0}],
+        "coverage": {
+            name: {"items_seen": 0, "items_exported": 0, "truncated": False, "truncation_reasons": []}
+            for name in ("services", "transactions", "dependencies")
+        },
+    }
+
+    document = render_runtime_report_html(report)
+
+    assert "</script><img src=x>" not in document
+    assert "<\\/script><img src=x>" in document
+
+
+def test_apm_report_writes_html(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(
+        "systemlens.cli.build_runtime_report",
+        lambda *args, **kwargs: {
+            "services": [], "transactions": [], "dependencies": []
+        },
+    )
+    monkeypatch.setattr(
+        "systemlens.cli.render_runtime_report_html", lambda report: "<html>report</html>"
+    )
+    output = tmp_path / "runtime.html"
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "apm", "report", "--html", str(output), "--endpoint",
+            "https://elastic.example.test", "--api-key", "not-a-real-key",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert output.read_text(encoding="utf-8") == "<html>report</html>"
 
 
 def test_apm_doctor_json_is_safe_when_not_configured() -> None:

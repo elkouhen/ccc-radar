@@ -215,3 +215,25 @@ read-only credential, but normal indexing and catalog/MCP queries remain offline
 The digest intentionally cannot reconstruct individual traces, request paths, or
 trace exemplars. Mapping observed APM service names to static module identities,
 historical comparisons, and visual overlays remain future work.
+
+## ADR-14 — Use metric histograms for service and transaction P95, not dependency P95
+
+**Status:** Accepted.
+
+**Context:** A quick runtime investigation needs a tail-latency signal for
+services and transactions, while the bounded APM `service_destination` metrics
+contain only response-time count and sum. Deriving a dependency P95 from an
+average would present false precision.
+
+**Decision:** `systemlens apm report` queries aggregate-only APM metricsets.
+It shows average and P95 latency for `service_transaction` and `transaction`
+using `transaction.duration.histogram`. It shows average latency, volume, and
+aggregate failure rate for `service_destination`. Dependency P95 is deferred to
+a separately approved, sampled-span aggregate adapter. The report is an
+explicit self-contained HTML output, never part of the SQLite source snapshot.
+
+**Consequences:** Operators can quickly distinguish service or route tail
+latency from slow outbound exchanges without raw-event export. P95 remains an
+approximate histogram percentile, each ranking carries coverage/truncation,
+and the report does not claim Kafka, MongoDB, S3, or Kubernetes signals that its
+three metricsets cannot provide.

@@ -43,26 +43,30 @@ contains its time window, metric field used, aggregate relations, and explicit
 coverage/truncation metadata. It contains no raw span, trace, log, request, or
 source data and is not merged with a snapshot.
 
-### Planned runtime-analysis projection (not implemented)
+### Elastic APM runtime report projection
 
-A runtime-analysis extension must remain outside the indexer and SQLite model.
-It will construct an in-memory, versioned observation projection from explicit
-read-only Elasticsearch aggregate queries. The projection must retain the
-queried window, environment, source index/metric fields, limits, coverage, and
-truncation state for every returned ranking.
+`apm_report.py` constructs an in-memory `apm-runtime-report-v1` observation
+from three explicit read-only `metrics-apm*` aggregation queries. Its service
+and transaction views page composite buckets and aggregate transaction count,
+duration sum, aggregate failure count, and the P95 percentile of
+`transaction.duration.histogram`. Its dependency view reuses the bounded
+`service_destination` aggregate adapter and therefore intentionally reports
+only average latency, call count, and aggregate failure rate.
 
-The adapter may query aggregate latency, call-count, and error-count fields,
-but it must use `size: 0` aggregation requests and must not retrieve or retain
-raw event `_source` documents. Observations are transient by default: they are
-not written to an architecture snapshot, SQLite, MCP cache, or generated HTML
-file unless a later explicit versioned export contract permits it.
+Every query uses `size: 0`; it never retrieves `_source` documents. Each view
+has an independent composite-bucket guard and output-result guard. The
+projection records the UTC window, environment, source metricsets/field,
+per-view coverage, limits, and truncation. `render_runtime_report_html` embeds
+only this versioned aggregate projection in an explicitly requested,
+self-contained HTML file. It does not write to SQLite, snapshots, or MCP cache.
+Service names and transaction names are inserted through JSON data and rendered
+with HTML escaping before insertion, so a telemetry value cannot create markup.
 
-Correlation is a delivery-layer join, not a topology derivation. It can attach
-an observed service or destination to one static identity only through an exact
-configured alias or other persisted explicit evidence. The projection must
-retain a mapping state (`matched`, `unmapped`, or `ambiguous`) and confidence;
-it must not infer a static HTTP, Kafka, MongoDB, or S3 relation from a matching
-name alone.
+The report is a standalone runtime view and does not join observed names to
+static identities. A later correlation remains a delivery-layer join, not a
+topology derivation: it may attach one observed name only through exact
+persisted evidence, retain mapping state and confidence, and never infer a
+static HTTP, Kafka, MongoDB, or S3 relation from a name coincidence.
 
 S3 support requires a separate conservative Java extractor for explicit AWS SDK
 v1/v2 operations and configured bucket names, with dynamic bucket expressions

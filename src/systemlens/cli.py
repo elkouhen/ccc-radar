@@ -18,6 +18,7 @@ from systemlens.apm import (
     export_digest,
     load_settings as load_apm_settings,
 )
+from systemlens.apm_report import build_runtime_report, render_runtime_report_html
 from systemlens.architecture import (
     analyze as analyze_architecture,
     build_catalog,
@@ -91,9 +92,10 @@ export_app = typer.Typer(
 )
 apm_app = typer.Typer(
     help=(
-        "Vérifier l'accès Elastic APM et exporter un digest compact, sans traces brutes.\n\n"
+        "Vérifier l'accès Elastic APM et produire des synthèses bornées, sans traces brutes.\n\n"
         "Exemples : `systemlens apm doctor --json`, "
-        "`systemlens apm export --since 1h --out apm-digest.json`."
+        "`systemlens apm export --since 1h --out apm-digest.json`, "
+        "`systemlens apm report --since 1h --html runtime.html`."
     )
 )
 topics_app = typer.Typer(
@@ -1172,6 +1174,81 @@ def apm_export_cmd(
     exported = coverage["relations_exported"] if isinstance(coverage, dict) else "?"
     typer.echo(
         f"Digest APM écrit : {out} ({exported} relations, {len(serialized.encode('utf-8'))} octets)."
+    )
+
+
+@apm_app.command("report")
+def apm_report_cmd(
+    html: Path = typer.Option(..., "--html", help="Fichier HTML autonome à produire."),
+    since: str = typer.Option("1h", "--since", help="Fenêtre : 15m, 1h, 7d, etc."),
+    environment: Optional[str] = typer.Option(  # noqa: UP007
+        None, "--environment", help="Filtre exact service.environment (optionnel)."
+    ),
+    endpoint: Optional[str] = typer.Option(  # noqa: UP007
+        None,
+        "--endpoint",
+        help="URL Elasticsearch. Sinon SYSTEMLENS_ELASTICSEARCH_URL.",
+    ),
+    api_key: Optional[str] = typer.Option(  # noqa: UP007
+        None,
+        "--api-key",
+        help="Clé d'API Elasticsearch en lecture seule. Sinon SYSTEMLENS_ELASTICSEARCH_API_KEY.",
+    ),
+    max_services: int = typer.Option(
+        30, "--max-services", min=1, max=1_000, help="Services maximum affichés."
+    ),
+    max_transactions: int = typer.Option(
+        50,
+        "--max-transactions",
+        min=1,
+        max=10_000,
+        help="Transactions maximum affichées.",
+    ),
+    max_dependencies: int = typer.Option(
+        80,
+        "--max-dependencies",
+        min=1,
+        max=10_000,
+        help="Dépendances maximum affichées.",
+    ),
+    max_buckets: int = typer.Option(
+        1_000,
+        "--max-buckets",
+        min=1,
+        max=100_000,
+        help="Buckets Elastic maximum lus par vue avant troncature.",
+    ),
+) -> None:
+    """Produit une vue HTML APM interactive à partir d'agrégats bornés.
+
+    Le rapport contient des P95 pour les services et transactions, une moyenne
+    pour les dépendances et des comptes d'échecs agrégés. Il n'exporte aucune
+    trace, requête, identifiant ou message d'erreur.
+    """
+    try:
+        settings = load_apm_settings(endpoint, api_key)
+        report = build_runtime_report(
+            ElasticApmClient(settings),
+            since=since,
+            environment=environment,
+            max_services=max_services,
+            max_transactions=max_transactions,
+            max_dependencies=max_dependencies,
+            max_buckets=max_buckets,
+        )
+        document = render_runtime_report_html(report)
+        html.write_text(document, encoding="utf-8")
+    except ApmError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=2) from exc
+    except OSError as exc:
+        typer.echo(f"Impossible d'écrire le rapport APM : {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+    typer.echo(
+        "Rapport APM écrit : "
+        f"{html} ({len(cast(list[object], report['services']))} services, "
+        f"{len(cast(list[object], report['transactions']))} transactions, "
+        f"{len(cast(list[object], report['dependencies']))} dépendances)."
     )
 
 

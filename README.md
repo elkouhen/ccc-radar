@@ -70,11 +70,21 @@ export SYSTEMLENS_ELASTICSEARCH_API_KEY=...
 systemlens apm doctor --json
 systemlens apm export --since 1h --environment production --out apm-digest.json
 pi -p @apm-digest.json "Analyse the service dependencies, error rates and latency hotspots."
+
+# Self-contained runtime overview for human investigation
+systemlens apm report --since 1h --environment production --html apm-runtime.html
 ```
 
 The export defaults to 80 relations and 50 KB. Its `coverage` object states
 when either the Elasticsearch aggregation or the output budget truncated the
 result, so Pi can distinguish absence from incomplete coverage.
+
+`apm report` creates an explicit, self-contained HTML file for human review.
+It ranks services and transactions by P95 latency (with their averages, volume,
+and aggregate failure rate), shows dependency average latency and a filterable
+source-to-target flow, and lists recurring aggregate failures. Dependency P95
+is deliberately not estimated in this first pass. The report contains metric
+aggregates only: no raw events, trace IDs, request data, or error messages.
 
 ### Inspect the source aggregation
 

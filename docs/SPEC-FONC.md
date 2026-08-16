@@ -34,6 +34,7 @@ but does not alter AST endpoint extraction.
 | `systemlens doctor [--json]` | Read-only check of configuration, local AST readiness and index state. |
 | `systemlens apm doctor [--endpoint URL] [--api-key KEY] [--json]` | Read-only validation of Elasticsearch access to the APM metrics. It reports only whether the endpoint and key are configured and their source (`flag` or `env`); it never prints the URL or key. |
 | `systemlens apm export [--since DURATION] [--environment NAME] [--endpoint URL] [--api-key KEY] [--max-relations N] [--max-bytes N] [--max-buckets N] [--out FILE]` | Reads `service_destination` aggregates from Elasticsearch and emits compact JSON to stdout, or writes it to `FILE`. It does not export raw spans, logs, headers, identifiers, or source content. |
+| `systemlens apm report --html FILE [--since DURATION] [--environment NAME] [--endpoint URL] [--api-key KEY] [--max-services N] [--max-transactions N] [--max-dependencies N] [--max-buckets N]` | Reads bounded APM metric aggregates and writes a self-contained human investigation report. It never reads raw events, spans, logs, request data, trace identifiers, or unredacted error values. |
 | `systemlens index [MANIFEST]... [--full] [--topic-strategy default\|strategy1] [--manifest FILE]... [--kubernetes] [--kubernetes-namespace NAME]` | Incrementally extracts and persists architecture facts. `--kubernetes` queries the active `kubectl` context for Deployments and StatefulSets; `--kubernetes-namespace` restricts it to one namespace. |
 | `systemlens microservices`, `topics`, `apis`, `dtos`, `mongodb`, `modules` | Browse the indexed catalog; `microservices`, `topics` and `mongodb` list the corresponding architecture objects directly, each with a `kind` and `name`, and support the documented list/show/neighbors actions and JSON output where applicable. |
 | `systemlens analyze audit` | Reports static architecture risks. |
@@ -233,29 +234,39 @@ The JSON contract has schema version `apm-digest-v1`, a UTC `window`, optional
 number of relations seen and exported plus each truncation reason. Output is
 bounded by `--max-relations` (80 by default), `--max-bytes` (50,000 by default),
 and a protective Elasticsearch `--max-buckets` read limit (5,000 by default).
-No APM result is persisted in SQLite, surfaced through MCP, or merged into an
-HTML export in this release.
+No digest result is persisted in SQLite, surfaced through MCP, or merged into
+an architecture HTML export.
 
-## Planned runtime-analysis contract (not implemented)
+## Elastic APM runtime report
 
-The following requirements define the intended extension; they do not add a
-CLI, MCP, JSON, or HTML contract in the current release. A future command must
-be explicit and read-only, require a bounded UTC window, accept an optional
-exact environment filter, and expose the effective limits in its result.
+`apm report` is an explicit read-only command which requires `--html FILE`.
+It accepts the same bounded UTC `--since` duration and optional exact
+environment filter as `apm export`. It queries only `metrics-apm*`, always with
+`size: 0`, and emits a versioned `apm-runtime-report-v1` aggregate observation
+embedded in the requested self-contained HTML file. It is not persisted in
+SQLite, merged into the static architecture snapshot, or exposed through MCP.
 
-It must return a versioned aggregate observation with separate ranked views of
-dependency volume/latency and failures. Each view must identify the Elastic
-metric or aggregate fields used and report coverage, including upstream bucket,
-relation, byte, and time-window limitations. A zero result means that no
-matching aggregate was observed in the covered window; it must not be presented
-as proof that a static HTTP, Kafka, MongoDB, or S3 dependency is absent.
+The service view reads `metricset.name=service_transaction`; the transaction
+view reads `metricset.name=transaction`; both aggregate
+`transaction.duration.count`, `transaction.duration.sum.us`, and the P95 of
+`transaction.duration.histogram`, plus aggregate failure counts. The dependency
+view reads `metricset.name=service_destination` and reports call count, average
+latency, and aggregate failure rate. It first uses `service.target.name`, then
+retries the legacy `span.destination.service.resource` field only when the
+first query is empty. Dependency P95 is not returned: it requires a separate,
+explicitly approved second pass over sampled span aggregates.
 
-The analysis may present a static relation beside an observed relation only
-when an exact explicit alias maps the observed name to one indexed identity.
-Unmapped and ambiguous observations remain visible with their mapping state and
-must not change the persisted topology. The analysis is limited to aggregate
-metrics and error counts: raw spans, trace IDs, request data, headers, log
-messages, credentials, and unredacted exception values are excluded.
+The report has service, transaction, dependency, and recurring-failure tables;
+the dependency table also provides a client-side source/target flow filter.
+Each ranking reports `items_seen`, `items_exported`, its result limit, bucket
+limit, and truncation reasons. A zero result means no matching aggregate was
+observed in the covered window; it does not prove a static HTTP, Kafka, MongoDB,
+or S3 dependency is absent. P95 values are approximate histogram percentiles.
+
+The report does not correlate observed names with static identities in this
+release. Its analysis is limited to aggregate metrics and failure counts: raw
+spans, trace IDs, request data, headers, log messages, credentials, and
+unredacted exception values are excluded.
 
 Kafka latency, consumer failures, MongoDB activity, S3 activity, and Kubernetes
 capacity signals require their own documented source fields and availability
