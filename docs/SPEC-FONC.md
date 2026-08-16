@@ -253,8 +253,8 @@ embedded in the requested self-contained HTML file. It is not persisted in
 SQLite, merged into the static architecture snapshot, or exposed through MCP.
 
 The service view reads `metricset.name=service_transaction`; the transaction
-view reads `metricset.name=transaction`; both aggregate
-`transaction.duration.count`, `transaction.duration.sum.us`, and the P95 of
+view reads `metricset.name=transaction`; both aggregate the `value_count` and
+`sum` metrics of `transaction.duration.summary`, and the P95 of
 `transaction.duration.histogram`, plus aggregate failure counts. The dependency
 view reads `metricset.name=service_destination` and reports call count, average
 latency, and aggregate failure rate. It first uses `service.target.name`, then

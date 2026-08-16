@@ -162,9 +162,13 @@ def _latency_query(
                 "items": {
                     "composite": composite,
                     "aggs": {
-                        "calls": {"sum": {"field": "transaction.duration.count"}},
+                        "calls": {
+                            "value_count": {
+                                "field": "transaction.duration.summary"
+                            }
+                        },
                         "duration_us": {
-                            "sum": {"field": "transaction.duration.sum.us"}
+                            "sum": {"field": "transaction.duration.summary"}
                         },
                         "p95": {
                             "percentiles": {
@@ -176,7 +180,9 @@ def _latency_query(
                             "filter": {"term": {"event.outcome": "failure"}},
                             "aggs": {
                                 "calls": {
-                                    "sum": {"field": "transaction.duration.count"}
+                                    "value_count": {
+                                        "field": "transaction.duration.summary"
+                                    }
                                 }
                             },
                         },

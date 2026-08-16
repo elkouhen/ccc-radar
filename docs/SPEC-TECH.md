@@ -48,7 +48,8 @@ source data and is not merged with a snapshot.
 `apm_report.py` constructs an in-memory `apm-runtime-report-v1` observation
 from three explicit read-only `metrics-apm*` aggregation queries. Its service
 and transaction views page composite buckets and aggregate transaction count,
-duration sum, aggregate failure count, and the P95 percentile of
+duration sum, aggregate failure count from the `aggregate_metric_double`
+field `transaction.duration.summary`, and the P95 percentile of
 `transaction.duration.histogram`. Its dependency view reuses the bounded
 `service_destination` aggregate adapter and therefore intentionally reports
 only average latency, call count, and aggregate failure rate.

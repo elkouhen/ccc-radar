@@ -296,6 +296,20 @@ def test_runtime_report_uses_histogram_p95_for_services_and_transactions() -> No
     ]
     service_query = client.queries[0]
     service_aggs = service_query["aggs"]["items"]["aggs"]  # type: ignore[index]
+    assert service_aggs["calls"] == {  # type: ignore[index]
+        "value_count": {"field": "transaction.duration.summary"}
+    }
+    assert service_aggs["duration_us"] == {  # type: ignore[index]
+        "sum": {"field": "transaction.duration.summary"}
+    }
+    assert service_aggs["failures"] == {  # type: ignore[index]
+        "filter": {"term": {"event.outcome": "failure"}},
+        "aggs": {
+            "calls": {
+                "value_count": {"field": "transaction.duration.summary"}
+            }
+        },
+    }
     assert service_aggs["p95"] == {  # type: ignore[index]
         "percentiles": {"field": "transaction.duration.histogram", "percents": [95]}
     }
