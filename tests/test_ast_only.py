@@ -299,6 +299,34 @@ def test_cli_indexing_issues_emits_ai_ready_json(tmp_path: Path, monkeypatch) ->
     assert isinstance(payload["issues"], list)
 
 
+def test_infer_framework_endpoints_reads_json_openapi_contract(tmp_path: Path) -> None:
+    contract = tmp_path / "src" / "main" / "resources" / "openapi.json"
+    contract.parent.mkdir(parents=True)
+    contract.write_text(
+        json.dumps(
+            {
+                "openapi": "3.0.0",
+                "paths": {
+                    "/orders/{id}": {
+                        "get": {"summary": "Get an order"},
+                        "delete": {"summary": "Remove an order"},
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    endpoints = infer_framework_endpoints(
+        tmp_path, [str(contract.relative_to(tmp_path).as_posix())]
+    )
+
+    routes = {(endpoint.topic) for endpoint in endpoints}
+    assert "GET /orders/{id}" in routes
+    assert "DELETE /orders/{id}" in routes
+    assert all(endpoint.system == "rest" and endpoint.framework == "openapi" for endpoint in endpoints)
+
+
 def test_indexed_kafka_facts_build_a_traceable_service_edge(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     shutil.copytree(FIXTURES / "kafka_repo", repo)

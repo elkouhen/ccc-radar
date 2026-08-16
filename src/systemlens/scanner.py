@@ -1254,13 +1254,25 @@ def _infer_openapi_endpoints(
         if not isinstance(raw_route, str) or not isinstance(operations, dict):
             continue
         route = _normalize_rest_path(raw_route)
-        route_line = next((index + 1 for index, line in enumerate(lines) if line.lstrip().startswith(f"{raw_route}:")), 1)
+        route_line = next(
+            (
+                index + 1
+                for index, line in enumerate(lines)
+                if line.lstrip().startswith(f"{raw_route}:")
+                or line.lstrip().startswith(f'"{raw_route}":')
+            ),
+            1,
+        )
         for raw_method in operations:
             method = str(raw_method).lower()
             if method not in _OPENAPI_HTTP_METHODS:
                 continue
             method_line = next(
-                (index + 1 for index in range(route_line, len(lines)) if lines[index].strip() == f"{method}:"),
+                (
+                    index + 1
+                    for index in range(route_line, len(lines))
+                    if lines[index].strip() in (f"{method}:", f'"{method}":')
+                ),
                 route_line,
             )
             snippet = _read_snippet(repo_root, rel_path, method_line, method_line)
@@ -2286,6 +2298,9 @@ def infer_framework_endpoints(
                 + _infer_spring_cloud_gateway_yaml_routes(repo_root, rel_path)
                 + _infer_openapi_endpoints(repo_root, rel_path)
             ):
+                inferred[endpoint.id] = endpoint
+        elif rel_path.endswith(".json"):
+            for endpoint in _infer_openapi_endpoints(repo_root, rel_path):
                 inferred[endpoint.id] = endpoint
         elif configured_api_client_strategy1 and _is_strategy1_openapi_declaration_path(rel_path):
             for endpoint in _infer_strategy1_declared_openapi_publications(repo_root, rel_path):
