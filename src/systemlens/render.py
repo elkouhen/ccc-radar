@@ -1780,6 +1780,7 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
     .reference-action { width: auto !important; height: 29px !important; padding: 0 8px !important; color: #1d4f91 !important; border-color: #bfdbfe !important; background: #eff6ff !important; font-size: 11px !important; font-weight: 700; white-space: nowrap; }
     .reference-action:disabled { color: #94a3b8 !important; border-color: #e2e8f0 !important; background: #f8fafc !important; cursor: not-allowed; }
     #details { position: fixed; z-index: 2; right: 16px; bottom: 16px; width: min(400px, calc(100vw - 32px)); max-height: min(68vh, 560px); overflow: auto; border: 1px solid #d7dee9; border-radius: 14px; background: rgba(255, 255, 255, .97); color: #475569; font-size: 13px; line-height: 1.45; box-shadow: 0 12px 32px rgba(15, 23, 42, .16); }
+    #details.is-empty { pointer-events: none; }
     .details-header { padding: 16px; border-bottom: 1px solid #e2e8f0; background: linear-gradient(135deg, #f8fafc, #eef5ff); }
     .details-header.is-low { border-left: 4px solid #2563eb; }
     .details-header.is-medium { border-left: 4px solid #d97706; }
@@ -2213,7 +2214,7 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
       <div class="legend-row"><span class="legend-mark" style="background:#7c3aed"></span>Relation conventionnelle : Strategy1</div>
     </div>
   </details>
-  <div id="details"><div class="details-empty">Selectionnez un noeud pour isoler ses relations et afficher ses APIs.</div></div>
+  <div id="details" class="is-empty"><div class="details-empty">Selectionnez un noeud pour isoler ses relations et afficher ses APIs.</div></div>
   <div id="graph" aria-label="Graphe des interactions"></div>
   <div id="dependency-graph" aria-label="Arbre des dependances entre microservices" hidden></div>
   <div id="inspector-modal" class="inspector-modal" role="dialog" aria-modal="true" aria-labelledby="inspector-title" hidden>
@@ -3496,6 +3497,7 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
         .filter(link => link.target === id)
         .map(link => (graphData.build_dependencies.nodes.find(item => item.id === link.source) || {}).name)
         .filter(Boolean);
+      details.classList.remove("is-empty");
       details.replaceChildren();
       const header = document.createElement("header");
       header.className = "details-header";
@@ -3511,6 +3513,7 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
       appendList("Utilise par", [...new Set(dependents)].sort());
     }
     function setDetailsEmpty(message) {
+      details.classList.add("is-empty");
       details.replaceChildren();
       const empty = document.createElement("div");
       empty.className = "details-empty";
@@ -3653,19 +3656,27 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
         limited: paths.length >= maxPaths,
       };
     }
-    function resolveExactNodeName(name) {
+    function resolveExactNodeName(name, allowedKinds = null) {
       const candidates = nodesByNormalizedName.get(normalizeNodeName(name)) || [];
       if (!candidates.length) return { error: `Noeud introuvable : ${name}. Saisissez son nom exact.` };
-      if (candidates.length > 1) return { error: `Nom ambigu : ${name}. Precisez un nom de noeud unique.` };
-      return { id: candidates[0].id };
+      const eligible = allowedKinds
+        ? candidates.filter(candidate => allowedKinds.includes(nodeDataById.get(candidate.id).kind))
+        : candidates;
+      if (!eligible.length) return { error: `Type de noeud invalide : ${name}.` };
+      if (eligible.length > 1) return { error: `Nom ambigu : ${name}. Precisez un nom de noeud unique.` };
+      return { id: eligible[0].id };
     }
     function parsePathQuery(query = pathQuery.value) {
       const names = query.split("->").map(name => name.trim());
       if (names.length < 2) return { error: "Saisissez au moins deux noeuds separes par ->." };
       if (names.some(name => !name)) return { error: "Chaque etape de l'itineraire doit avoir un nom : retirez le -> en trop ou renseignez le noeud manquant." };
       const stops = [];
-      for (const name of names) {
-        const resolved = resolveExactNodeName(name);
+      for (const [index, name] of names.entries()) {
+        const endpoint = index === 0 || index === names.length - 1;
+        const resolved = resolveExactNodeName(
+          name,
+          endpoint ? ["microservice"] : ["microservice", "kafka_topic"],
+        );
         if (resolved.error) return resolved;
         stops.push(resolved.id);
       }
@@ -3696,6 +3707,7 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
       });
     }
     function renderPathDetails(path) {
+      details.classList.remove("is-empty");
       details.replaceChildren();
       const nodeKindLabel = node => {
         if (node.kind === "kafka_topic") return "Topic Kafka";
@@ -3764,6 +3776,7 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
       persistState();
     }
     function renderSimplePathChoices(paths, limited) {
+      details.classList.remove("is-empty");
       details.replaceChildren();
       const section = document.createElement("section");
       section.className = "details-section simple-paths";
@@ -3902,6 +3915,7 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
       const collectionCount = isMicroservice ? new Set(
         indexedEdges.filter(link => link.kind === "mongodb" && link.source === id).map(link => link.target)
       ).size : 0;
+      details.classList.remove("is-empty");
       details.replaceChildren();
       const kindLabel = node.kind === "kafka_topic" ? "Topic Kafka" : node.kind === "mongodb_collection" ? "Collection MongoDB" : "Microservice";
       const complexity = node.complexity;

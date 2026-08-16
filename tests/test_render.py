@@ -127,7 +127,7 @@ enum PaymentStatus { AUTHORIZED, DECLINED }
     assert "max-height: calc(100vh - 32px)" in document
     assert "scroll-padding-bottom: 8px" in document
     assert 'placeholder="orders ou orders -> payments"' in document
-    assert "function resolveExactNodeName(name)" in document
+    assert "function resolveExactNodeName(name, allowedKinds = null)" in document
     assert "function runExploreSearch()" in document
     assert "Aucun itineraire Kafka oriente ne passe par les noeuds demandes dans cet ordre." in document
     assert 'link => link.kind === "kafka"' in document

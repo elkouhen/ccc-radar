@@ -159,6 +159,15 @@ OpenAPI evidence paths; richer DTO/OpenAPI content requires an explicit future
 indexed contract rather than a live source read. This keeps an export
 reproducible when repository files change after `systemlens index`.
 
+The HTML renderer keeps its floating graph-detail panel in an explicit empty
+state until a resource or itinerary is selected. The empty state is visual-only
+and ignores pointer events, preventing it from obscuring a control in a narrow
+viewport; any populated detail panel restores pointer interaction. Path parsing
+filters same-name candidates by the grammar before accepting an itinerary
+endpoint: only a microservice can be first or last, while intermediate stops
+can be microservices or Kafka topics. Direct resource search continues to
+report multiple same-name resources as ambiguous.
+
 The legacy `findings` table and model are retained only to open existing index
 databases. `Store.clear_findings_once("ast_only_analysis_v1")` removes stale
 external-analyzer data on the first AST-only index run.

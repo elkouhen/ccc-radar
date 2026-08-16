@@ -122,9 +122,11 @@ its relative connectivity through its coloured outline; the exact details are
 available after selecting the node.
 The Explore search suggests indexed resource names and accepts either one
 exact, unambiguous graph-node name or a Kafka itinerary written with `->`.
-An itinerary starts and ends with a
-microservice and follows only directed Kafka relations through Kafka topics;
-it never traverses HTTP or MongoDB dependencies.
+An itinerary starts and ends with a microservice and follows only directed Kafka
+relations through Kafka topics; it never traverses HTTP or MongoDB dependencies.
+When a microservice and another resource have the same display name, a direct
+resource search remains ambiguous, while an itinerary endpoint resolves the
+unique microservice candidate required by the itinerary grammar.
 Invalid, ambiguous, repeated, or unreachable stops leave the current graph
 unchanged and produce an actionable message. The itinerary detail is an
 ordered, clickable list of node names and types. A Kafka topic lists its
@@ -138,6 +140,10 @@ visible action that opens the module root directory in VS Code. Kafka topics
 list their applicable DTOs. A collapsed `Sources` section lists the indexed
 OpenAPI and Kafka files that provide the evidence, avoiding repetition in every
 topic.
+At constrained viewport sizes, an empty floating context panel remains visible
+as guidance but does not intercept pointer interaction with the active tab;
+once it contains selected-node or path details, its normal controls remain
+interactive.
 Indexing persists source evidence only as paths relative to the project root.
 HTML export joins those paths to `--root-path` (the current directory by
 default) when building VS Code links. No WSL distribution or absolute local

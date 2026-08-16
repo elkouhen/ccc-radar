@@ -112,12 +112,20 @@ they are not cross-module entry points.
 
 Browser integration tests live in `tests/test_browser_export.py`. They are
 marked both `integration` and `slow`, so they do not run in the default
-unit-test suite. They use the Google Chrome application when it is available,
-or the executable configured in `SYSTEMLENS_CHROME_BIN`. Run them with:
+unit-test suite. They prefer the executable configured in
+`SYSTEMLENS_CHROME_BIN`, then local Google Chrome, then the Chromium revision
+pinned by the installed Playwright package. Run the dedicated acceptance gate
+with:
 
 ```bash
-SYSTEMLENS_CHROME_BIN=/path/to/chrome uv run pytest -m slow tests/test_browser_export.py
+uv sync --group dev --locked
+uv run playwright install --with-deps chromium
+uv run pytest -m slow tests/test_browser_export.py
 ```
+
+The `Browser acceptance (Chromium)` GitHub Actions job runs that command
+separately from the default unit suite. The lockfile pins the Playwright
+version, which in turn pins the Chromium revision used by CI.
 
 ## Maintenance focus
 
