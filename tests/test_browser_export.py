@@ -55,7 +55,8 @@ def test_apm_runtime_report_filters_observed_dependency_flows() -> None:
                 {"service": "orders", "calls": 10, "failure_calls": 1, "error_rate": 0.1, "average_ms": 80.0, "p95_ms": 240.0}
             ],
             "transactions": [
-                {"service": "orders", "transaction": "POST /checkout", "calls": 6, "failure_calls": 1, "error_rate": 0.166667, "average_ms": 90.0, "p95_ms": 250.0}
+                {"service": "orders", "transaction": "POST /checkout", "calls": 6, "failure_calls": 1, "error_rate": 0.166667, "average_ms": 90.0, "p95_ms": 250.0},
+                {"service": "catalog", "transaction": "GET /products", "calls": 4, "failure_calls": 0, "error_rate": 0.0, "average_ms": 20.0, "p95_ms": 40.0},
             ],
             "dependencies": [
                 {"source": "orders", "target": "payments", "target_type": "http", "calls": 6, "failure_calls": 1, "error_rate": 0.166667, "average_ms": 70.0},
@@ -82,6 +83,10 @@ def test_apm_runtime_report_filters_observed_dependency_flows() -> None:
 
         assert "orders" in page.locator("#services").inner_text()
         assert "POST /checkout" in page.locator("#transactions").inner_text()
+        assert "POST /checkout" in page.locator("#transaction-graph").inner_text()
+        page.locator("#transaction-service-filter").select_option("orders")
+        assert "POST /checkout" in page.locator("#transaction-graph").inner_text()
+        assert "GET /products" not in page.locator("#transaction-graph").inner_text()
         assert "payments" in page.locator("#flows").inner_text()
         page.locator("#service-filter").select_option("orders")
         assert "payments" in page.locator("#flows").inner_text()

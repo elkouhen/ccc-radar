@@ -61,6 +61,10 @@ only this versioned aggregate projection in an explicitly requested,
 self-contained HTML file. It does not write to SQLite, snapshots, or MCP cache.
 Service names and transaction names are inserted through JSON data and rendered
 with HTML escaping before insertion, so a telemetry value cannot create markup.
+The report's transaction graph is a client-side grouping of transaction buckets
+by `service.name`; an edge represents only that ownership. It intentionally
+does not connect a transaction bucket to a dependency bucket because the three
+metric aggregate queries do not prove that causal relationship.
 
 The report is a standalone runtime view and does not join observed names to
 static identities. A later correlation remains a delivery-layer join, not a

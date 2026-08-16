@@ -262,12 +262,15 @@ retries the legacy `span.destination.service.resource` field only when the
 first query is empty. Dependency P95 is not returned: it requires a separate,
 explicitly approved second pass over sampled span aggregates.
 
-The report has service, transaction, dependency, and recurring-failure tables;
-the dependency table also provides a client-side source/target flow filter.
-Each ranking reports `items_seen`, `items_exported`, its result limit, bucket
-limit, and truncation reasons. A zero result means no matching aggregate was
-observed in the covered window; it does not prove a static HTTP, Kafka, MongoDB,
-or S3 dependency is absent. P95 values are approximate histogram percentiles.
+The report has service, transaction, dependency, and recurring-failure tables.
+Its transaction graph groups transactions beneath their observed service and
+colours them by relative P95; its service filter is client-side. Its edges show
+only service ownership, never a transaction-to-dependency call. The dependency
+table provides a separate client-side source/target flow filter. Each ranking
+reports `items_seen`, `items_exported`, its result limit, bucket limit, and
+truncation reasons. A zero result means no matching aggregate was observed in
+the covered window; it does not prove a static HTTP, Kafka, MongoDB, or S3
+dependency is absent. P95 values are approximate histogram percentiles.
 
 The report does not correlate observed names with static identities in this
 release. Its analysis is limited to aggregate metrics and failure counts: raw

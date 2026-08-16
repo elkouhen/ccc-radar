@@ -237,3 +237,22 @@ latency from slow outbound exchanges without raw-event export. P95 remains an
 approximate histogram percentile, each ranking carries coverage/truncation,
 and the report does not claim Kafka, MongoDB, S3, or Kubernetes signals that its
 three metricsets cannot provide.
+
+## ADR-15 — Show transaction ownership without inventing transaction-to-dependency calls
+
+**Status:** Accepted.
+
+**Context:** The runtime report has separate aggregate transaction and
+service-destination metrics. A visual connection between a transaction and a
+destination would look like trace evidence even though these independent
+aggregations cannot establish it.
+
+**Decision:** The runtime report may graph a service and its observed
+transactions, using P95, call volume, and aggregate error rate on transaction
+nodes. It may show dependencies in a separate service-level flow, but it must
+not draw a transaction-to-dependency edge. Such an edge requires a future,
+explicitly approved sampled-span aggregate with coverage reporting.
+
+**Consequences:** The graph remains useful for finding slow or failing routes
+without turning correlation into causation. The visual model stays compatible
+with the aggregate-only, no-raw-event boundary of `apm report`.
