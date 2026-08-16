@@ -15,6 +15,10 @@ The product answers questions such as:
 - What are the dependencies and likely impact paths between services?
 - Which Maven/Gradle modules, OpenAPI contracts, MongoDB collections and
   Spring properties belong to a service?
+- Which observed service-to-service dependencies are slow, error-prone, or
+  incompletely covered during a selected runtime window?
+- Which statically evidenced HTTP, Kafka, MongoDB, or S3 integration provides
+  context for an observed runtime hotspot?
 
 ## Users and primary workflows
 
@@ -23,6 +27,7 @@ The product answers questions such as:
 | Coding agent (primary) | Establish proven dependencies, impact and unresolved facts before an edit | MCP tools |
 | Developer | Inspect the evidence behind a service, API, topic or module | CLI catalog commands and HTML export |
 | Architect | Review topology, uncertainty and static architecture risks across services | `analyze`, graph export |
+| Performance engineer / SRE | Identify high-volume, slow, or failing observed dependencies and relate them to the deployed architecture | Explicit bounded APM analysis and runtime overlays |
 
 The primary workflow is `systemlens init`, `systemlens index`, then an agent
 uses the MCP catalog, graph, coverage and trace tools before making a bounded
@@ -31,6 +36,13 @@ indexing-issue tools expose unresolved facts. The agent then reindexes after
 the edit. Developers can follow the same workflow through `microservices`,
 `topics`, `apis`, `modules`, `analyze`, and HTML export. Indexing is
 incremental; `--full` refreshes every eligible source file.
+
+For runtime investigation, a developer or SRE deliberately selects an Elastic
+APM window and environment. SystemLens returns bounded aggregate observations
+with their coverage, then presents them alongside—never as a replacement for—
+the indexed Java/Spring topology. The user can distinguish a static relation
+that was not observed from an observed relation that cannot be resolved to a
+source fact.
 
 ## Scope
 
@@ -50,12 +62,24 @@ Delivered:
   It exports bounded service-to-destination metric aggregates only; it does not
   export raw spans or alter the source inventory.
 
+Planned:
+
+- A bounded runtime-analysis view that ranks observed dependency latency,
+  failures, and call volume, and reports the selected time window and coverage.
+- Conservative presentation of observed HTTP, Kafka, MongoDB, and S3 activity
+  beside the static architecture, without inventing a source mapping.
+- Explicit Kubernetes capacity context for runtime hotspots where a verified
+  workload-to-service match exists. A future matcher must prefer an exact name,
+  then accept a unique token-bounded service-name inclusion in a Deployment or
+  StatefulSet name; ambiguous matches remain unresolved.
+
 Not delivered:
 
 - Security or quality scans, severity filtering or automated remediation.
 - Runtime tracing ingestion, raw-span retention, continuous cluster collection,
   cross-repository source analysis, or a hosted service. The optional APM
-  digest is a one-shot aggregate export, not a tracing store.
+  digest and planned runtime analysis are one-shot aggregate reads, not a
+  tracing store.
 - Guaranteed resolution of dynamic values; unresolved values remain explicitly
   marked as dynamic rather than guessed.
 
@@ -76,6 +100,19 @@ Not delivered:
    inventing a dependency.
 6. An agent must be able to obtain a bounded answer, evidence and unresolved
    facts before it changes a supported Java/Spring integration.
+7. Every runtime observation must state its source, time window, aggregation
+   coverage, and truncation state. It must remain distinguishable from a
+   source-evidenced architecture fact.
+8. Runtime analysis must use explicit, read-only, bounded queries. It must not
+   export or persist raw spans, request payloads, headers, trace identifiers,
+   credentials, or unredacted error values.
+9. An observed service, Kafka, MongoDB, or S3 name maps to a static identity
+   only through explicit exact evidence. Missing or ambiguous mappings remain
+   visible as observations rather than becoming guessed dependencies.
+10. Kubernetes workload correlation must prefer an exact service name. When a
+    Deployment or StatefulSet name contains a service name, a normalized,
+    token-bounded inclusion may be used only if it identifies one service; a
+    broad substring or multiple candidates must remain unresolved.
 
 ## Success measures
 
@@ -90,6 +127,9 @@ Not delivered:
 - Incremental indexing touches only changed files unless an extractor signature,
   selected convention, or an analysis dependency (Spring configuration or build
   descriptor) changes.
+- For a selected runtime window, a developer can identify the highest-ranked
+  latency and error hotspots, determine the completeness of the observation,
+  and navigate only to explicitly linked static evidence.
 
 For observable command and MCP contracts, see
 [SPEC-FONC.md](./SPEC-FONC.md). For implementation details, see

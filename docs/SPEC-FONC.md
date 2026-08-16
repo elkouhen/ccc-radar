@@ -235,3 +235,35 @@ bounded by `--max-relations` (80 by default), `--max-bytes` (50,000 by default),
 and a protective Elasticsearch `--max-buckets` read limit (5,000 by default).
 No APM result is persisted in SQLite, surfaced through MCP, or merged into an
 HTML export in this release.
+
+## Planned runtime-analysis contract (not implemented)
+
+The following requirements define the intended extension; they do not add a
+CLI, MCP, JSON, or HTML contract in the current release. A future command must
+be explicit and read-only, require a bounded UTC window, accept an optional
+exact environment filter, and expose the effective limits in its result.
+
+It must return a versioned aggregate observation with separate ranked views of
+dependency volume/latency and failures. Each view must identify the Elastic
+metric or aggregate fields used and report coverage, including upstream bucket,
+relation, byte, and time-window limitations. A zero result means that no
+matching aggregate was observed in the covered window; it must not be presented
+as proof that a static HTTP, Kafka, MongoDB, or S3 dependency is absent.
+
+The analysis may present a static relation beside an observed relation only
+when an exact explicit alias maps the observed name to one indexed identity.
+Unmapped and ambiguous observations remain visible with their mapping state and
+must not change the persisted topology. The analysis is limited to aggregate
+metrics and error counts: raw spans, trace IDs, request data, headers, log
+messages, credentials, and unredacted exception values are excluded.
+
+Kafka latency, consumer failures, MongoDB activity, S3 activity, and Kubernetes
+capacity signals require their own documented source fields and availability
+checks. Their absence must be reported as unavailable coverage rather than
+estimated from another telemetry type.
+
+For a future Kubernetes workload correlation, an exact workload/service name
+match remains preferred. A normalized, token-bounded inclusion (for example,
+`orders` in `orders-api-v2`) may be used only as a fallback when it identifies
+one indexed service. A broad substring match, or a workload containing two or
+more candidate service names, is unresolved and must be exposed in coverage.

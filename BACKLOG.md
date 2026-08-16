@@ -27,6 +27,13 @@ risk rather than estimated implementation effort.
 | SL-006 | P2 | Proposed | Restore a reliable browser acceptance gate | — |
 | SL-007 | P2 | Proposed | Add a shareable HTML export without local deep links | — |
 | SL-008 | P2 | Done | Retire the legacy vector runtime | — |
+| SL-009 | P1 | Proposed | Rank bounded APM dependency and failure hotspots | — |
+| SL-010 | P1 | Proposed | Correlate observed APM names with static evidence conservatively | SL-009 |
+| SL-011 | P1 | Proposed | Extract Java/Spring S3 integration evidence | — |
+| SL-012 | P2 | Proposed | Add source-specific Kafka, MongoDB, and S3 runtime adapters | SL-009, SL-011 |
+| SL-013 | P2 | Proposed | Add explicit Kubernetes capacity context to runtime hotspots | SL-009, SL-015 |
+| SL-014 | P2 | Proposed | Compare bounded runtime windows for regressions | SL-009 |
+| SL-015 | P1 | Proposed | Resolve prefixed and suffixed Kubernetes workload names safely | — |
 
 ## P0 — Index correctness
 
@@ -333,6 +340,213 @@ vector tables; normal reads no longer load or access their SQLite extension.
 - No public CLI or MCP contract references the retired vector behavior.
 - Package metadata describes the current SystemLens architecture product.
 - Unit tests, static checks, package build, and a fresh-install smoke test pass.
+
+## Runtime architecture-analysis roadmap
+
+### P1 — Core observed-topology context
+
+#### SL-009 — Rank bounded APM dependency and failure hotspots
+
+**Problem**
+
+The current `apm export` exposes only aggregated `service_destination`
+relations for an external consumer. A developer cannot obtain a first-class,
+bounded SystemLens analysis of high-volume, slow, or failing observed
+dependencies for a selected window.
+
+**Implementation direction**
+
+Define a new explicit read-only runtime-analysis adapter and versioned result.
+Aggregate dependency call count, latency, and failure counts from documented
+Elastic APM fields. Add separately labelled transaction/error aggregates only
+where their mappings and privacy properties are verified. Retain source fields,
+window, coverage, and every truncation reason; do not fetch raw events.
+
+**Likely files**
+
+- `src/systemlens/apm.py`
+- `src/systemlens/cli.py`
+- `docs/SPEC-FONC.md`
+- `docs/SPEC-TECH.md`
+- `tests/test_apm.py`
+
+**Acceptance criteria**
+
+- A selected UTC window and optional environment produce deterministic ranked
+  dependency-latency and failure views.
+- Every result declares its metric fields, source indexes, limits, coverage,
+  and truncation state.
+- A zero aggregate result is distinguishable from incomplete coverage.
+- No raw span, trace ID, request, header, credential, log message, or
+  unredacted exception value appears in the result.
+- Contract tests cover pagination, legacy field fallback, byte/relation limits,
+  failures, and empty windows.
+
+#### SL-010 — Correlate observed APM names with static evidence conservatively
+
+**Problem**
+
+An observed APM service or destination name may differ from an indexed module,
+service, Kafka topic, MongoDB collection, or future S3 resource. A name-based
+overlay could otherwise invent a static relationship.
+
+**Implementation direction**
+
+Introduce a delivery-layer mapping projection that uses only exact configured
+aliases and persisted source evidence. Preserve `matched`, `unmapped`, or
+`ambiguous` state, the candidate identities, and confidence. Never write the
+observed join back to `architecture_relations`.
+
+**Likely files**
+
+- `src/systemlens/apm.py`
+- `src/systemlens/architecture_inventory.py`
+- `src/systemlens/cli.py`
+- `src/systemlens/render.py`
+- `tests/test_apm.py`
+- `tests/test_render.py`
+
+**Acceptance criteria**
+
+- An exact explicit alias attaches an observation to one static identity.
+- Missing and duplicate aliases remain visible without selecting a target.
+- Static graph, audit, impact, and persisted relation output remain unchanged
+  when APM observations are present.
+- UI or JSON output labels the observation separately from source evidence.
+
+#### SL-011 — Extract Java/Spring S3 integration evidence
+
+**Problem**
+
+S3 is part of the target microservice architecture but is absent from the
+static topology, preventing a runtime hotspot from being placed in source
+context.
+
+**Implementation direction**
+
+Conservatively extract explicit AWS SDK v1/v2 S3 client operations, bucket
+configuration, and source locations. Model dynamic or unresolved bucket names
+as explicit ambiguity rather than fabricating a bucket resource.
+
+**Likely files**
+
+- `src/systemlens/scanner.py`
+- `src/systemlens/models.py`
+- `src/systemlens/relations.py`
+- `src/systemlens/store.py`
+- `src/systemlens/render.py`
+- `tests/test_ast_only.py`
+- `tests/test_relations.py`
+
+**Acceptance criteria**
+
+- Explicit S3 bucket operations appear with source evidence and confidence.
+- Dynamic bucket expressions remain unresolved and are reported by coverage.
+- Existing SQLite indexes receive an additive migration before indexing.
+- HTML, JSON, CLI, MCP, and audit views preserve S3 resource identity without
+  affecting HTTP, Kafka, or MongoDB semantics.
+
+#### SL-015 — Resolve prefixed and suffixed Kubernetes workload names safely
+
+**Problem**
+
+The current Kubernetes enrichment attaches a Deployment or StatefulSet only
+when its name exactly matches the indexed microservice. In common deployments,
+the workload name contains the microservice name with a prefix, suffix, or
+rollout qualifier, so useful capacity context is omitted.
+
+**Implementation direction**
+
+Keep exact matching as the first choice. As a fallback, normalize lower-case
+names into separator-delimited tokens and match one complete service-name token
+sequence inside the workload name. Record the strategy (`exact` or
+`contained_name`) and reject zero or multiple service candidates; do not use a
+generic substring match.
+
+**Likely files**
+
+- `src/systemlens/kubernetes.py`
+- `src/systemlens/indexer.py`
+- `src/systemlens/models.py`
+- `src/systemlens/store.py`
+- `docs/SPEC-FONC.md`
+- `docs/SPEC-TECH.md`
+- `tests/test_kubernetes.py`
+
+**Acceptance criteria**
+
+- `orders` matches workloads such as `orders-api-v2` only through a complete
+  normalized token sequence.
+- `order` does not match `orders-api`; unrelated broad substrings never match.
+- A workload containing more than one candidate service, or no candidate,
+  remains unassociated and is reported as such.
+- Exact matches retain priority and current behavior for existing indexes.
+- The selected matching strategy is visible in the workload result and tests
+  cover prefixes, suffixes, separators, collisions, and existing exact names.
+
+### P2 — Runtime signal coverage and comparison
+
+#### SL-012 — Add source-specific Kafka, MongoDB, and S3 runtime adapters
+
+**Problem**
+
+`service_destination` metrics do not prove Kafka consumer lag, MongoDB query
+cost, or S3 request behaviour. Reporting these as if they were available would
+mislead a performance investigation.
+
+**Implementation direction**
+
+For each telemetry type, document supported Elastic integration fields and
+build a dedicated bounded aggregate adapter with an availability result. Do not
+derive one runtime signal from another.
+
+**Acceptance criteria**
+
+- Each adapter reports available, unavailable, or incomplete coverage.
+- Kafka, MongoDB, and S3 metrics have independent field mappings and tests.
+- Unsupported integrations return a clear unavailable result, not zero load or
+  zero errors.
+
+#### SL-013 — Add explicit Kubernetes capacity context to runtime hotspots
+
+**Problem**
+
+Declared Kubernetes resources are indexed, but a performance investigation
+cannot yet state their relationship to an observed hotspot or distinguish them
+from live utilisation.
+
+**Implementation direction**
+
+Add an opt-in, bounded Kubernetes observation adapter that records its capture
+time and a verified workload match from SL-015. Keep declared requests/limits,
+live utilisation, and unavailable metrics separate.
+
+**Acceptance criteria**
+
+- A hotspot can display only a workload matched by the documented exact or
+  unique contained-name strategy.
+- Live utilisation is labelled with its collection time and source, or marked
+  unavailable.
+- No cluster data is read during normal indexing or static queries.
+
+#### SL-014 — Compare bounded runtime windows for regressions
+
+**Problem**
+
+One runtime window identifies hotspots but cannot distinguish a long-standing
+cost from a new degradation.
+
+**Implementation direction**
+
+Compare two explicit equal-duration aggregate windows without retaining raw
+history. Preserve coverage and truncation separately for both windows.
+
+**Acceptance criteria**
+
+- The comparison reports call-volume, latency, and failure-rate deltas with
+  both windows and their coverage.
+- Incomplete or mismatched coverage prevents a regression claim.
+- Results remain bounded and contain no raw telemetry.
 
 ## Required verification before closing P0/P1 tickets
 

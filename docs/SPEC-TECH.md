@@ -43,6 +43,40 @@ contains its time window, metric field used, aggregate relations, and explicit
 coverage/truncation metadata. It contains no raw span, trace, log, request, or
 source data and is not merged with a snapshot.
 
+### Planned runtime-analysis projection (not implemented)
+
+A runtime-analysis extension must remain outside the indexer and SQLite model.
+It will construct an in-memory, versioned observation projection from explicit
+read-only Elasticsearch aggregate queries. The projection must retain the
+queried window, environment, source index/metric fields, limits, coverage, and
+truncation state for every returned ranking.
+
+The adapter may query aggregate latency, call-count, and error-count fields,
+but it must use `size: 0` aggregation requests and must not retrieve or retain
+raw event `_source` documents. Observations are transient by default: they are
+not written to an architecture snapshot, SQLite, MCP cache, or generated HTML
+file unless a later explicit versioned export contract permits it.
+
+Correlation is a delivery-layer join, not a topology derivation. It can attach
+an observed service or destination to one static identity only through an exact
+configured alias or other persisted explicit evidence. The projection must
+retain a mapping state (`matched`, `unmapped`, or `ambiguous`) and confidence;
+it must not infer a static HTTP, Kafka, MongoDB, or S3 relation from a matching
+name alone.
+
+S3 support requires a separate conservative Java extractor for explicit AWS SDK
+v1/v2 operations and configured bucket names, with dynamic bucket expressions
+preserved as unresolved evidence. Kafka, MongoDB, S3, and Kubernetes runtime
+signals require source-specific aggregate adapters; they cannot be synthesized
+from `service_destination` metrics when their telemetry is absent.
+
+Future Kubernetes correlation must first use the current exact workload/service
+name match. Its only fallback is a normalized token-sequence containment check
+between a Deployment or StatefulSet name and an indexed service name. The
+fallback succeeds only for one candidate; it records the matching strategy and
+leaves zero or multiple candidates unresolved. It must never use an arbitrary
+substring search or change persisted source topology.
+
 ## Data model
 
 `MessageEndpoint` is the primary extracted fact. It records role, system,
