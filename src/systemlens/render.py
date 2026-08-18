@@ -4068,7 +4068,6 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
       if (node.kind === "mongodb_collection") {
         const relationsGroup = createDetailsGroup("Relations");
         const persistenceClasses = node.persistence_classes || [];
-        appendList("Stockee par", [node.owner], relationsGroup);
         appendRelationList("Services utilisant cette collection", edges.filter(link => link.kind === "mongodb" && link.target === id), id,
           link => nodeDataById.get(link.source).name, relationsGroup);
         appendActionList("Classes Java de persistance", persistenceClasses.map(item => ({

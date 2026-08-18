@@ -136,7 +136,8 @@ enum PaymentStatus { AUTHORIZED, DECLINED }
     assert document.count('createDetailsGroup("Relations")') == 3
     assert 'appendRelationList("APIs consommees"' in document
     assert 'appendServiceKafkaActivities(node, "produce", "Topics publies"' in document
-    assert 'appendList("Stockee par", [node.owner], relationsGroup)' in document
+    assert 'appendRelationList("Services utilisant cette collection"' in document
+    assert 'appendList("Stockee par", [node.owner], relationsGroup)' not in document
     assert "function rebuildGraph()" in document
     assert "const visibleLinks = graphData.links.filter(link => isVisibleRelation(link.kind));" in document
     assert 'id="node-suggestions"' in document

@@ -148,7 +148,8 @@ Indexing persists source evidence only as paths relative to the project root.
 HTML export joins those paths to `--root-path` (the current directory by
 default) when building VS Code links. No WSL distribution or absolute local
 source path is stored in the index.
-MongoDB collection details list indexed Java persistence classes resolved from
+MongoDB collection details list the services using the collection once, followed
+by indexed Java persistence classes resolved from
 `@Document`, Mongo repository entity generics, or unambiguous `Type.class`
 arguments passed to `MongoTemplate`. They include their qualified name, source
 location, and declared fields. The Persistence view provides the same inventory

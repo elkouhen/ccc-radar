@@ -450,10 +450,20 @@ def _index_repo(
         definition["root"] = False
     store.replace_kafka_dto_definitions([*root_dtos, *nested_dtos])
     openapi_contracts: list[dict[str, object]] = []
-    for module in relation_modules:
+    indexed_openapi_paths: set[Path] = set()
+    # A workspace root can itself be a Maven/Gradle module while containing
+    # submodules.  A contract belongs to its deepest owning module; never
+    # materialize it a second time through an enclosing root module.
+    for module in sorted(
+        relation_modules,
+        key=lambda candidate: (-len(candidate.path.resolve().parts), str(candidate.path)),
+    ):
         for path in module.openapi_files:
+            contract_path = (module.path / path).resolve()
+            if contract_path in indexed_openapi_paths:
+                continue
             try:
-                spec = yaml.safe_load((module.path / path).read_text(encoding="utf-8"))
+                spec = yaml.safe_load(contract_path.read_text(encoding="utf-8"))
             except (OSError, yaml.YAMLError):
                 continue
             if isinstance(spec, dict) and ("openapi" in spec or "swagger" in spec):
@@ -462,6 +472,7 @@ def _index_repo(
                     "path": path,
                     "spec": json.loads(json.dumps(spec, default=str)),
                 })
+                indexed_openapi_paths.add(contract_path)
     store.replace_openapi_contracts(openapi_contracts)
     relations = build_architecture_relations(
         relation_modules,

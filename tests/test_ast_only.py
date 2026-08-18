@@ -206,6 +206,32 @@ def test_index_persists_kafka_dto_source_definitions(tmp_path: Path) -> None:
     }]
 
 
+def test_index_stores_nested_module_openapi_contract_once(tmp_path: Path) -> None:
+    (tmp_path / "pom.xml").write_text(
+        "<project><modelVersion>4.0.0</modelVersion><artifactId>workspace</artifactId>"
+        "<packaging>pom</packaging></project>",
+        encoding="utf-8",
+    )
+    module = tmp_path / "orders"
+    (module / "pom.xml").parent.mkdir(parents=True)
+    (module / "pom.xml").write_text(
+        "<project><modelVersion>4.0.0</modelVersion><artifactId>orders</artifactId></project>",
+        encoding="utf-8",
+    )
+    contract = module / "src" / "main" / "resources" / "swagger.yaml"
+    contract.parent.mkdir(parents=True)
+    contract.write_text("swagger: '2.0'\npaths: {}\n", encoding="utf-8")
+
+    with Store(tmp_path) as store:
+        index_repo(tmp_path, Config(), store, full=True)
+        contracts = store.all_openapi_contracts()
+
+    assert contracts == [{
+        "module": "orders", "path": "src/main/resources/swagger.yaml",
+        "spec": {"swagger": "2.0", "paths": {}},
+    }]
+
+
 def test_index_rollback_keeps_the_previous_complete_snapshot(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
