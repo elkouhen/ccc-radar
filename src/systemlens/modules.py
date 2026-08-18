@@ -902,6 +902,36 @@ def _enrich_module(
     return enriched
 
 
+def _deduplicate_openapi_contract_owners(
+    modules: list[DiscoveredModule],
+) -> list[DiscoveredModule]:
+    """Keep a shared contract on its deepest module, not an enclosing root.
+
+    A workspace root can be a build module and contain another build project.
+    If both inventories resolve an OpenAPI/Swagger file, only the nested
+    project owns it in the exported inventory.  Sibling modules retain their
+    own references because neither can be considered the other's owner.
+    """
+    claimed_by_path: dict[Path, Path] = {}
+    deduplicated: list[DiscoveredModule] = []
+    for module in sorted(
+        modules,
+        key=lambda candidate: (-len(candidate.path.resolve().parts), str(candidate.path)),
+    ):
+        owned_files: list[str] = []
+        for contract in module.openapi_files:
+            contract_path = (module.path / contract).resolve()
+            owner = claimed_by_path.get(contract_path)
+            if owner is not None and module.path.resolve() in owner.parents:
+                continue
+            claimed_by_path.setdefault(contract_path, module.path.resolve())
+            owned_files.append(contract)
+        deduplicated.append(
+            DiscoveredModule(**{**module.__dict__, "openapi_files": tuple(owned_files)})
+        )
+    return sorted(deduplicated, key=lambda module: str(module.path))
+
+
 def discover_modules(
     root: Path,
     *,
@@ -995,6 +1025,7 @@ def discover_modules(
         ),
         key=lambda module: str(module.path),
     )
+    enriched = _deduplicate_openapi_contract_owners(enriched)
     _trace("modules.enrich.end", count=len(enriched))
     return enriched
 

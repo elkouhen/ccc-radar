@@ -11,7 +11,14 @@ from systemlens.cli import app
 from systemlens.config import Config
 from systemlens.indexer import index_repo
 from systemlens.models import MessageEndpoint
-from systemlens.modules import ModuleDependency, discover_module_dependencies, discover_modules, module_identity
+from systemlens.modules import (
+    DiscoveredModule,
+    ModuleDependency,
+    _deduplicate_openapi_contract_owners,
+    discover_module_dependencies,
+    discover_modules,
+    module_identity,
+)
 from systemlens.store import Store
 from systemlens.workspace import discover_workspace_services, load_federation
 
@@ -307,6 +314,29 @@ class OrdersController {
         ("receive", "spring-kafka-listener", "consume", "orders.created"),
         ("send", "spring-kafka-template", "consume", "orders.validated"),
     ]
+
+
+def test_nested_module_owns_a_shared_openapi_contract_not_workspace_root(tmp_path: Path) -> None:
+    contract = tmp_path / "swagger.yaml"
+    contract.write_text("swagger: '2.0'\npaths: {}\n", encoding="utf-8")
+    nested = tmp_path / "orders"
+    nested.mkdir()
+    root_module = DiscoveredModule(
+        name="workspace", path=tmp_path, build_system="maven", version=None,
+        kind="aggregator", starts_application=False, configuration_example="",
+        openapi_files=("swagger.yaml",),
+    )
+    nested_module = DiscoveredModule(
+        name="orders", path=nested, build_system="maven", version=None,
+        kind="library", starts_application=True, configuration_example="",
+        openapi_files=("../swagger.yaml",),
+    )
+
+    modules = _deduplicate_openapi_contract_owners([root_module, nested_module])
+
+    by_name = {module.name: module for module in modules}
+    assert by_name["workspace"].openapi_files == ()
+    assert by_name["orders"].openapi_files == ("../swagger.yaml",)
 
 
 def test_module_start_attribute_is_detected_from_its_java_entrypoint(tmp_path: Path) -> None:

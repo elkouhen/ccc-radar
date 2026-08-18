@@ -149,9 +149,9 @@ relative paths when building VS Code URIs. This keeps an index portable across
 machines and avoids persisting WSL or other host-specific path context.
 
 Kafka DTO definitions and OpenAPI/Swagger document contents are materialized at
-index time. Each OpenAPI/Swagger source file is materialized once and is owned
-by its deepest indexed Maven or Gradle module, never duplicated through an
-enclosing workspace module. A DTO definition retains
+index time. Each OpenAPI/Swagger source file is attributed and materialized
+once by its deepest indexed Maven or Gradle module; an enclosing workspace
+module does not list the same source a second time. A DTO definition retains
 its qualified name, owning module, module-relative Java source path, declared
 fields, enum values, and conservative nested-type references. The HTML export
 uses those stored facts and only derives its VS Code URI at render time; it
