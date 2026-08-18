@@ -560,6 +560,66 @@ def _infer_spring_data_rest_endpoints(repo_root: Path, rel_path: str) -> list[Me
                     snippet,
                 )
             )
+        endpoints.extend(
+            _infer_spring_data_rest_search_endpoints(repo_root, rel_path, source, declaration, base_path)
+        )
+    return endpoints
+def _infer_spring_data_rest_search_endpoints(
+    repo_root: Path, rel_path: str, source: bytes, declaration, base_path: str
+) -> list[MessageEndpoint]:
+    """Ressources de recherche Spring Data REST (`GET <base>/search/<méthode>`).
+
+    Toute méthode de requête déclarée directement sur le repository (ex.
+    `@Query`, dérivée `findBy...`) est exposée par défaut sous
+    `/search/<nom-de-méthode>`, sauf `@RestResource(exported = false)`. Le nom
+    de recherche est le nom de méthode Java, sauf `@RestResource(path = ...)`
+    explicite.
+    """
+    body = java_parser.child_by_type(declaration, "interface_body")
+    if body is None:
+        return []
+    endpoints: list[MessageEndpoint] = []
+    for method in body.children:
+        if method.type != "method_declaration":
+            continue
+        rest_resource = next(
+            (
+                ann for ann in java_parser.annotations_of(method)
+                if java_parser.annotation_name(ann, source) == "RestResource"
+            ),
+            None,
+        )
+        exported = (
+            java_parser.annotation_argument(rest_resource, source, key="exported")
+            if rest_resource is not None
+            else None
+        )
+        if exported is not None and java_parser.node_text(source, exported) == "false":
+            continue
+        search_name = java_parser.string_value(
+            java_parser.annotation_argument(rest_resource, source, key="path")
+            if rest_resource is not None
+            else None,
+            source,
+        )
+        if search_name is None:
+            search_name = java_parser.declaration_name(method, source)
+        if not search_name:
+            continue
+        decl_line = method.start_point.row + 1
+        endpoints.append(
+            _build_endpoint(
+                repo_root,
+                rel_path,
+                decl_line,
+                method.end_point.row + 1,
+                "serve",
+                "rest",
+                f"GET {base_path}/search/{search_name}",
+                "spring-data-rest",
+                java_parser.node_text(source, method),
+            )
+        )
     return endpoints
 def _repository_entity_type(declaration, source: bytes) -> str | None:
     """Entity argument of a Spring Data repository interface, via AST types."""

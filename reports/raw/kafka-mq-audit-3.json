@@ -1,0 +1,1 @@
+[{"id": "kafka-message-contract-mismatch", "severity": "WARNING", "title": "Contrat de message Kafka potentiellement incompatible", "evidence": "`order` publie Order mais consomme Invoice.", "services": ["microservice-invoicing", "microservice-order"], "confidence": "medium"}]

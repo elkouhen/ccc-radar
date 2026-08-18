@@ -369,6 +369,33 @@ def test_indexed_kafka_facts_build_a_traceable_service_edge(tmp_path: Path) -> N
     assert flow.sites
 
 
+def test_spring_data_rest_exposes_annotated_repository_crud_and_search_resources() -> None:
+    endpoints = infer_framework_endpoints(FIXTURES / "spring_data_rest_repo")
+    order_topics = {
+        endpoint.topic
+        for endpoint in endpoints
+        if endpoint.framework == "spring-data-rest" and "OrderRepository" in endpoint.qualified_name
+    }
+
+    assert {"GET /order", "POST /order", "GET /order/{id}", "PUT /order/{id}",
+            "PATCH /order/{id}", "DELETE /order/{id}"} <= order_topics
+    assert "GET /order/search/lastUpdate" in order_topics
+    assert "GET /order/search/internalOnly" not in order_topics
+
+
+def test_spring_data_rest_exposes_default_pluralized_path_and_search_resource() -> None:
+    endpoints = infer_framework_endpoints(FIXTURES / "spring_data_rest_repo")
+    user_topics = {
+        endpoint.topic
+        for endpoint in endpoints
+        if endpoint.framework == "spring-data-rest" and "UserRepository" in endpoint.qualified_name
+    }
+
+    assert {"GET /users", "POST /users", "GET /users/{id}", "PUT /users/{id}",
+            "PATCH /users/{id}", "DELETE /users/{id}"} <= user_topics
+    assert "GET /users/search/findByUsernameCaseInsensitive" in user_topics
+
+
 def test_rest_graph_uses_ast_endpoint_facts() -> None:
     endpoints = infer_framework_endpoints(FIXTURES / "rest_repo")
     served = next(endpoint for endpoint in endpoints if endpoint.role == "serve")
