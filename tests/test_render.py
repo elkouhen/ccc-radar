@@ -656,3 +656,23 @@ def test_graph_html_microservice_complexity_counts_distinct_direct_clients() -> 
     assert nodes["microservice:payments"]["complexity"]["breakdown"] == {
         "http": 1, "kafka": 1, "mongodb": 0
     }
+
+
+def test_graph_html_embeds_the_apm_overlay_when_provided() -> None:
+    overlay = {
+        "schema_version": "apm-microservice-overlay-v1",
+        "nodes": {"microservice:orders": {"average_ms": 42.0, "match": "matched"}},
+        "edges": {},
+        "unresolved": [],
+    }
+
+    graph_data = _html_graph_data(render_graph_html({"orders": []}, [], apm_overlay=overlay))
+
+    assert graph_data["apm_overlay"] == overlay
+
+
+def test_graph_html_apm_overlay_defaults_to_none() -> None:
+    graph_data = _html_graph_data(render_graph_html({"orders": []}, []))
+
+    assert graph_data["apm_overlay"] is None
+

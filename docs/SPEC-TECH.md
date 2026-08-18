@@ -74,6 +74,58 @@ topology derivation: it may attach one observed name only through exact
 persisted evidence, retain mapping state and confidence, and never infer a
 static HTTP, Kafka, MongoDB, or S3 relation from a name coincidence.
 
+### Elastic APM microservice overlay
+
+The overlay is computed by the HTML export path (`render/html_export.py`)
+when `--apm-overlay` is set, reusing `apm.py`'s existing bounded
+`service_destination` reader/aggregator for edges and `apm_report.py`'s
+existing bounded `service_transaction` composite-bucket reader for node
+average latency. No new Elasticsearch query shape is introduced; the overlay
+only combines the two existing aggregate result sets with the already-indexed
+microservice name list held in memory for that export.
+
+Correlation is a pure, delivery-layer function over
+`(observed_name, indexed_names)` that never touches `store.py` or
+`architecture_relations`:
+
+1. Normalize both sides (case-fold, collapse `-`, `_`, `.` separators).
+2. An exact normalized equality is `matched`.
+3. Otherwise, an indexed name is a candidate when one normalized string
+   contains the other; its score is the containment ratio (matched length /
+   longer string length). The highest-scoring candidate is used; a strict tie
+   between the top score across two or more candidates makes the observation
+   `ambiguous` instead.
+4. No candidate at all is `unmapped`.
+
+Only `matched` and singular `heuristic` results contribute a node/edge
+enrichment record; `ambiguous` and `unmapped` results are collected into a
+separate list rendered as the side-panel section, each retaining every tied
+candidate name for `ambiguous` entries. This mirrors the existing future
+Kubernetes correlation rule below (exact-first, single-candidate-only
+containment fallback) but is deliberately looser: it accepts a genuinely
+single best-scoring containment candidate as `heuristic` rather than leaving
+it unresolved, because this join is visual, opt-in, and never persisted (see
+ADR-16). A future SL-010 alias-based correlation adapter remains the
+conservative, exact-alias-only mechanism for any persisted or MCP-exposed
+join; when both exist, an explicit alias always takes precedence over this
+overlay's heuristic containment result for the same name.
+
+Because two or more distinct observed names can each resolve to the same
+indexed node or edge (exactly or heuristically), attachment is resolved in
+priority passes rather than a single overwrite-prone pass: exact `matched`
+claims are attached first, then `heuristic` claims fill only still-unclaimed
+nodes/edges, and any observation that would otherwise silently overwrite an
+already-attached target is instead routed to the unresolved list (`ambiguous`
+for a losing node claim, `dependency` role for a losing edge claim whose two
+ends both resolved).
+
+The enrichment record carries, per matched node, `average_ms` from
+`transaction.duration.summary`; per matched edge, `calls`, `failure_calls`,
+and `error_rate` from `service_destination`, identical in shape to the
+`apm-digest-v1` relation fields. It is embedded in the exported HTML's
+in-memory graph model only; it is not written to SQLite, not part of
+`ArchitectureSnapshot`, and not reachable from any MCP tool.
+
 S3 support requires a separate conservative Java extractor for explicit AWS SDK
 v1/v2 operations and configured bucket names, with dynamic bucket expressions
 preserved as unresolved evidence. Kafka, MongoDB, S3, and Kubernetes runtime

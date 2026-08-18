@@ -256,3 +256,47 @@ explicitly approved sampled-span aggregate with coverage reporting.
 **Consequences:** The graph remains useful for finding slow or failing routes
 without turning correlation into causation. The visual model stays compatible
 with the aggregate-only, no-raw-event boundary of `apm report`.
+
+## ADR-16 — Overlay APM aggregates on the static microservice graph as an opt-in, unpersisted layer
+
+**Status:** Accepted.
+
+**Context:** ADR-13 deferred visual overlays of observed APM data on the static
+topology. Operators reviewing `export microservices --html` want to see which
+indexed services and dependencies are actually busy, slow, or failing, without
+waiting for the full SL-009/SL-010 ranking and alias-mapping adapters.
+
+**Decision:** `systemlens export microservices --html FILE` accepts an opt-in
+`--apm-overlay` flag (plus the same `--since`, `--environment`, `--endpoint`,
+`--api-key`, `--max-relations`, and `--max-buckets` connection/window options as
+`apm export`). When set, the export additionally queries `service_destination`
+(edge call volume and error rate) and `service_transaction` (node average
+latency) aggregates, using the same bounded, read-only adapter as `apm export`
+and `apm report`. The result is joined to indexed microservice names through a
+best-effort name correlation:
+
+- An exact, case/separator-normalized name match is a **matched** observation.
+- Otherwise, a normalized substring containment (either direction) is accepted
+  as a **heuristic** match, scored by containment tightness. The single
+  best-scoring indexed candidate receives the overlay and is visually flagged
+  as heuristic; a genuine tie between equally-scored candidates is **ambiguous**
+  and is not drawn on any node or edge.
+- An observation with no matching indexed candidate is **unmapped**.
+
+Unmapped and ambiguous observations never touch the graph; they are listed in a
+separate side panel with their candidates (if any) so their absence from the
+graph is never confused with zero runtime activity. The overlay is computed
+only at export time, in memory; it is never written to SQLite, the persisted
+snapshot, `architecture_relations`, or MCP.
+
+**Consequences:** This intentionally trades some precision for earlier value:
+unlike the conservative exact-alias policy already committed for the future
+SL-010 correlation adapter, this HTML-only overlay may attach a heuristic,
+possibly wrong, single-candidate match instead of leaving every non-exact name
+unmapped. This is acceptable only because the overlay is visual, opt-in,
+unpersisted, and explicitly labelled; it must not be reused as a source of
+truth for `graph`, `dependency_graph`, `audit_dependency_graph`, impact/path
+analysis, or any other static or persisted view, which remain governed by the
+stricter exact-alias policy of a future SL-010. When SL-010 ships a configured
+alias mechanism, an exact alias must take precedence over the heuristic
+containment match for the same observed name.

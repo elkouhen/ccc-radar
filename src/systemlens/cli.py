@@ -19,6 +19,7 @@ from systemlens.apm import (
     load_settings as load_apm_settings,
 )
 from systemlens.apm_report import build_runtime_report, render_runtime_report_html
+from systemlens.apm_overlay import build_microservice_overlay
 from systemlens.architecture import (
     analyze as analyze_architecture,
     build_catalog,
@@ -39,6 +40,7 @@ from systemlens.config import ConfigError, init_config, load_config
 from systemlens.flow import resolve_topic
 from systemlens.graph import (
     GraphEdge,
+    external_microservice_names,
     find_outbound_calls_in_consumers,
     graph_edges_from_relations,
 )
@@ -1546,12 +1548,50 @@ def export_microservices_cmd(
     json_output: bool = typer.Option(
         False, "--json", help="Écrire le graphe structuré sur la sortie standard."
     ),
+    apm_overlay: bool = typer.Option(
+        False,
+        "--apm-overlay",
+        help="Superposer des agrégats APM bornés (HTML uniquement). Nécessite un accès réseau.",
+    ),
+    apm_since: str = typer.Option(
+        "1h", "--since", help="Fenêtre APM : 15m, 1h, 7d, etc. (avec --apm-overlay)."
+    ),
+    apm_environment: Optional[str] = typer.Option(  # noqa: UP007
+        None,
+        "--environment",
+        help="Filtre exact service.environment APM (avec --apm-overlay).",
+    ),
+    apm_endpoint: Optional[str] = typer.Option(  # noqa: UP007
+        None,
+        "--endpoint",
+        help="URL Elasticsearch. Sinon SYSTEMLENS_ELASTICSEARCH_URL (avec --apm-overlay).",
+    ),
+    apm_api_key: Optional[str] = typer.Option(  # noqa: UP007
+        None,
+        "--api-key",
+        help="Clé d'API Elasticsearch en lecture seule (avec --apm-overlay).",
+    ),
+    apm_max_relations: int = typer.Option(
+        80,
+        "--max-relations",
+        min=1,
+        max=10_000,
+        help="Relations APM maximum superposées (avec --apm-overlay).",
+    ),
+    apm_max_buckets: int = typer.Option(
+        2_000,
+        "--max-buckets",
+        min=1,
+        max=100_000,
+        help="Agrégats Elastic maximum lus avant troncature (avec --apm-overlay).",
+    ),
 ) -> None:
     """Exporter les dépendances microservices, topics Kafka et collections MongoDB.
 
     Exemples : `systemlens export microservices --html graph.html`,
     `systemlens export microservices --c4 architecture-likec4`,
-    `systemlens export microservices --json`.
+    `systemlens export microservices --json`,
+    `systemlens export microservices --html graph.html --apm-overlay --since 1h`.
     """
     outputs = [output for output in (html, c4) if output is not None]
     if len(outputs) + int(json_output) != 1:
@@ -1562,10 +1602,32 @@ def export_microservices_cmd(
             "`--c4` attend un répertoire de projet, pas un fichier `.c4`.", err=True
         )
         raise typer.Exit(code=2)
+    if apm_overlay and html is None:
+        typer.echo("`--apm-overlay` nécessite `--html`.", err=True)
+        raise typer.Exit(code=2)
     graph_data = _load_microservice_graph(Path.cwd(), workspace, include_mongodb=True)
     if json_output:
         typer.echo(json.dumps(graph_data.result))
         return
+    overlay: dict[str, object] | None = None
+    if apm_overlay:
+        indexed_service_names = sorted(
+            set(graph_data.services_by_name)
+            | external_microservice_names(graph_data.edges)
+        )
+        try:
+            settings = load_apm_settings(apm_endpoint, apm_api_key)
+            overlay = build_microservice_overlay(
+                ElasticApmClient(settings),
+                since=apm_since,
+                environment=apm_environment,
+                indexed_service_names=indexed_service_names,
+                max_relations=apm_max_relations,
+                max_buckets=apm_max_buckets,
+            )
+        except ApmError as exc:
+            typer.echo(str(exc), err=True)
+            raise typer.Exit(code=2) from exc
     if html is not None:
         html.write_text(
             render_graph_html(
@@ -1583,6 +1645,7 @@ def export_microservices_cmd(
                 diagnostics=graph_data.diagnostics,
                 kafka_dto_definitions=graph_data.kafka_dto_definitions,
                 openapi_contracts=graph_data.openapi_contracts,
+                apm_overlay=overlay,
             ),
             encoding="utf-8",
         )

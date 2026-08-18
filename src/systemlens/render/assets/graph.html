@@ -126,6 +126,9 @@
     .detail-badge.complexity.low { color: #2563eb; background: #eff6ff; }
     .detail-badge.complexity.medium { color: #b45309; background: #fffbeb; }
     .detail-badge.complexity.high { color: #dc2626; background: #fef2f2; }
+    .detail-badge.apm { border-color: currentColor; }
+    .detail-badge.apm.matched { color: #0f766e; background: #f0fdfa; }
+    .detail-badge.apm.heuristic { color: #7c3aed; background: #f5f3ff; border-style: dashed; }
     .module-open-action { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 12px 16px; padding: 10px 12px; border: 1px solid #bfdbfe; border-radius: 8px; color: #1d4f91; background: #eff6ff; font-weight: 700; text-decoration: none; }
     .module-open-action::after { content: "↗"; flex: 0 0 auto; font-size: 15px; }
     .module-open-action:hover, .module-open-action:focus-visible { border-color: #60a5fa; background: #dbeafe; outline: none; }
@@ -400,6 +403,7 @@
     </div>
     <div id="graph-summary" class="graph-summary" aria-label="Synthese de l'architecture"></div>
     <button id="inventory-status" class="inventory-status" type="button" hidden></button>
+    <button id="apm-status" class="inventory-status" type="button" hidden></button>
     <div class="toolbar-tabs" role="tablist" aria-label="Vues de l'architecture">
       <button id="graph-tab" class="toolbar-tab is-active" type="button" role="tab" aria-selected="true" aria-controls="graph-panel">Explorer</button>
       <button id="paths-tab" class="toolbar-tab" type="button" role="tab" aria-selected="false" aria-controls="paths-panel">Parcours</button>
@@ -483,6 +487,13 @@
       </div>
       <ul id="indexing-issues" class="indexing-issues-list" aria-label="Problemes d'indexation"></ul>
       <p id="indexing-issues-empty" class="indexing-issues-empty">Aucun probleme d'indexation detecte.</p>
+      <div id="apm-overlay-section" class="indexing-issues-header" hidden>
+        <p class="indexing-issues-kicker">Aperçu APM (agrégats bornés, non persistés)</p>
+        <h2 id="apm-overlay-title" class="indexing-issues-title">Superposition APM</h2>
+        <p id="apm-overlay-summary" class="indexing-issues-description"></p>
+        <ul id="apm-unresolved-list" class="indexing-issues-list" aria-label="Observations APM ambigues ou non rattachees"></ul>
+        <p id="apm-unresolved-empty" class="indexing-issues-empty">Aucune observation APM ambigue ou non rattachee.</p>
+      </div>
     </div>
     <div id="paths-panel" class="toolbar-panel path-history" role="tabpanel" aria-labelledby="paths-tab" hidden>
       <div class="path-history-header">
@@ -559,6 +570,7 @@
   <script id="graph-data" type="application/json">__GRAPH_DATA__</script>
   <script type="module">
     const graphData = JSON.parse(document.getElementById("graph-data").textContent);
+    const apmOverlay = graphData.apm_overlay || null;
     const nodeDataById = new Map(graphData.nodes.map(node => [node.id, node]));
     const linkedNodeIds = new Set(graphData.links.flatMap(link => [link.source, link.target]));
     const isolatedNodeIds = new Set(
@@ -615,6 +627,25 @@
       mongodb: "#CC79A7",
       build: "#475569",
     });
+    const APM_EDGE_SIZE_BY_LEVEL = Object.freeze({ low: 1.2, medium: 2, high: 2.8 });
+    function apmNodeLabel(node) {
+      const observation = apmOverlay?.nodes?.[node.id];
+      if (!observation || observation.average_ms == null) return node.label;
+      const separator = observation.match === "heuristic" ? " ~⌀" : " · ⌀";
+      return `${node.label}${separator}${Math.round(observation.average_ms)}ms`;
+    }
+    function apmEdgeLabel(link) {
+      const observation = apmOverlay?.edges?.[`${link.source}->${link.target}`];
+      if (!observation || observation.calls == null) return link.label;
+      const errorPct = observation.error_rate != null ? ` · ${Math.round(observation.error_rate * 1000) / 10}% erreurs` : "";
+      const prefix = observation.match === "heuristic" ? "~" : "";
+      return `${link.label} · ${prefix}${observation.calls} appel${observation.calls > 1 ? "s" : ""}${errorPct}`;
+    }
+    function apmEdgeSize(link) {
+      const observation = apmOverlay?.edges?.[`${link.source}->${link.target}`];
+      if (!observation) return 1.2;
+      return APM_EDGE_SIZE_BY_LEVEL[observation.call_volume_level] || 1.6;
+    }
     function relationColor(link) {
       if (link.kind === "rest") return RELATION_COLORS.http;
       if (link.kind === "build") return RELATION_COLORS.build;
@@ -950,11 +981,11 @@
       renderer?.kill();
       network = new graphology.MultiDirectedGraph();
       layoutNodes.forEach(node => network.addNode(node.id, {
-        label: node.label, x: node.x, y: node.y, size: node.size, color: node.color,
+        label: apmNodeLabel(node), x: node.x, y: node.y, size: node.size, color: node.color,
         type: node.external ? "external_microservice" : node.kind,
       }));
       visibleLinks.forEach((link, index) => network.addEdgeWithKey(`edge-${index}`, link.source, link.target, {
-        label: link.label, size: 1.2, color: relationColor(link), kind: link.kind, type: "arrow",
+        label: apmEdgeLabel(link), size: apmEdgeSize(link), color: relationColor(link), kind: link.kind, type: "arrow",
       }));
       initialNodePositions = new Map();
       network.forEachNode((node, attributes) => initialNodePositions.set(node, { x: attributes.x, y: attributes.y }));
@@ -1054,6 +1085,12 @@
     const indexingIssuesTitle = document.getElementById("indexing-issues-title");
     const indexingIssues = graphData.indexing_issues || [];
     const inventoryStatus = document.getElementById("inventory-status");
+    const apmStatus = document.getElementById("apm-status");
+    const apmOverlaySection = document.getElementById("apm-overlay-section");
+    const apmOverlaySummary = document.getElementById("apm-overlay-summary");
+    const apmOverlayTitle = document.getElementById("apm-overlay-title");
+    const apmUnresolvedList = document.getElementById("apm-unresolved-list");
+    const apmUnresolvedEmpty = document.getElementById("apm-unresolved-empty");
     const openApiReferencesList = document.getElementById("openapi-references");
     const openApiReferencesEmpty = document.getElementById("openapi-references-empty");
     const openApiReferencesFilter = document.getElementById("openapi-reference-filter");
@@ -1315,6 +1352,48 @@
           item.append(location);
         }
         indexingIssuesList.append(item);
+      });
+    }
+    function renderApmOverlay() {
+      if (!apmOverlay) { apmStatus.hidden = true; apmOverlaySection.hidden = true; return; }
+      const nodeCount = Object.keys(apmOverlay.nodes || {}).length;
+      const edgeCount = Object.keys(apmOverlay.edges || {}).length;
+      const unresolved = apmOverlay.unresolved || [];
+      const observed = nodeCount + edgeCount + unresolved.length;
+      apmStatus.hidden = false;
+      apmOverlaySection.hidden = false;
+      apmStatus.classList.toggle("is-warning", unresolved.length > 0);
+      apmStatus.textContent = observed
+        ? `APM : ${nodeCount + edgeCount} rattachees, ${unresolved.length} a verifier`
+        : "APM : aucune activite observee sur la fenetre";
+      apmStatus.title = "Ouvrir la superposition APM (agregats bornes, non persistes)";
+      apmOverlayTitle.textContent = `Superposition APM (${unresolved.length} a verifier)`;
+      apmOverlaySummary.textContent = observed
+        ? `${nodeCount} service${nodeCount > 1 ? "s" : ""} et ${edgeCount} dependance${edgeCount > 1 ? "s" : ""} enrichis depuis la fenetre ${apmOverlay.window?.from ?? "?"} → ${apmOverlay.window?.to ?? "?"}.`
+        : `Aucune activite APM observee sur la fenetre ${apmOverlay.window?.from ?? "?"} → ${apmOverlay.window?.to ?? "?"}. Cela ne prouve pas l'absence d'une dependance statique.`;
+      apmUnresolvedList.replaceChildren();
+      apmUnresolvedEmpty.hidden = unresolved.length > 0;
+      unresolved.forEach(entry => {
+        const item = document.createElement("li");
+        item.className = `indexing-issue ${entry.status === "ambiguous" ? "warning" : "info"}`;
+        const header = document.createElement("div");
+        header.className = "indexing-issue-header";
+        const severity = document.createElement("span");
+        severity.className = "indexing-issue-severity";
+        severity.textContent = entry.status === "ambiguous" ? "Ambigue" : "Non rattachee";
+        const category = document.createElement("span");
+        category.className = "indexing-issue-category";
+        category.textContent = entry.role;
+        header.append(severity, category);
+        const message = document.createElement("p");
+        message.className = "indexing-issue-message";
+        const calls = entry.calls != null ? `${entry.calls} appel${entry.calls > 1 ? "s" : ""}` : "volume inconnu";
+        const candidates = (entry.candidates || []).length
+          ? ` · candidats : ${entry.candidates.join(", ")}`
+          : "";
+        message.textContent = `${entry.observed_name} (${calls})${candidates}`;
+        item.append(header, message);
+        apmUnresolvedList.append(item);
       });
     }
     function referenceItem(title, meta, actionLabel, action, disabled = false) {
@@ -2296,6 +2375,16 @@
         scoreBadge.title = `HTTP : ${breakdown.http || 0} · Kafka : ${breakdown.kafka || 0} · MongoDB : ${breakdown.mongodb || 0} · Rang relatif ${complexity.rank}/${complexity.population} · Tiers : ${complexity.tier_start}-${complexity.tier_end}`;
         meta.append(scoreBadge);
       }
+      const apmObservation = apmOverlay?.nodes?.[id];
+      if (apmObservation) {
+        const apmBadge = document.createElement("span");
+        apmBadge.className = `detail-badge apm ${apmObservation.match}`;
+        const matchLabel = apmObservation.match === "heuristic" ? "correspondance heuristique" : "correspondance exacte";
+        const errorPct = apmObservation.error_rate != null ? `${Math.round(apmObservation.error_rate * 1000) / 10}%` : "n/d";
+        apmBadge.textContent = `APM : ⌀${apmObservation.average_ms ?? "n/d"}ms (${matchLabel})`;
+        apmBadge.title = `Observe sous le nom "${apmObservation.observed_name}" · ${apmObservation.calls ?? 0} appels · ${errorPct} d'erreurs · agregat borne, non persiste`;
+        meta.append(apmBadge);
+      }
       header.append(kicker, title, meta);
       details.append(header);
       if (node.kind === "microservice") {
@@ -2528,6 +2617,7 @@
     issuesTab.addEventListener("click", () => setToolbarTab("issues"));
     pathsTab.addEventListener("click", () => setToolbarTab("paths"));
     inventoryStatus.addEventListener("click", () => setToolbarTab("issues"));
+    apmStatus.addEventListener("click", () => setToolbarTab("issues"));
     filterPresetButtons.forEach(button => button.addEventListener("click", () => applyRelationPreset(button.dataset.preset)));
     [
       relationHttp,
@@ -2551,6 +2641,7 @@
       if (event.key === "Enter") showShortestPath();
     });
     renderIndexingIssues();
+    renderApmOverlay();
     renderAnalyzedPaths();
     renderReferences();
     renderRequestReplyPatterns();

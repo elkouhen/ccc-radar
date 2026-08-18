@@ -22,6 +22,7 @@ second Markdown backlog here.
 | SL-013 | [#8 — Add explicit Kubernetes capacity context to runtime hotspots](https://github.com/elkouhen/systemlens/issues/8) |
 | SL-014 | [#9 — Compare bounded runtime windows for regressions](https://github.com/elkouhen/systemlens/issues/9) |
 | SL-016 | [#10 — Separate framework endpoints (actuator, swagger) from business APIs in module summaries](https://github.com/elkouhen/systemlens/issues/10) |
+| SL-017 | [#11 — Overlay APM aggregates on the static microservice HTML graph](https://github.com/elkouhen/systemlens/issues/11) |
 
 The completed SL-001 to SL-005 and SL-008 records remain available in Git
 history. They are not active backlog items.

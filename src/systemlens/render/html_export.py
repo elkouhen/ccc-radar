@@ -488,6 +488,7 @@ def render_graph_html(
     diagnostics: list[ExtractionDiagnostic] | None = None,
     kafka_dto_definitions: list[dict[str, object]] | None = None,
     openapi_contracts: list[dict[str, object]] | None = None,
+    apm_overlay: dict[str, object] | None = None,
 ) -> str:
     """Render an interactive Sigma.js graph as a self-contained HTML document.
 
@@ -892,6 +893,7 @@ def render_graph_html(
                 root_path,
                 diagnostics,
             ),
+            "apm_overlay": apm_overlay,
         },
         ensure_ascii=False,
     ).replace("</", "<\\/")

@@ -43,7 +43,7 @@ but does not alter AST endpoint extraction.
 | `systemlens analyze microservices impact NAME` | Lists direct and transitive impact paths. |
 | `systemlens analyze microservices path FROM TO` | Lists bounded paths between services. |
 | `systemlens analyze request-reply` | Lists Strategy1 Kafka request/reply candidates. |
-| `systemlens export microservices (--html FILE \| --c4 DIRECTORY \| --json) [--root-path DIRECTORY]` | Exports the microservice, Kafka-topic and MongoDB-collection topology. `--root-path` provides the local source root for HTML VS Code links. |
+| `systemlens export microservices (--html FILE \| --c4 DIRECTORY \| --json) [--root-path DIRECTORY] [--apm-overlay --since DURATION --environment NAME --endpoint URL --api-key KEY --max-relations N --max-buckets N]` | Exports the microservice, Kafka-topic and MongoDB-collection topology. `--root-path` provides the local source root for HTML VS Code links. `--apm-overlay` (HTML only) additionally queries bounded Elastic APM aggregates and overlays them on the graph; see "Elastic APM microservice overlay". |
 | `systemlens export modules --html FILE` | Exports the Maven/Gradle build-dependency view. |
 | `systemlens export request-reply --html FILE` | Exports Strategy1 Kafka request/reply candidates. |
 | `systemlens mcp` | Starts the stdio MCP server. |
@@ -284,6 +284,52 @@ Kafka latency, consumer failures, MongoDB activity, S3 activity, and Kubernetes
 capacity signals require their own documented source fields and availability
 checks. Their absence must be reported as unavailable coverage rather than
 estimated from another telemetry type.
+
+## Elastic APM microservice overlay
+
+`export microservices --html FILE --apm-overlay` decorates the static
+microservice graph with the same bounded, read-only APM aggregates as
+`apm export`/`apm report`, using the same `--since` (default `1h`),
+`--environment`, connection, and result-limit flags. It is opt-in and requires
+network access; without `--apm-overlay` the export behaves exactly as before,
+fully offline.
+
+The overlay reads `service_destination` for edge call volume and error rate,
+and `service_transaction` for node average latency. Every observed service
+name is correlated to an indexed microservice name: an exact,
+case/separator-normalized match is **matched**; otherwise a normalized
+substring containment (either direction) is accepted as a **heuristic** match
+against the single best-scoring indexed candidate; a tie between
+equally-scored candidates is **ambiguous**; no candidate at all is
+**unmapped**. Only `matched` and unambiguous `heuristic` observations are
+drawn on the graph. A heuristic match is visually distinguished from an exact
+match (for example a dashed badge outline) so a viewer never mistakes a guess
+for a confirmed identity.
+
+A matched microservice node shows its average observed transaction latency as
+a separate badge/ring from its existing static-connectivity outline, so
+runtime latency is never confused with static relation count. A matched edge
+between two indexed microservices shows call volume and error rate; call
+volume uses its own low/medium/high tercile, computed only across overlaid
+edges, independent of the static complexity terciles.
+
+`ambiguous` and `unmapped` observations never appear on the graph. They are
+listed in a dedicated side panel section, each with its observed name, role
+(`service` for a node-level observation, `source`/`destination` for an
+edge-level observation whose corresponding node did not resolve, or
+`dependency` for an edge whose two ends both resolved but that lost a
+conflicting claim on an already-attached edge), call volume/error rate, and —
+for `ambiguous` entries — every tied candidate name. This keeps their absence
+from the graph distinguishable from a genuinely idle service.
+
+A zero-observation window (no matching aggregate at all) is reported in the
+same panel as "no APM activity observed in this window", never silently, and
+never as evidence that a static dependency is absent.
+
+The overlay is computed only in memory at export time. It is never persisted
+to `.systemlens/findings.db`, merged into `architecture_relations`, exposed
+through MCP, or considered by `analyze audit`, `analyze microservices impact`,
+or `analyze microservices path`, all of which remain purely static.
 
 For a future Kubernetes workload correlation, an exact workload/service name
 match remains preferred. A normalized, token-bounded inclusion (for example,
