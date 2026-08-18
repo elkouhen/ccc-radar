@@ -89,7 +89,7 @@ producer and consumer services. When the matching Java type is indexed, its
 inspector also shows its source, declared fields, enum values, and conservative
 recursive project-type navigation.
 The export uses a responsive workspace layout with eight navigation tabs:
-Explorer, Paths, OpenAPI, Kafka, Persistence, Request/reply, Build, and
+Explorer, Paths, OpenAPI, Kafka, Mongo, Request/reply, Build, and
 Quality. It includes compact architecture counters, task-oriented starting
 actions, a floating context panel, and a full-size resource inspector. On
 narrow viewports the controls and context panel use separate bounded regions so
@@ -97,7 +97,7 @@ the graph remains visible while either panel scrolls independently.
 Its initial view foregrounds task-oriented entry points (Kafka topic, service
 dependencies, service-to-service path and Kafka messages). Relation/resource
 filters and graph layouts are available as advanced controls. Dedicated
-OpenAPI, Kafka, Persistence, Request/reply, and Build views keep their domain
+OpenAPI, Kafka, Mongo, Request/reply, and Build views keep their domain
 inventories separate. Changing a relation-type filter rebuilds and relayouts
 the graph from only the selected dependency types; excluded relations do not
 influence the resulting graph layout.
@@ -169,7 +169,7 @@ when no matching DTO has been resolved, avoiding duplicate published and
 consumed type lists when they describe the same contract.
 Indexing issues that have a source endpoint expose a VS Code link to the
 associated file and line. The HTML export provides dedicated OpenAPI, Kafka,
-Persistence, Request/reply, and Build views. OpenAPI and Kafka both support
+Mongo, Request/reply, and Build views. OpenAPI and Kafka both support
 filtering their complete list (OpenAPI by path or service, DTOs by simple name
 or package); Persistence filters by class, package, collection, or service. A
 persistent inventory status reports whether unresolved indexing facts exist and

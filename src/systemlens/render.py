@@ -848,6 +848,24 @@ def render_graph_html(
         (str(contract["module"]), str(contract["path"])): contract["spec"]
         for contract in openapi_contracts or []
     }
+
+    def module_owns_openapi_file(module: DiscoveredModule, path: str) -> bool:
+        """Whether ``module`` directly encloses an OpenAPI source file.
+
+        The inventory normally applies this ownership rule. Reapply it while
+        building the export so an older snapshot or federated inventory cannot
+        render one physical contract for both an enclosing project and a
+        nested module that merely references it.
+        """
+        contract_path = (module.path / path).resolve()
+        enclosing_modules = [
+            candidate.path.resolve()
+            for candidate in all_modules
+            if candidate.path.resolve() == contract_path
+            or candidate.path.resolve() in contract_path.parents
+        ]
+        owner_path = max(enclosing_modules, key=lambda candidate: len(candidate.parts), default=None)
+        return owner_path is None or owner_path == module.path.resolve()
     dependencies_by_source: dict[str, set[str]] = {}
     for dependency in module_dependencies or []:
         dependencies_by_source.setdefault(dependency.source, set()).add(dependency.target)
@@ -919,11 +937,16 @@ def render_graph_html(
                 and endpoint.framework == "openapi"
             ):
                 contract_path = _openapi_contract_evidence_path(endpoint)
-                contract_resources.setdefault(
-                    _module_openapi_contract_path(contract_path, module), set()
-                ).add(endpoint.topic)
+                module_path = _module_openapi_contract_path(contract_path, module)
+                if module is None or module_owns_openapi_file(module, module_path):
+                    contract_resources.setdefault(module_path, set()).add(endpoint.topic)
         openapi_files = sorted(
-            set(module.openapi_files if module else ()) | set(contract_resources)
+            {
+                path
+                for path in (module.openapi_files if module else ())
+                if module is None or module_owns_openapi_file(module, path)
+            }
+            | set(contract_resources)
         )
         nodes.append(
             {
@@ -2072,7 +2095,7 @@ _SIGMA_GRAPH_HTML_TEMPLATE = """<!doctype html>
       <button id="paths-tab" class="toolbar-tab" type="button" role="tab" aria-selected="false" aria-controls="paths-panel">Parcours</button>
       <button id="openapi-tab" class="toolbar-tab" type="button" role="tab" aria-selected="false" aria-controls="openapi-panel">OpenAPI</button>
       <button id="kafka-tab" class="toolbar-tab" type="button" role="tab" aria-selected="false" aria-controls="kafka-panel">Kafka</button>
-      <button id="persistence-tab" class="toolbar-tab" type="button" role="tab" aria-selected="false" aria-controls="persistence-panel">Persistance</button>
+      <button id="persistence-tab" class="toolbar-tab" type="button" role="tab" aria-selected="false" aria-controls="persistence-panel">Mongo</button>
       <button id="request-reply-tab" class="toolbar-tab" type="button" role="tab" aria-selected="false" aria-controls="request-reply-panel">Request/reply</button>
       <button id="build-tab" class="toolbar-tab" type="button" role="tab" aria-selected="false" aria-controls="dependencies-panel">Build</button>
       <button id="issues-tab" class="toolbar-tab" type="button" role="tab" aria-selected="false" aria-controls="issues-panel" title="Problemes d'indexation">Qualité</button>

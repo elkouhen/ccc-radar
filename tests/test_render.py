@@ -110,6 +110,7 @@ enum PaymentStatus { AUTHORIZED, DECLINED }
     assert 'id="openapi-tab"' in document
     assert 'id="kafka-tab"' in document
     assert 'id="persistence-tab"' in document
+    assert '>Mongo</button>' in document
     assert 'id="request-reply-tab"' in document
     assert 'id="build-tab"' in document
     assert '>Ajuster</button>' in document
@@ -227,6 +228,32 @@ def test_graph_html_deduplicates_repository_and_module_relative_openapi_paths() 
     assert [contract["path"] for contract in contracts] == ["src/main/resources/openapi/products.yaml"]
     assert contracts[0]["resources"] == ["GET /products"]
     assert contracts[0]["spec"] == {"openapi": "3.0.0", "paths": {"/products": {}}}
+
+
+def test_graph_html_lists_a_shared_openapi_file_only_for_its_enclosing_module() -> None:
+    workspace = DiscoveredModule(
+        name="workspace", path=Path("/workspace"), build_system="maven", version=None,
+        kind="aggregator", starts_application=False, configuration_example="",
+        openapi_files=("swagger.yaml",),
+    )
+    orders = DiscoveredModule(
+        name="orders", path=Path("/workspace/orders"), build_system="maven", version=None,
+        kind="application", starts_application=True, configuration_example="",
+        openapi_files=("../swagger.yaml",),
+    )
+
+    graph_data = _html_graph_data(render_graph_html(
+        {"workspace": [], "orders": []}, [],
+        modules_by_service={"workspace": workspace, "orders": orders},
+        openapi_contracts=[{
+            "module": "workspace", "path": "swagger.yaml",
+            "spec": {"swagger": "2.0", "paths": {}},
+        }],
+    ))
+
+    by_name = {node["name"]: node for node in graph_data["nodes"]}
+    assert [contract["path"] for contract in by_name["workspace"]["openapi_contracts"]] == ["swagger.yaml"]
+    assert by_name["orders"]["openapi_contracts"] == []
 
 
 def test_graph_html_does_not_infer_dto_packages_from_live_sources(tmp_path: Path) -> None:
