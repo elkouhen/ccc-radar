@@ -15,6 +15,7 @@ from systemlens.inventory_freshness import current_endpoint_inventory_signature
 from systemlens import java_parser
 from systemlens.models import ExtractionDiagnostic, MessageEndpoint
 from systemlens.modules import (
+    _deduplicate_openapi_contract_owners,
     discover_module_dependencies,
     discover_modules,
     discover_excluded_module_paths,
@@ -30,7 +31,7 @@ from systemlens.scanner import (
     apply_kafka_topic_strategy1,
 )
 from systemlens.store import Store
-from systemlens.kubernetes import KubernetesDiscoveryError, discover_workloads
+from systemlens.kubernetes import KubernetesDiscoveryError, KubernetesWorkload, discover_workloads
 
 
 ProgressCallback = Callable[[str], None]
@@ -294,7 +295,9 @@ def _index_repo(
             workloads = discover_workloads(namespace=kubernetes_namespace)
         except KubernetesDiscoveryError as exc:
             raise RuntimeError(str(exc)) from exc
-        by_name = {workload.name: [] for workload in workloads}
+        by_name: dict[str, list[KubernetesWorkload]] = {
+            workload.name: [] for workload in workloads
+        }
         for workload in workloads:
             by_name[workload.name].append(workload)
         discovered_modules = [
@@ -451,13 +454,9 @@ def _index_repo(
     store.replace_kafka_dto_definitions([*root_dtos, *nested_dtos])
     openapi_contracts: list[dict[str, object]] = []
     indexed_openapi_paths: set[Path] = set()
-    # A workspace root can itself be a Maven/Gradle module while containing
-    # submodules.  A contract belongs to its deepest owning module; never
-    # materialize it a second time through an enclosing root module.
-    for module in sorted(
-        relation_modules,
-        key=lambda candidate: (-len(candidate.path.resolve().parts), str(candidate.path)),
-    ):
+    # Also normalize a persisted module snapshot when module inventory refresh
+    # is disabled for this run.
+    for module in _deduplicate_openapi_contract_owners(relation_modules):
         for path in module.openapi_files:
             contract_path = (module.path / path).resolve()
             if contract_path in indexed_openapi_paths:

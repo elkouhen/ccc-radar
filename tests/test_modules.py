@@ -316,7 +316,7 @@ class OrdersController {
     ]
 
 
-def test_nested_module_owns_a_shared_openapi_contract_not_workspace_root(tmp_path: Path) -> None:
+def test_direct_enclosing_module_owns_a_shared_openapi_contract(tmp_path: Path) -> None:
     contract = tmp_path / "swagger.yaml"
     contract.write_text("swagger: '2.0'\npaths: {}\n", encoding="utf-8")
     nested = tmp_path / "orders"
@@ -335,8 +335,8 @@ def test_nested_module_owns_a_shared_openapi_contract_not_workspace_root(tmp_pat
     modules = _deduplicate_openapi_contract_owners([root_module, nested_module])
 
     by_name = {module.name: module for module in modules}
-    assert by_name["workspace"].openapi_files == ()
-    assert by_name["orders"].openapi_files == ("../swagger.yaml",)
+    assert by_name["workspace"].openapi_files == ("swagger.yaml",)
+    assert by_name["orders"].openapi_files == ()
 
 
 def test_module_start_attribute_is_detected_from_its_java_entrypoint(tmp_path: Path) -> None:

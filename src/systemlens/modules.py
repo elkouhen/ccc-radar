@@ -905,26 +905,30 @@ def _enrich_module(
 def _deduplicate_openapi_contract_owners(
     modules: list[DiscoveredModule],
 ) -> list[DiscoveredModule]:
-    """Keep a shared contract on its deepest module, not an enclosing root.
+    """Keep each contract on the module that directly contains its file.
 
-    A workspace root can be a build module and contain another build project.
-    If both inventories resolve an OpenAPI/Swagger file, only the nested
-    project owns it in the exported inventory.  Sibling modules retain their
-    own references because neither can be considered the other's owner.
+    A module can refer to a contract stored higher in a workspace, but the
+    contract's source evidence belongs to its direct enclosing build project.
+    This prevents an export from listing the same OpenAPI/Swagger file once
+    for the owning project and once for a referencing nested module.
     """
-    claimed_by_path: dict[Path, Path] = {}
+    module_paths = {
+        module.path.resolve(): module
+        for module in modules
+    }
     deduplicated: list[DiscoveredModule] = []
-    for module in sorted(
-        modules,
-        key=lambda candidate: (-len(candidate.path.resolve().parts), str(candidate.path)),
-    ):
+    for module in modules:
         owned_files: list[str] = []
         for contract in module.openapi_files:
             contract_path = (module.path / contract).resolve()
-            owner = claimed_by_path.get(contract_path)
-            if owner is not None and module.path.resolve() in owner.parents:
+            enclosing_projects = [
+                project_path
+                for project_path in module_paths
+                if project_path == contract_path or project_path in contract_path.parents
+            ]
+            owner_path = max(enclosing_projects, key=lambda path: len(path.parts), default=None)
+            if owner_path is not None and owner_path != module.path.resolve():
                 continue
-            claimed_by_path.setdefault(contract_path, module.path.resolve())
             owned_files.append(contract)
         deduplicated.append(
             DiscoveredModule(**{**module.__dict__, "openapi_files": tuple(owned_files)})
