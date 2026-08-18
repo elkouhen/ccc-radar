@@ -27,10 +27,10 @@ from systemlens.modules import (
 )
 from systemlens.render._graph_view_helpers import (
     _endpoint_vscode_uri,
-    _module_openapi_contract_path,
     _mongodb_collection_nodes,
     _mongodb_visual_graph_edges,
     _openapi_contract_evidence_path,
+    _resolve_openapi_contract_owner,
     _rest_resources_served,
     _visual_graph_edges,
     _visual_link_evidence,
@@ -610,6 +610,7 @@ def render_graph_html(
         endpoints = endpoints_by_service.get(name, [])
         resources = _rest_resources_served(endpoints)
         contract_resources: dict[str, set[str]] = {}
+        contract_owner_identity: dict[str, str] = {}
         module = module_details.get(name)
         for endpoint in endpoints:
             if (
@@ -618,9 +619,28 @@ def render_graph_html(
                 and endpoint.framework == "openapi"
             ):
                 contract_path = _openapi_contract_evidence_path(endpoint)
-                module_path = _module_openapi_contract_path(contract_path, module)
-                if module is None or module_owns_openapi_file(module, module_path):
+                owner_module, module_path = _resolve_openapi_contract_owner(
+                    contract_path, all_modules
+                )
+                if owner_module is None:
+                    # No known module encloses this evidence (for example a
+                    # federated inventory without the referenced module):
+                    # keep the previous best-effort attribution to the
+                    # serving module itself, using the raw evidence path.
+                    owner_module = module
+                    accepted = module is None or module_owns_openapi_file(module, module_path)
+                elif owner_module is module:
+                    accepted = module_owns_openapi_file(module, module_path)
+                else:
+                    # A Strategy1 declaration published by ``module`` whose
+                    # contract physically lives in a different module (for
+                    # example a shared ``model-*`` module). This is a
+                    # legitimate cross-module reference, not a duplicate.
+                    accepted = True
+                if accepted:
                     contract_resources.setdefault(module_path, set()).add(endpoint.topic)
+                    if owner_module is not None:
+                        contract_owner_identity[module_path] = module_identity(owner_module)
         openapi_files = sorted(
             {
                 path
@@ -629,6 +649,10 @@ def render_graph_html(
             }
             | set(contract_resources)
         )
+        owner_identity_by_path: dict[str, str] = dict(contract_owner_identity)
+        if module is not None:
+            for path in module.openapi_files:
+                owner_identity_by_path.setdefault(path, module_identity(module))
         nodes.append(
             {
                 "id": f"microservice:{name}",
@@ -660,9 +684,13 @@ def render_graph_html(
                     {
                         "path": path,
                         "resources": sorted(contract_resources.get(path, set())),
-                        **({"spec": openapi_specs[(module_identity(module), path)]}
-                           if module and (module_identity(module), path) in openapi_specs else {}),
-                        **({"vscode_uri": _vscode_file_uri(module.path / path, root_path, source_roots)} if module else {}),
+                        **({"spec": openapi_specs[(owner_identity_by_path[path], path)]}
+                           if path in owner_identity_by_path
+                           and (owner_identity_by_path[path], path) in openapi_specs else {}),
+                        **({"vscode_uri": _vscode_file_uri(
+                                (module_by_identity.get(owner_identity_by_path.get(path, ""), module)).path / path,
+                                root_path, source_roots,
+                            )} if module else {}),
                     }
                     for path in openapi_files
                 ],

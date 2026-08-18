@@ -256,6 +256,94 @@ def test_graph_html_lists_a_shared_openapi_file_only_for_its_enclosing_module() 
     assert by_name["orders"]["openapi_contracts"] == []
 
 
+def test_graph_html_normalizes_openapi_evidence_for_a_deeply_nested_module() -> None:
+    """A module more than one directory level below the repo root must not
+    show its own contract twice under two different path strings.
+
+    ``_module_openapi_contract_path`` used to strip only the module
+    directory's last path segment, so a module such as
+    ``services/orders-api`` (nested two levels deep) never had its
+    repository-relative evidence normalized to the module-relative path
+    used by ``module.openapi_files`` -- producing a duplicate entry and a
+    missing parsed ``spec``.
+    """
+    module = DiscoveredModule(
+        name="orders-api", path=Path("/workspace/services/orders-api"), build_system="maven",
+        version=None, kind="application", starts_application=True, configuration_example="",
+        openapi_files=("src/main/resources/openapi.yaml",),
+    )
+    endpoint = MessageEndpoint(
+        id=compute_endpoint_id("serve", "GET /orders", "services/orders-api/src/main/resources/openapi.yaml"),
+        role="serve", system="rest", topic="GET /orders", topic_dynamic=False,
+        source="code", framework="openapi",
+        path="services/orders-api/src/main/resources/openapi.yaml", start_line=1, end_line=1,
+        snippet="",
+    )
+
+    graph_data = _html_graph_data(render_graph_html(
+        {"orders-api": [endpoint]}, [], modules_by_service={"orders-api": module},
+        openapi_contracts=[{
+            "module": "orders-api", "path": "src/main/resources/openapi.yaml",
+            "spec": {"openapi": "3.0.0", "paths": {"/orders": {}}},
+        }],
+    ))
+
+    node = graph_data["nodes"][0]
+    assert node["openapi_files"] == ["src/main/resources/openapi.yaml"]
+    contracts = node["openapi_contracts"]
+    assert [contract["path"] for contract in contracts] == ["src/main/resources/openapi.yaml"]
+    assert contracts[0]["spec"] == {"openapi": "3.0.0", "paths": {"/orders": {}}}
+
+
+def test_graph_html_resolves_strategy1_shared_contract_spec_and_owner() -> None:
+    """A Strategy1 declaration can publish a contract that physically lives
+    in a different (shared ``model-*``) module than the publishing service.
+
+    Normalizing that evidence against the *publishing* module's own
+    directory name produced a bogus path (the shared module's name nested
+    under the publisher), which never matched the ``openapi_contracts``
+    entry indexed under the *owning* module -- rendering the contract with
+    no parsed spec ("contrat non detecte").
+    """
+    publisher = DiscoveredModule(
+        name="microservice-order", path=Path("/workspace/microservice-order"), build_system="maven",
+        version=None, kind="application", starts_application=True, configuration_example="",
+    )
+    shared_model = DiscoveredModule(
+        name="model-order-api", path=Path("/workspace/model-order-api"), build_system="maven",
+        version=None, kind="library", starts_application=False, configuration_example="",
+        openapi_files=("src/main/resources/order.yaml",),
+    )
+    declaration_path = "microservice-order/src/main/resources/openapi/order.rest"
+    endpoint = MessageEndpoint(
+        id=compute_endpoint_id("serve", "GET /orders", declaration_path),
+        role="serve", system="rest", topic="GET /orders", topic_dynamic=False,
+        source="code", framework="openapi",
+        path=declaration_path, start_line=1, end_line=1,
+        snippet=(
+            "Publication OpenAPI declaree par microservice-order/src/main/resources/openapi/order.rest\n"
+            "systemlens-openapi-contract:model-order-api/src/main/resources/order.yaml\n"
+        ),
+    )
+
+    graph_data = _html_graph_data(render_graph_html(
+        {"microservice-order": [endpoint]},
+        [],
+        modules_by_service={"microservice-order": publisher},
+        build_modules=[publisher, shared_model],
+        openapi_contracts=[{
+            "module": "model-order-api", "path": "src/main/resources/order.yaml",
+            "spec": {"openapi": "3.0.0", "paths": {"/orders": {}}},
+        }],
+    ))
+
+    node = graph_data["nodes"][0]
+    assert node["openapi_files"] == ["src/main/resources/order.yaml"]
+    contracts = node["openapi_contracts"]
+    assert [contract["path"] for contract in contracts] == ["src/main/resources/order.yaml"]
+    assert contracts[0]["spec"] == {"openapi": "3.0.0", "paths": {"/orders": {}}}
+
+
 def test_graph_html_does_not_infer_dto_packages_from_live_sources(tmp_path: Path) -> None:
     source_root = tmp_path / "service" / "src" / "main" / "java"
     (source_root / "com" / "acme" / "one").mkdir(parents=True)

@@ -81,26 +81,53 @@ def _openapi_contract_evidence_path(endpoint: MessageEndpoint) -> str:
     return endpoint.path
 
 
-def _module_openapi_contract_path(
-    contract_path: str, module: DiscoveredModule | None
-) -> str:
-    """Normalize OpenAPI evidence to the module-relative inventory path.
+def _resolve_openapi_contract_owner(
+    contract_path: str,
+    modules: list[DiscoveredModule],
+) -> tuple[DiscoveredModule | None, str]:
+    """Find which known module physically encloses a repository-relative contract.
 
-    Endpoint evidence is repository-relative (``orders/src/...``), while
-    ``DiscoveredModule.openapi_files`` is module-relative (``src/...``).
-    The HTML inspector must use one identity for both representations.
+    A Strategy1 declaration (``systemlens-openapi-contract:``) can point to a
+    contract living in a *different* module than the one publishing it (for
+    example a shared ``model-*`` module). Naively stripping only the
+    publishing module's own directory *name* (a single path segment) from
+    that evidence path is both too narrow (it silently fails for modules
+    nested two or more levels below the repository root) and too permissive
+    (it never notices when the evidence actually belongs to a sibling
+    module). Either failure means ``openapi_contracts``, which is indexed by
+    ``(owning module identity, module-relative path)``, cannot be found for
+    the mis-normalized path: the contract renders as "contrat non detecte"
+    and, once unioned with ``module.openapi_files``, the same physical file
+    can appear a second time under an unrelated path string.
+
+    This matches ``contract_path``'s leading segments against the trailing
+    segments of each known module's directory (a purely lexical comparison,
+    independent of the filesystem or of any particular repository root), and
+    returns the *deepest* enclosing module together with the contract path
+    expressed relative to it. Returns ``(None, contract_path)`` when no known
+    module encloses the file.
     """
-    if module is None:
-        return contract_path
     path = Path(contract_path)
     if path.is_absolute():
-        try:
-            return path.relative_to(module.path).as_posix()
-        except ValueError:
-            return contract_path
-    if path.parts and path.parts[0] == module.path.name:
-        return Path(*path.parts[1:]).as_posix()
-    return contract_path
+        for module in modules:
+            try:
+                return module, path.relative_to(module.path).as_posix()
+            except ValueError:
+                continue
+        return None, contract_path
+    parts = path.parts
+    best: tuple[DiscoveredModule, int] | None = None
+    for module in modules:
+        module_parts = module.path.parts
+        for k in range(min(len(parts), len(module_parts)), 0, -1):
+            if parts[:k] == module_parts[-k:]:
+                if best is None or k > best[1]:
+                    best = (module, k)
+                break
+    if best is not None:
+        owner, k = best
+        return owner, Path(*parts[k:]).as_posix()
+    return None, contract_path
 
 
 def _mongodb_collection_nodes(

@@ -152,7 +152,14 @@ machines and avoids persisting WSL or other host-specific path context.
 Kafka DTO definitions and OpenAPI/Swagger document contents are materialized at
 index time. Each OpenAPI/Swagger source file is attributed and materialized
 once by the indexed Maven or Gradle module that directly encloses the file;
-other modules may reference it but do not list it again. A DTO definition retains
+other modules may reference it but do not list it again. This attribution is
+resolved by matching the repository-relative evidence path's segments against
+the enclosing module's own directory segments (not merely its last path
+component), so it stays correct for modules nested two or more levels below
+the repository root and for a publishing module (a Strategy1 declaration)
+whose contract physically lives in a different, shared module: the export
+looks up the parsed spec and materializes the contract exactly once, keyed by
+the module that truly encloses the file. A DTO definition retains
 its qualified name, owning module, module-relative Java source path, declared
 fields, enum values, and conservative nested-type references. The HTML export
 uses those stored facts and only derives its VS Code URI at render time; it
