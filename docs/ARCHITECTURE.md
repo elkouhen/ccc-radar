@@ -12,7 +12,7 @@ CLI / MCP adapters (`cli.py`, `mcp_server.py`)
 application queries and indexing (`architecture.py`, `architecture_inventory.py`,
 `flow.py`, `dependency_analysis.py`, `indexer.py`, `workspace.py`)
                 |
-facts and discovery (`scanner.py`, `modules.py`, `maven.py`, `gradle.py`,
+facts and discovery (`scanner/`, `modules.py`, `maven.py`, `gradle.py`,
 `java_parser.py`, `relations.py`)
                 |
 models and persistence (`models.py`, `store.py`)
@@ -21,6 +21,11 @@ models and persistence (`models.py`, `store.py`)
 `render.py` is an output adapter. It may consume query results and models, but
 must not perform indexing or persist data. `config.py`, `paths.py`, and
 `inventory_freshness.py` are small cross-cutting utilities.
+
+`render.py` was split into the `render/` package (see below): the public
+import surface stays `from systemlens.render import ...`, unchanged for every
+other module and test. `scanner.py` was split into the `scanner/` package
+(see below) the same way: `from systemlens.scanner import ...` is unchanged.
 
 ## Call hierarchies
 
@@ -92,10 +97,65 @@ they are not cross-module entry points.
 | CLI parsing, option validation, exit code | `cli.py` |
 | MCP tool signature or transport concern | `mcp_server.py` |
 | A user query over the architecture inventory | `architecture.py`, `flow.py`, or `dependency_analysis.py` |
-| Java AST endpoint extraction | `scanner.py` |
+| Java AST endpoint extraction | `scanner/` package (`__init__.py` re-exports the public surface) |
 | Maven/Gradle module facts or Java source inventory | `modules.py`, `maven.py`, `gradle.py` |
 | SQLite schema or queries | `store.py` |
-| JSON, terminal, HTML, or LikeC4 presentation | `render.py` |
+| JSON, terminal, HTML, or LikeC4 presentation | `render/` package (`__init__.py` re-exports the public surface) |
+
+## The `scanner/` package
+
+`scanner.py` (formerly 3100+ lines) was split into layers rather than by
+line range: a dependency analysis showed 131 of its 154 top-level symbols
+formed one connected component, so a naive contiguous cut would have been
+unsafe. The layers below have no import cycles (each only imports from
+layers above it in the table); the package's `__init__.py` is the only
+import boundary other modules should rely on
+(`from systemlens.scanner import ...`).
+
+| Submodule | Responsibility |
+|---|---|
+| `_core.py` | Generic Java/text primitives shared by REST and Kafka inference: source reading, qualified-name/module resolution, generic-type parsing, message-type inference, `MessageEndpoint` construction |
+| `_spring_properties.py` | Spring `application*.yml/properties` discovery and flattening, `${...}` property resolution, `@Value`-annotated field resolution |
+| `rest_client_config.py` | "Configured API client" discovery (Strategy1 `Rest*Config*` classes and their external-service constants); also hosts the `_trace`/`_trace_rest_client` debug helpers used only here |
+| `rest_mvc.py` | REST/OpenAPI inference (MVC, Feign, Spring Data REST, Swagger/OpenAPI generator, RestTemplate/RestClient, WebClient, WebFlux, Spring Cloud Gateway) and the `infer_framework_endpoints` orchestrator; imports from `_core.py`, `_spring_properties.py`, and `rest_client_config.py` |
+| `kafka_ast.py` | AST-level Kafka endpoint inference (`@KafkaListener`, `KafkaTemplate`, `ProducerRecord`, Kafka Streams); imports from `_core.py` and `_spring_properties.py` |
+| `kafka_conventions.py` | Strategy1 naming-convention Kafka inference plus Markdown/JSON topic-manifest inference; imports from `_core.py` and `kafka_ast.py` |
+| `__init__.py` | Re-exports the public API and implements `clear_analysis_caches()`, which must reach into nearly every submodule to clear their `lru_cache`-decorated functions plus `java_parser`/`maven`/`gradle` caches |
+
+Sharing leading-underscore helpers between these submodules (for example
+`rest_mvc.py` importing `_build_endpoint` from `_core.py`, or
+`kafka_conventions.py` importing `_kafka_endpoint` from `kafka_ast.py`) is the
+same narrow, intentional exception to dependency rule 3 documented for the
+`render/` package below: the package boundary, not the file boundary, is the
+real contract. `relations.py` also imports the private
+`_local_spring_application_names` directly from `systemlens.scanner` (a
+pre-existing cross-module private import preserved by the split).
+
+## The `render/` package
+
+`render.py` (formerly 5000+ lines) is split by rendering concern. Each
+submodule keeps a narrow responsibility and the package's `__init__.py` is
+the only import boundary other modules should rely on
+(`from systemlens.render import ...`); do not import a submodule path
+directly from outside the package.
+
+| Submodule | Responsibility |
+|---|---|
+| `search.py` | Text/JSON rendering for `search`/`summary` findings output |
+| `graph_json.py` | JSON/text rendering of the endpoint-derived microservice graph |
+| `html_export.py` | Interactive Sigma.js HTML export (`systemlens export microservices --html`); builds the JSON payload injected into `assets/graph.html` |
+| `likec4_export.py` | LikeC4 project export (`--c4`) and the request/reply HTML fragment |
+| `module_graph.py` | Endpoint/module/workspace/flow rendering, plus the module-dependency HTML export (`assets/module_graph.html`) |
+| `_graph_view_helpers.py` | Low-level helpers (VS Code deep links, MongoDB/REST visual edges) shared by `html_export.py` and `likec4_export.py` |
+| `assets/graph.html`, `assets/module_graph.html` | Static HTML/CSS/JS templates, injected with `.replace("__..._DATA__", json_payload)`; kept as plain HTML files rather than Python string constants |
+
+`_graph_view_helpers.py` and the cross-import of `_complexity_ranking` /
+`_live_kafka_dto_views` / `_vscode_file_uri` between these submodules are an
+intentional, narrow exception to dependency rule 3 below: sharing a
+leading-underscore helper is acceptable **within** the `render/` package,
+because the package boundary (its `__init__.py`), not the file boundary, is
+the actual contract. Reaching into `render/<submodule>.py` from *outside* the
+package remains prohibited.
 
 ## Dependency rules
 
@@ -104,7 +164,10 @@ they are not cross-module entry points.
 2. Discovery modules return models or typed facts and never import CLI, MCP,
    rendering, or persistence adapters.
 3. Use a named public function for a cross-module dependency. Do not import a
-   name beginning with `_` from another module.
+   name beginning with `_` from another top-level module. Within the
+   `render/` and `scanner/` packages, submodules may share leading-underscore
+   helpers with each other (see their respective sections above); this does
+   not extend to importing them from outside the package.
 4. Add a focused test beside the owning module. End-to-end tests cover the
    adapter wiring; they are not the first home for an extraction rule.
 5. Keep new output formats in `render.py` (or a future dedicated renderer),
@@ -129,6 +192,9 @@ version, which in turn pins the Chromium revision used by CI.
 
 ## Maintenance focus
 
-`scanner.py`, `render.py`, and `cli.py` are the largest modules. Refactor them
-only behind named public contracts and focused tests. Behavioural CLI and MCP
-specifications remain the compatibility gate.
+`cli.py` remains the largest module. `render.py` and `scanner.py` were split
+into the `render/` and `scanner/` packages (see above); apply the same
+approach — a narrow package with a single re-exporting `__init__.py` — before
+`cli.py` grows unmanageable. Refactor behind named public contracts and
+focused tests; behavioural CLI and MCP specifications remain the
+compatibility gate.

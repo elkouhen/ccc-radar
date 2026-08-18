@@ -11,7 +11,11 @@ dépôt `systemlens`.
 Dépôts cibles :
 
 
-- `~/examples/microservices-kafka-mq`
+- ~/examples/microservices-kafka-mq
+- ~/examples/booking-microservices-java-spring-boot
+- ~/examples/fully-completed-microservices-Java-Springboot
+- ~/examples/sample-spring-kafka-microservices
+
 
 
 Le périmètre principal est Java/Spring, HTTP REST et Kafka. Signaler séparément

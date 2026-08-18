@@ -17,7 +17,8 @@ excluded) and attaches a workload only when its Kubernetes name exactly matches
 the indexed module name. This optional step can contact the current Kubernetes
 API context; it is never enabled by default.
 
-`scanner.py` owns Java/Spring extraction. `java_parser.py` provides cached
+`scanner/` (a package; see `docs/ARCHITECTURE.md`) owns Java/Spring extraction.
+`java_parser.py` provides cached
 Tree-sitter parsing and syntax helpers. `modules.py`, `maven.py` and `gradle.py`
 discover build units; `relations.py` derives typed architecture relations from
 modules, endpoints and build dependencies. `indexer.py` orchestrates the
