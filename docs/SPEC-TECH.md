@@ -63,12 +63,15 @@ only this versioned aggregate projection in an explicitly requested,
 self-contained HTML file. It does not write to SQLite, snapshots, or MCP cache.
 Service names and transaction names are inserted through JSON data and rendered
 with HTML escaping before insertion, so a telemetry value cannot create markup.
-The report's transaction graph is a client-side grouping of transaction buckets
-by `service.name` and observed `transaction.type`. It labels `request` and
-`http` as HTTP and `messaging` as messaging, while retaining all other values
-as `Other`; an edge represents only service ownership. It intentionally does
-not connect a transaction bucket to a dependency bucket because the three metric
-aggregate queries do not prove that causal relationship.
+The report's primary visual is a client-side directed service map. It places
+observed services on nodes and `service_destination` aggregates on directed
+edges; the edge width represents call volume and risk colour represents an
+aggregate error or comparatively high average latency. Selecting a node only
+reveals transaction buckets owned by that service, grouped from the observed
+`transaction.type` (`request`/`http` as HTTP, `messaging` as messaging, all
+other values as `Other`), plus inbound and outbound aggregates. It intentionally
+does not connect a transaction bucket to a dependency edge because the three
+metric aggregate queries do not prove that causal relationship.
 
 The report is a standalone runtime view and does not join observed names to
 static identities. A later correlation remains a delivery-layer join, not a
