@@ -86,14 +86,17 @@ It starts with an investigation-priority summary based on observed volume,
 error rate, and latency, then ranks services and transactions by P95 latency
 (with their averages, volume, and aggregate failure rate), includes a directed
 service map and lists recurring aggregate failures. Its modes are separated into
-Overview, Service map, Details, and Timeline tabs; the map's service and
-workload selectors exist only in its own tab, while rankings remain in Details.
+Services, Transactions, Dependencies, and Timeline tabs; each ranking and its
+filters live in the matching operational view.
 The report also
 records its snapshot window and whether any view was truncated, so it can be
 shared without mistaking incomplete rankings for absence. A Timeline tab shows
 a bounded projection of recorded transaction events. It never embeds `_source`,
 trace IDs, request data, headers, bodies, or error messages. Dependency P95 is
 deliberately not estimated, and the one-shot report has no historical baseline.
+Timeline records are limited to 500 by default (2,000 maximum). If their
+bounded query times out, the aggregate report is still written and explicitly
+marks the Timeline as unavailable.
 
 ### Inspect the source aggregation
 

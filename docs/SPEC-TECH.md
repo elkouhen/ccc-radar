@@ -65,6 +65,11 @@ projection records the UTC window, environment, source metricsets/field,
 per-view coverage, limits, and truncation. `render_runtime_report_html` embeds
 only this versioned aggregate projection in an explicitly requested HTML file.
 It does not write to SQLite, snapshots, or MCP cache.
+The Timeline limit defaults to 500 and the CLI caps it at 2,000. Every APM
+HTTP request has the adapter's 15-second timeout. A Timeline timeout is caught
+at the report boundary and recorded as `coverage.timeline.available=false` with
+`unavailable_reason="timeout"`; successfully read metric aggregates remain in
+the report.
 Service names and transaction names are inserted through JSON data and rendered
 with HTML escaping before insertion, so a telemetry value cannot create markup.
 The projection also records the query-window end as `generated_at`, the
@@ -77,15 +82,16 @@ already embedded aggregates: volume × error rate plus latency weighted by the
 logarithm of volume. This is a display-only ordering, explicitly labelled as
 triage rather than an SLO or health calculation, and it introduces no new APM
 query or persisted fact. Each tab owns only its relevant client-side controls:
-the Service map owns map mode, service, and workload selection; Details owns
-its focused table and graph filters; Timeline owns its service selection. The
+Services owns service filtering, Transactions owns its service/type graph
+filters, Dependencies owns map mode/service/workload and focused-flow filters,
+and Timeline owns its service selection. The
 Timeline renderer additionally derives three duration
 bands from the already projected duration values; it does not request any new
 trace field. The report stores no prior report and therefore
 does not calculate regressions or invent a historical baseline.
-The renderer exposes separate Overview, Service map, Details, and Timeline
-tabs. This avoids competing global and map-specific selectors; ranking tables
-remain in Details.
+The renderer exposes separate Services, Transactions, Dependencies, and
+Timeline tabs. This groups each aggregate ranking with its matching interaction
+and avoids competing global and map-specific selectors.
 
 The report's primary visual is a client-side directed service map. It places
 observed services on circle nodes and recognized messaging targets on diamond

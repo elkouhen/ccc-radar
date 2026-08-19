@@ -8,6 +8,7 @@ from typer.testing import CliRunner
 from systemlens.apm import (
     ApmError,
     ApmHttpError,
+    ApmTimeoutError,
     ElasticApmClient,
     export_curl_command,
     export_digest,
@@ -447,6 +448,43 @@ def test_runtime_report_uses_histogram_p95_for_services_and_transactions() -> No
     assert timeline_query["_source"] is False
     assert "trace.id" not in timeline_query["fields"]
     assert "transaction.duration.us" in timeline_query["fields"]
+    assert report["coverage"]["timeline"] == {  # type: ignore[index]
+        "items_exported": 1,
+        "truncated": False,
+        "truncation_reasons": [],
+        "max_events": 500,
+        "available": True,
+        "unavailable_reason": None,
+    }
+
+
+def test_runtime_report_keeps_aggregates_when_timeline_times_out() -> None:
+    class TimelineTimeoutClient:
+        def search_metrics(self, body: dict[str, object]) -> dict[str, object]:
+            if "relations" in body.get("aggs", {}):
+                return {"aggregations": {"relations": {"buckets": []}}}
+            return {"aggregations": {"items": {"buckets": []}}}
+
+        def search_traces(self, body: dict[str, object]) -> dict[str, object]:
+            raise ApmTimeoutError()
+
+    report = build_runtime_report(
+        TimelineTimeoutClient(),  # type: ignore[arg-type]
+        since="1h",
+        environment=None,
+        now=datetime(2026, 8, 15, 10, tzinfo=UTC),
+    )
+
+    assert report["services"] == []
+    assert report["timeline_events"] == []
+    assert report["coverage"]["timeline"] == {  # type: ignore[index]
+        "items_exported": 0,
+        "truncated": False,
+        "truncation_reasons": [],
+        "max_events": 500,
+        "available": False,
+        "unavailable_reason": "timeout",
+    }
 
 
 def _latency_bucket(

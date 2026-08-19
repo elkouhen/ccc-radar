@@ -1302,8 +1302,8 @@ def apm_report_cmd(
         500,
         "--max-timeline-events",
         min=1,
-        max=10_000,
-        help="Événements de transaction enregistrés maximum dans l'onglet Timeline.",
+        max=2_000,
+        help="Échantillons de transaction maximum dans Timeline (500 par défaut, 2 000 maximum).",
     ),
 ) -> None:
     """Produit une vue HTML APM interactive à partir d'agrégats bornés.

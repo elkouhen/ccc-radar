@@ -30,6 +30,13 @@ class ApmHttpError(ApmError):
         super().__init__(f"Elasticsearch a répondu HTTP {status_code}.")
 
 
+class ApmTimeoutError(ApmError):
+    """A bounded Elasticsearch request exceeded its configured deadline."""
+
+    def __init__(self) -> None:
+        super().__init__("La requête Elasticsearch a dépassé son délai d'attente.")
+
+
 @dataclass(frozen=True)
 class ApmSettings:
     """Connection settings, with the credential source retained for doctor."""
@@ -166,7 +173,11 @@ class ElasticApmClient:
                 decoded = json.loads(response.read().decode("utf-8"))
         except HTTPError as exc:
             raise ApmHttpError(exc.code) from exc
+        except TimeoutError as exc:
+            raise ApmTimeoutError() from exc
         except URLError as exc:
+            if isinstance(exc.reason, TimeoutError):
+                raise ApmTimeoutError() from exc
             raise ApmError("Elasticsearch est inaccessible.") from exc
         except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
             raise ApmError(

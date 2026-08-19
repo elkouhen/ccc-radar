@@ -266,7 +266,8 @@ an architecture HTML export.
 It accepts the same bounded UTC `--since` duration and optional exact
 environment filter as `apm export`. It queries `metrics-apm*` with `size: 0`
 for aggregate views and `traces-apm*` for at most 500 recorded transaction
-projections (configurable with `--max-timeline-events`), then emits a versioned
+projections by default (configurable with `--max-timeline-events`, capped at
+2,000), then emits a versioned
 `apm-runtime-report-v2` observation embedded in the requested HTML file. It is not persisted in
 SQLite, merged into the static architecture snapshot, or exposed through MCP.
 
@@ -288,13 +289,15 @@ visible complete/limited coverage state. The summary failure rate is calculated
 from the service aggregate only and is therefore not double-counted across the
 service and transaction views.
 
-The report separates its investigation modes into Overview, Service map,
-Details, and Timeline tabs. Overview contains the context and priority ranking.
-Service map contains its own map mode, service, and workload selectors, plus
-the selected node's aggregate workloads and observed directions; no duplicate
-global selectors are shown. Service, transaction, dependency, and recurring-
-failure tables are in Details, together with the transaction ownership graph
-and focused dependency flows. Its primary visual is an interactive directed service map: circle nodes are
+The report separates its investigation modes into Services, Transactions,
+Dependencies, and Timeline tabs. Services contains the context, priority
+ranking, service filter, service hotspot table, and recurring failures.
+Transactions contains the transaction ranking and ownership graph with its
+service/type filters. Dependencies contains the directed map, its map mode,
+service, and workload selectors, the selected node's aggregate workloads and
+observed directions, the dependency table, and focused flows. Each selector is
+owned by its view; no duplicate global selector is shown. Its primary visual is
+an interactive directed service map: circle nodes are
 observed services and diamond nodes are observed messaging targets. Every arrow
 is directed from the observed source service to its target; it is labelled HTTP
 for a non-messaging target and `send` for a recognized outgoing messaging target.
@@ -323,6 +326,11 @@ The report does not correlate observed names with static identities in this
 release. Its aggregate views remain separate from the Timeline's bounded
 transaction-field projection; trace IDs, request data, headers, bodies, log
 messages, credentials, and unredacted exception values are excluded.
+
+The APM HTTP client bounds each Elasticsearch request to 15 seconds. If the
+bounded Timeline query times out, `apm report` still writes the aggregate
+report and marks Timeline coverage as unavailable with reason `timeout`; it
+does not silently treat this as a zero-observation window.
 
 An `apm report` file is a one-shot snapshot and does not persist or infer a
 historical baseline. It must not present a regression comparison unless a future

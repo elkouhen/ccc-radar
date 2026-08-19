@@ -9,6 +9,7 @@ from typing import Callable
 
 from systemlens.apm import (
     ApmError,
+    ApmTimeoutError,
     ElasticApmClient,
     _aggregate_relations,
     _as_number,
@@ -67,7 +68,7 @@ def build_runtime_report(
     dependency_buckets, dependencies_query_truncated, target_field = (
         _read_relation_buckets(client, start, end, environment, max_buckets)
     )
-    timeline_events, timeline_truncated = _read_timeline_events(
+    timeline_events, timeline_truncated, timeline_unavailable_reason = _read_timeline_events(
         client, start, end, environment, max_timeline_events
     )
 
@@ -126,6 +127,8 @@ def build_runtime_report(
                 "truncated": timeline_truncated,
                 "truncation_reasons": ["max_timeline_events"] if timeline_truncated else [],
                 "max_events": max_timeline_events,
+                "available": timeline_unavailable_reason is None,
+                "unavailable_reason": timeline_unavailable_reason,
             },
         },
     }
@@ -137,7 +140,7 @@ def _read_timeline_events(
     end: datetime,
     environment: str | None,
     max_events: int,
-) -> tuple[list[dict[str, object]], bool]:
+) -> tuple[list[dict[str, object]], bool, str | None]:
     """Read a bounded, field-projected transaction timeline from traces.
 
     The query explicitly disables ``_source`` and never requests identifiers,
@@ -145,31 +148,34 @@ def _read_timeline_events(
     """
     search_traces = getattr(client, "search_traces", None)
     if not callable(search_traces):
-        return [], False
+        return [], False, "unsupported_client"
     filters: list[dict[str, object]] = [
         {"term": {"processor.event": "transaction"}},
         {"range": {"@timestamp": {"gte": _iso8601(start), "lt": _iso8601(end)}}},
     ]
     if environment:
         filters.append({"term": {"service.environment": environment}})
-    response = search_traces({
-        "size": max_events,
-        "track_total_hits": False,
-        "_source": False,
-        "sort": [{"@timestamp": {"order": "asc"}}],
-        "fields": [
-            "@timestamp", "service.name", "transaction.name", "transaction.type",
-            "transaction.duration.us", "transaction.result", "event.outcome",
-            "transaction.message.queue.name",
-        ],
-        "query": {"bool": {"filter": filters}},
-    })
+    try:
+        response = search_traces({
+            "size": max_events,
+            "track_total_hits": False,
+            "_source": False,
+            "sort": [{"@timestamp": {"order": "asc"}}],
+            "fields": [
+                "@timestamp", "service.name", "transaction.name", "transaction.type",
+                "transaction.duration.us", "transaction.result", "event.outcome",
+                "transaction.message.queue.name",
+            ],
+            "query": {"bool": {"filter": filters}},
+        })
+    except ApmTimeoutError:
+        return [], False, "timeout"
     hits = response.get("hits")
     if not isinstance(hits, dict):
-        return [], False
+        return [], False, None
     raw_hits = hits.get("hits")
     if not isinstance(raw_hits, list):
-        return [], False
+        return [], False, None
     events: list[dict[str, object]] = []
     for hit in raw_hits:
         if not isinstance(hit, dict) or not isinstance(hit.get("fields"), dict):
@@ -194,7 +200,7 @@ def _read_timeline_events(
         if queue:
             event["messaging_target"] = queue
         events.append(event)
-    return events, len(raw_hits) >= max_events
+    return events, len(raw_hits) >= max_events, None
 
 
 def _timeline_field_string(fields: dict[str, object], name: str) -> str | None:
@@ -435,17 +441,26 @@ _RUNTIME_REPORT_ENHANCEMENTS = """<script>
   summary.className = 'timeline-summary';
   byId('timeline-events').before(summary);
   function selectView(view) {
-    const details = view === 'details';
+    const services = view === 'overview';
+    const transactions = view === 'details';
+    const dependencies = view === 'map';
     const timeline = view === 'timeline';
-    byId('overview-layout').hidden = view !== 'overview';
-    byId('map-panel').hidden = view !== 'map';
-    document.querySelectorAll('.detail-panel').forEach(panel => { panel.hidden = !details; });
+    byId('services-panel').hidden = !services;
+    document.querySelectorAll('.service-panel').forEach(panel => { panel.hidden = !services; });
+    document.querySelectorAll('.transaction-panel').forEach(panel => { panel.hidden = !transactions; });
+    document.querySelectorAll('.dependency-panel').forEach(panel => { panel.hidden = !dependencies; });
     byId('timeline-panel').hidden = !timeline;
-    byId('coverage').hidden = view !== 'overview';
+    byId('coverage').hidden = !services;
     ['overview', 'map', 'details', 'timeline'].forEach(name => byId(`${name}-tab`).classList.toggle('is-active', name === view));
   }
   ['overview', 'map', 'details', 'timeline'].forEach(name => byId(`${name}-tab`).addEventListener('click', () => selectView(name)));
   function renderTimelineTriage() {
+    const timelineCoverage = (data.coverage && data.coverage.timeline) || {};
+    if (timelineCoverage.available === false) {
+      summary.innerHTML = '';
+      byId('timeline-events').innerHTML = '<p class="empty">Recorded transaction timeline is unavailable because its bounded query timed out. Aggregate views are still available.</p>';
+      return;
+    }
     const service = byId('global-service-filter').value;
     const kind = byId('global-workload-filter').value;
     const failuresOnly = byId('failures-only-filter').checked;
@@ -480,19 +495,18 @@ main { max-width:1440px; margin:auto; padding:24px; } h1,h2 { margin:0; } h1 { f
 #map-panel[hidden] { display:grid !important; position:absolute; left:-100000px; width:calc(100vw - 48px); visibility:hidden; }
 </style></head><body><main>
 <header><h1>APM runtime overview</h1><p class="subtle">Bounded aggregates plus a minimal recorded-transaction projection. No event source, IDs, headers, bodies, traces, or error messages are included.</p><div id="context" class="context"></div><div id="report-status" class="report-status"></div></header>
-<section id="cards" class="cards" aria-label="Runtime summary"></section>
-<nav class="runtime-tabs" aria-label="Runtime report views"><button id="overview-tab" class="runtime-tab is-active" type="button">Overview</button><button id="map-tab" class="runtime-tab" type="button">Service map</button><button id="details-tab" class="runtime-tab" type="button">Details</button><button id="timeline-tab" class="runtime-tab" type="button">Timeline</button></nav>
-<div id="overview-layout"><aside class="overview-sidebar">
+<nav class="runtime-tabs" aria-label="Runtime report views"><button id="overview-tab" class="runtime-tab is-active" type="button">Services</button><button id="details-tab" class="runtime-tab" type="button">Transactions</button><button id="map-tab" class="runtime-tab" type="button">Dependencies</button><button id="timeline-tab" class="runtime-tab" type="button">Timeline</button></nav>
+<section id="services-panel"><section id="cards" class="cards" aria-label="Runtime summary"></section><div id="overview-layout"><aside class="overview-sidebar">
 <section id="triage" class="panel triage"><div class="panel-head"><div><h2>Investigation priorities</h2><p class="subtle">Impact combines observed volume, error rate, and tail latency; it is a triage aid, not an SLO verdict.</p></div></div><div id="triage-items" class="triage-items"></div></section>
-<section class="panel filter-bar" hidden><label>Focus service <select id="global-service-filter" aria-label="Focus every report view by service"></select></label><label>Workload <select id="global-workload-filter" aria-label="Filter every report view by workload"></select></label><label><input id="failures-only-filter" type="checkbox"> Failures only</label><button id="clear-filters" type="button">Clear filters</button></section>
-</aside></div><section id="map-panel" class="panel map-panel" hidden><div class="panel-head"><div><h2>Runtime service map</h2><p class="subtle">Directed edges are observed dependencies. Select a service to inspect aggregate workload details; this does not assert a transaction-to-dependency call.</p></div><div><label>View <select id="map-mode" aria-label="Filter service map"></select></label> <label>Service <select id="map-service-filter" aria-label="Focus service map"></select></label> <label>Workload <select id="map-workload-filter" aria-label="Filter workload details"></select></label></div></div><div id="service-map" class="service-map"></div><div id="service-map-details" class="service-map-details"></div></section>
-<section id="details-hotspots" class="panel detail-panel" hidden><div class="panel-head"><h2>Service hotspots</h2><span class="subtle">Ranked by P95, then error rate and volume</span></div><div id="services"></div></section>
+<section class="panel filter-bar"><label>Service <select id="global-service-filter" aria-label="Filter service view"></select></label><select id="global-workload-filter" hidden></select><input id="failures-only-filter" type="checkbox" hidden><button id="clear-filters" type="button" hidden>Clear filters</button></section>
+</aside></div></section><section id="map-panel" class="panel map-panel dependency-panel" hidden><div class="panel-head"><div><h2>Runtime service map</h2><p class="subtle">Directed edges are observed dependencies. Select a service to inspect aggregate workload details; this does not assert a transaction-to-dependency call.</p></div><div><label>View <select id="map-mode" aria-label="Filter service map"></select></label> <label>Service <select id="map-service-filter" aria-label="Focus service map"></select></label> <label>Workload <select id="map-workload-filter" aria-label="Filter workload details"></select></label></div></div><div id="service-map" class="service-map"></div><div id="service-map-details" class="service-map-details"></div></section>
+<section id="details-hotspots" class="panel service-panel" hidden><div class="panel-head"><h2>Service hotspots</h2><span class="subtle">Ranked by P95, then error rate and volume</span></div><div id="services"></div></section>
 <section id="timeline-panel" class="panel" hidden><div class="panel-head"><div><h2>Recorded transaction timeline</h2><p class="subtle">Bounded field projection from recorded transaction events; no event source, IDs, headers, bodies, traces, or error messages.</p></div><label>Service <select id="timeline-service-filter" aria-label="Filter timeline by service"></select></label></div><div id="timeline-events" class="timeline"></div><p id="timeline-coverage" class="note"></p></section>
-<section id="details-transactions" class="panel detail-panel" hidden><div class="panel-head"><div><h2>Transaction graph</h2><p class="subtle">Transactions remain owned by their service; no transaction-to-dependency call is asserted.</p></div><div><label>Service <select id="transaction-service-filter" aria-label="Filter transaction graph by service"></select></label> <label>Type <select id="transaction-kind-filter" aria-label="Filter transaction graph by type"></select></label></div></div><div id="transaction-graph" class="transaction-graph"></div></section>
-<section id="details-flows" class="panel detail-panel" hidden><div class="panel-head"><h2>Focused dependency flow</h2><label>Service <select id="service-filter" aria-label="Filter dependency flow by service"></select></label></div><div id="flows" class="flow"></div></section>
-<section id="details-slow-transactions" class="panel detail-panel" hidden><div class="panel-head"><h2>Slow transactions</h2><span class="subtle">P95 is an approximate percentile from APM histogram metrics</span></div><div id="transactions"></div></section>
-<section id="details-dependencies" class="panel detail-panel" hidden><div class="panel-head"><h2>Dependencies</h2><span class="subtle">Average latency only; dependency P95 is a separate future pass</span></div><div id="dependencies"></div></section>
-<section id="details-failures" class="panel detail-panel" hidden><div class="panel-head"><h2>Recurring failures</h2><span class="subtle">Aggregated failure counts only</span></div><div id="failures"></div></section>
+<section id="details-transactions" class="panel transaction-panel" hidden><div class="panel-head"><div><h2>Transaction graph</h2><p class="subtle">Transactions remain owned by their service; no transaction-to-dependency call is asserted.</p></div><div><label>Service <select id="transaction-service-filter" aria-label="Filter transaction graph by service"></select></label> <label>Type <select id="transaction-kind-filter" aria-label="Filter transaction graph by type"></select></label></div></div><div id="transaction-graph" class="transaction-graph"></div></section>
+<section id="details-flows" class="panel dependency-panel" hidden><div class="panel-head"><h2>Focused dependency flow</h2><label>Service <select id="service-filter" aria-label="Filter dependency flow by service"></select></label></div><div id="flows" class="flow"></div></section>
+<section id="details-slow-transactions" class="panel transaction-panel" hidden><div class="panel-head"><h2>Slow transactions</h2><span class="subtle">P95 is an approximate percentile from APM histogram metrics</span></div><div id="transactions"></div></section>
+<section id="details-dependencies" class="panel dependency-panel" hidden><div class="panel-head"><h2>Dependencies</h2><span class="subtle">Average latency only; dependency P95 is a separate future pass</span></div><div id="dependencies"></div></section>
+<section id="details-failures" class="panel service-panel" hidden><div class="panel-head"><h2>Recurring failures</h2><span class="subtle">Aggregated failure counts only</span></div><div id="failures"></div></section>
 <p id="coverage" class="note"></p></main><script id="runtime-data" type="application/json">__RUNTIME_DATA__</script><script>
 const data=JSON.parse(document.getElementById('runtime-data').textContent); const $=id=>document.getElementById(id); const n=v=>typeof v==='number'?v:null; const ms=v=>n(v)===null?'—':`${v.toLocaleString(undefined,{maximumFractionDigits:3})} ms`; const pct=v=>n(v)===null?'—':`${(v*100).toFixed(1)}%`; const count=v=>n(v)===null?'—':v.toLocaleString(); const esc=v=>String(v??'—').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const rows=(items,columns)=>items.length?`<table><thead><tr>${columns.map(c=>`<th class="${c.metric?'metric':''}">${c.label}</th>`).join('')}</tr></thead><tbody>${items.map(item=>`<tr>${columns.map(c=>`<td class="${c.metric?'metric':''} ${c.className?c.className(item):''}">${c.html?c.html(item):esc(item[c.key])}</td>`).join('')}</tr>`).join('')}</tbody></table>`:'<p class="empty">No aggregate metric was observed in this window.</p>';
