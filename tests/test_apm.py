@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from systemlens.apm import ApmError, export_digest, load_settings, parse_since
+from systemlens.apm import ApmError, ApmHttpError, export_digest, load_settings, parse_since
 from systemlens.apm_report import build_runtime_report, render_runtime_report_html
 from systemlens.cli import app
 
@@ -217,6 +217,36 @@ def test_apm_export_writes_machine_readable_digest(
 
     assert result.exit_code == 0, result.output
     assert json.loads(output.read_text(encoding="utf-8")) == expected
+
+
+def test_apm_export_429_prints_safe_cluster_diagnostics(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def reject_export(*args: object, **kwargs: object) -> dict[str, object]:
+        raise ApmHttpError(429)
+
+    monkeypatch.setattr("systemlens.cli.export_digest", reject_export)
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "apm",
+            "export",
+            "--endpoint",
+            "https://elastic.example.test",
+            "--api-key",
+            "not-a-real-key",
+        ],
+    )
+
+    assert result.exit_code == 2
+    assert "Échec de l'export APM : Elasticsearch a répondu HTTP 429." in result.output
+    assert "systemlens apm doctor" in result.output
+    assert "GET _cluster/health" in result.output
+    assert "GET _cat/allocation?v" in result.output
+    assert "filter_path=**watermark" in result.output
+    assert "elastic.example.test" not in result.output
+    assert "not-a-real-key" not in result.output
 
 
 def test_runtime_report_uses_histogram_p95_for_services_and_transactions() -> None:

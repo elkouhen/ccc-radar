@@ -21,6 +21,14 @@ class ApmError(RuntimeError):
     """A safe error returned by the read-only Elastic APM adapter."""
 
 
+class ApmHttpError(ApmError):
+    """A safe Elasticsearch HTTP failure retaining only its status code."""
+
+    def __init__(self, status_code: int) -> None:
+        self.status_code = status_code
+        super().__init__(f"Elasticsearch a répondu HTTP {status_code}.")
+
+
 @dataclass(frozen=True)
 class ApmSettings:
     """Connection settings, with the credential source retained for doctor."""
@@ -142,7 +150,7 @@ class ElasticApmClient:
             with urlopen(request, timeout=self._timeout_seconds) as response:
                 decoded = json.loads(response.read().decode("utf-8"))
         except HTTPError as exc:
-            raise ApmError(f"Elasticsearch a répondu HTTP {exc.code}.") from exc
+            raise ApmHttpError(exc.code) from exc
         except URLError as exc:
             raise ApmError("Elasticsearch est inaccessible.") from exc
         except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:

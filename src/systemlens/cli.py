@@ -12,6 +12,7 @@ import typer
 from systemlens import __version__
 from systemlens.apm import (
     ApmError,
+    ApmHttpError,
     ElasticApmClient,
     compact_json as compact_apm_json,
     doctor as apm_doctor,
@@ -1108,6 +1109,37 @@ def apm_doctor_cmd(
         raise typer.Exit(code=2)
 
 
+def _apm_export_failure_advice(error: ApmError) -> list[str]:
+    """Return safe, actionable diagnostics without revealing credentials."""
+    advice = [
+        "Diagnostic lecture seule : exécutez `systemlens apm doctor` avec la même configuration.",
+    ]
+    if isinstance(error, ApmHttpError):
+        if error.status_code in {401, 403}:
+            advice.append(
+                "Vérifiez que la clé API a les droits de lecture sur les métriques APM."
+            )
+        elif error.status_code == 429:
+            advice.extend(
+                [
+                    "La requête a été refusée par le cluster (limitation ou capacité insuffisante).",
+                    "Si Elasticsearch mentionne un flood-stage watermark, exécutez dans Kibana Dev Tools :",
+                    "  GET _cluster/health",
+                    "  GET _cat/allocation?v",
+                    "  GET _cluster/settings?include_defaults=true&filter_path=**watermark",
+                ]
+            )
+        elif error.status_code >= 500:
+            advice.append(
+                "Le cluster a signalé une erreur serveur ; vérifiez son état et les journaux Elasticsearch."
+            )
+    elif "inaccessible" in str(error):
+        advice.append(
+            "Vérifiez la résolution DNS, le réseau, le certificat TLS et la disponibilité du cluster."
+        )
+    return advice
+
+
 @apm_app.command("export")
 def apm_export_cmd(
     since: str = typer.Option("1h", "--since", help="Fenêtre : 15m, 1h, 7d, etc."),
@@ -1161,7 +1193,9 @@ def apm_export_cmd(
         )
         serialized = compact_apm_json(digest)
     except ApmError as exc:
-        typer.echo(str(exc), err=True)
+        typer.echo(f"Échec de l'export APM : {exc}", err=True)
+        for line in _apm_export_failure_advice(exc):
+            typer.echo(line, err=True)
         raise typer.Exit(code=2) from exc
 
     if out is None:
