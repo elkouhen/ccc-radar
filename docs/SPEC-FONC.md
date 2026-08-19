@@ -180,6 +180,12 @@ opens their review view.
 (including `envoyerMessageKafkaRequest` and `envoyerMessageKafkaReply`),
 `${kafka.topics.*.name}` expressions and configured REST client constants. It
 also enables the `getXxxServiceUrl()` REST target-name convention.
+For a `src/main/resources/openapi/xxx.rest` publication declaration, it
+searches the entire indexed repository for same-named `xxx.yaml`,
+`xxx.yml`, or `xxx.json` OpenAPI contracts, including contracts in a sibling
+shared module without an `openapi-generator` Maven configuration. Only a
+valid OpenAPI document is attached, and its resulting endpoints remain
+attributed to the module that owns the `.rest` declaration.
 It may also derive a high-confidence request/reply pair
 when both sides follow the `retour_<request-topic>` convention.
 

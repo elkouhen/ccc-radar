@@ -834,41 +834,44 @@ def _infer_openapi_endpoints_attributed(repo_root: Path, rel_path: str) -> list[
         replace(endpoint, module=owner) if endpoint.module != owner else endpoint
         for endpoint in endpoints
     ]
-def _strategy1_model_openapi_contracts(repo_root: Path, api_name: str) -> tuple[str, ...]:
-    """Find the ``<api>.yaml``-style contract configured by a ``model-*`` module."""
+@lru_cache(maxsize=256)
+def _strategy1_openapi_contracts(repo_root_str: str, api_name: str) -> tuple[str, ...]:
+    """Find same-named OpenAPI contracts anywhere in the indexed repository.
+
+    A Strategy1 ``*.rest`` file is a publication declaration, not the
+    contract itself. The matching ``<api>.yaml``/``.yml``/``.json`` document
+    may live in any sibling module, including a shared module without an
+    openapi-generator Maven configuration. Filename matching only narrows
+    the candidates; callers still parse each candidate as OpenAPI before
+    publishing an endpoint.
+    """
+    repo_root = Path(repo_root_str).resolve()
     contracts: set[str] = set()
-    for pom_path in sorted(repo_root.rglob("pom.xml")):
+    for path in sorted(repo_root.rglob("*")):
         try:
-            artifact_id, _, _ = maven_module.parse_pom(pom_path)
-            module_names = {pom_path.parent.name.casefold()}
-            if artifact_id:
-                module_names.add(artifact_id.casefold())
-            if not any(name.startswith("model-") for name in module_names):
+            if not path.is_file() or path.suffix.casefold() not in {".json", ".yaml", ".yml"}:
                 continue
-            for module_relative in maven_module.detect_openapi_generator_input_specs(pom_path):
-                contract_name = Path(module_relative).stem.casefold().replace("_", "-")
-                if contract_name != api_name:
-                    continue
-                contracts.add(
-                    (pom_path.parent / module_relative).resolve().relative_to(repo_root.resolve()).as_posix()
-                )
+            contract_name = path.stem.casefold().replace("_", "-")
+            if contract_name == api_name:
+                contracts.add(path.resolve().relative_to(repo_root).as_posix())
         except (OSError, ValueError):
             continue
     return tuple(sorted(contracts))
 def _infer_strategy1_declared_openapi_publications(
     repo_root: Path, declaration_rel_path: str
 ) -> list[MessageEndpoint]:
-    """Attribute a ``*.rest`` declaration to its contract in a ``model-*`` module.
+    """Attribute a ``*.rest`` declaration to its same-named local contract.
 
     A Strategy1 declaration is deliberately not parsed as OpenAPI.  It tells
-    us which microservice publishes the contract with the same base name in a
-    ``model-*`` Maven module. Endpoints keep the declaration path so their
-    lifecycle follows the publishing service during incremental indexing.
+    us which microservice publishes the contract with the same base name,
+    wherever that contract physically lives in the indexed repository.
+    Endpoints keep the declaration path so their lifecycle follows the
+    publishing service during incremental indexing.
     """
     api_name = Path(declaration_rel_path).stem.casefold().replace("_", "-")
     publisher_module = _module_for_path(repo_root, declaration_rel_path)
     endpoints: list[MessageEndpoint] = []
-    for contract_rel_path in _strategy1_model_openapi_contracts(repo_root, api_name):
+    for contract_rel_path in _strategy1_openapi_contracts(str(repo_root.resolve()), api_name):
         for contract_endpoint in _infer_openapi_endpoints(
             repo_root, contract_rel_path, force_contract=True
         ):

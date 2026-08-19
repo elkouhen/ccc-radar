@@ -407,6 +407,37 @@ def test_infer_framework_endpoints_attributes_a_shared_module_contract_to_the_im
     assert {endpoint.topic for endpoint in contract_endpoints} == {"GET /orders"}
 
 
+def test_strategy1_rest_declaration_finds_same_named_contract_in_another_module(
+    tmp_path: Path,
+) -> None:
+    """Strategy1 must search the indexed repository, not just the publisher's
+    module or an openapi-generator-configured ``model-*`` module."""
+    publisher = tmp_path / "orders-service"
+    declaration = publisher / "src" / "main" / "resources" / "openapi" / "orders.rest"
+    declaration.parent.mkdir(parents=True)
+    declaration.write_text("published API declaration\n")
+    (publisher / "pom.xml").write_text(
+        '<project xmlns="http://maven.apache.org/POM/4.0.0">'
+        "<modelVersion>4.0.0</modelVersion><artifactId>orders-service</artifactId>"
+        "<version>1.0.0</version></project>"
+    )
+    contract = tmp_path / "shared-contracts" / "api" / "orders.yaml"
+    contract.parent.mkdir(parents=True)
+    contract.write_text(
+        "openapi: 3.0.0\npaths:\n  /orders:\n    get:\n      summary: List orders\n"
+    )
+
+    endpoints = infer_framework_endpoints(
+        tmp_path, configured_api_client_strategy1=True
+    )
+
+    contract_endpoints = [endpoint for endpoint in endpoints if endpoint.framework == "openapi"]
+    assert [(endpoint.module, endpoint.path, endpoint.topic) for endpoint in contract_endpoints] == [
+        ("orders-service", "orders-service/src/main/resources/openapi/orders.rest", "GET /orders")
+    ]
+    assert "systemlens-openapi-contract:shared-contracts/api/orders.yaml" in contract_endpoints[0].snippet
+
+
 def test_indexed_kafka_facts_build_a_traceable_service_edge(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     shutil.copytree(FIXTURES / "kafka_repo", repo)
