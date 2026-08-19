@@ -226,6 +226,27 @@ def test_detect_openapi_generator_input_specs_resolves_maven_properties(tmp_path
     assert detect_openapi_generator_input_specs(pom_file) == ("src/main/openapi/orders.yaml",)
 
 
+def test_detect_openapi_generator_input_specs_follows_a_sibling_module(tmp_path: Path) -> None:
+    """A shared ``model-*`` module commonly hosts the contract for several
+    implementing services; ``inputSpec`` resolving outside the pom's own
+    directory (``../model-common/...``) must still be followed rather than
+    silently dropped as "not local"."""
+    implementing = tmp_path / "orders-service"
+    implementing.mkdir()
+    pom_file = implementing / "pom.xml"
+    shared = tmp_path / "model-common" / "src" / "main" / "resources"
+    shared.mkdir(parents=True)
+    spec = shared / "orders.yaml"
+    spec.write_text("openapi: 3.0.0\npaths: {}\n")
+    _write_pom_with_openapi_spec(
+        pom_file, input_spec="${project.basedir}/../model-common/src/main/resources/orders.yaml"
+    )
+
+    specs = detect_openapi_generator_input_specs(pom_file)
+
+    assert specs == ("../model-common/src/main/resources/orders.yaml",)
+
+
 def test_detect_openapi_generated_clients_without_plugin(tmp_path: Path) -> None:
     """Teste qu'aucun client n'est détecté sans le plugin."""
     pom_file = tmp_path / "pom.xml"

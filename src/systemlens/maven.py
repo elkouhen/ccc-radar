@@ -2,6 +2,7 @@
 entre `workspace.py` (fédération multi-services, BACKLOG-11 A2) et `scanner.py`
 (attribution d'un module à chaque finding/endpoint indexé, BACKLOG-13 M1)."""
 
+import os
 import xml.etree.ElementTree as ET
 from functools import lru_cache
 from pathlib import Path
@@ -120,6 +121,17 @@ def _iter_openapi_generator_plugins(root: ET.Element) -> list[ET.Element]:
 def _resolve_openapi_spec_path(
     pom_path: Path, raw_value: str, properties: dict[str, str]
 ) -> str | None:
+    """Resolve a plugin-configured ``inputSpec`` to a module-relative path.
+
+    A multi-module Maven repository commonly keeps the OpenAPI contract in a
+    shared ``model-*``/``api-*`` module rather than inside the implementing
+    service's own directory (``inputSpec`` resolving to e.g.
+    ``../model-common/src/main/resources/orders.yaml``). Rejecting anything
+    outside the pom's own directory silently drops that contract instead of
+    following it into the sibling module, so this only checks the file
+    actually exists and returns the ``..``-relative path as-is; the caller
+    resolves it against the repository root, wherever it physically lives.
+    """
     resolved = _resolve_maven_value(raw_value, properties)
     if "${" in resolved or "://" in resolved and not resolved.startswith("file://"):
         return None
@@ -128,11 +140,11 @@ def _resolve_openapi_spec_path(
     candidate = Path(resolved)
     if not candidate.is_absolute():
         candidate = pom_path.parent / candidate
-    try:
-        module_relative = candidate.resolve(strict=False).relative_to(pom_path.parent.resolve())
-    except ValueError:
-        return None
     if not candidate.is_file():
+        return None
+    try:
+        module_relative = Path(os.path.relpath(candidate.resolve(strict=False), pom_path.parent.resolve()))
+    except ValueError:
         return None
     return module_relative.as_posix()
 
@@ -140,7 +152,13 @@ def _resolve_openapi_spec_path(
 def _resolve_openapi_spec_root_directory(
     pom_path: Path, raw_value: str, properties: dict[str, str]
 ) -> tuple[str, ...]:
-    """Return every local file configured through ``inputSpecRootDirectory``."""
+    """Return every local file configured through ``inputSpecRootDirectory``.
+
+    Like ``_resolve_openapi_spec_path``, the configured directory may live
+    outside the pom's own module (a shared contracts module); files are kept
+    relative to the module directory, ``..``-segments included, rather than
+    silently dropped.
+    """
     resolved = _resolve_maven_value(raw_value, properties)
     if "${" in resolved or "://" in resolved and not resolved.startswith("file://"):
         return ()
@@ -151,12 +169,12 @@ def _resolve_openapi_spec_root_directory(
         candidate = pom_path.parent / candidate
     if not candidate.is_dir():
         return ()
+    module_dir = pom_path.parent.resolve()
     try:
-        root = pom_path.parent.resolve()
         return tuple(
-            path.relative_to(root).as_posix()
+            os.path.relpath(path.resolve(), module_dir).replace(os.sep, "/")
             for path in sorted(candidate.rglob("*"))
-            if path.is_file() and root in path.resolve().parents
+            if path.is_file()
         )
     except (OSError, ValueError):
         return ()

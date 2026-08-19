@@ -353,6 +353,60 @@ def test_infer_framework_endpoints_reads_json_openapi_contract(tmp_path: Path) -
     assert all(endpoint.system == "rest" and endpoint.framework == "openapi" for endpoint in endpoints)
 
 
+def test_infer_framework_endpoints_attributes_a_shared_module_contract_to_the_implementing_service(
+    tmp_path: Path,
+) -> None:
+    """A `model-*` module commonly hosts the OpenAPI contract configured by a
+    sibling implementing service's `openapi-generator-maven-plugin`. Both the
+    ``pom.xml`` scan and a direct scan of the physical contract file must
+    attribute the resulting endpoints to the implementing service, never to
+    the contract's own (often non-runtime, library) enclosing module.
+    """
+    implementing = tmp_path / "orders-service"
+    (implementing / "src" / "main" / "java" / "com" / "acme").mkdir(parents=True)
+    (implementing / "src" / "main" / "java" / "com" / "acme" / "OrdersController.java").write_text(
+        "package com.acme;\n"
+        "import org.springframework.web.bind.annotation.RestController;\n"
+        "@RestController\npublic class OrdersController { }\n"
+    )
+    (implementing / "pom.xml").write_text(
+        """<project xmlns="http://maven.apache.org/POM/4.0.0">
+    <modelVersion>4.0.0</modelVersion>
+    <artifactId>orders-service</artifactId>
+    <version>1.0.0</version>
+    <build><plugins><plugin>
+        <groupId>org.openapitools</groupId>
+        <artifactId>openapi-generator-maven-plugin</artifactId>
+        <version>7.0.0</version>
+        <executions><execution><goals><goal>generate</goal></goals>
+            <configuration>
+                <inputSpec>${project.basedir}/../model-common/src/main/resources/orders.yaml</inputSpec>
+            </configuration>
+        </execution></executions>
+    </plugin></plugins></build>
+</project>"""
+    )
+    shared = tmp_path / "model-common" / "src" / "main" / "resources"
+    shared.mkdir(parents=True)
+    (shared / "orders.yaml").write_text(
+        "openapi: 3.0.0\npaths:\n  /orders:\n    get:\n      summary: List orders\n"
+    )
+    (tmp_path / "model-common" / "pom.xml").write_text(
+        '<project xmlns="http://maven.apache.org/POM/4.0.0">'
+        "<modelVersion>4.0.0</modelVersion><artifactId>model-common</artifactId>"
+        "<version>1.0.0</version></project>"
+    )
+
+    endpoints = infer_framework_endpoints(tmp_path)
+
+    contract_endpoints = [endpoint for endpoint in endpoints if endpoint.framework == "openapi"]
+    assert contract_endpoints, "the shared contract must be discovered"
+    for endpoint in contract_endpoints:
+        assert endpoint.module == "orders-service"
+        assert endpoint.path == "model-common/src/main/resources/orders.yaml"
+    assert {endpoint.topic for endpoint in contract_endpoints} == {"GET /orders"}
+
+
 def test_indexed_kafka_facts_build_a_traceable_service_edge(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     shutil.copytree(FIXTURES / "kafka_repo", repo)

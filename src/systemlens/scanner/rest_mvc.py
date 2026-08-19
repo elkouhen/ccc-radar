@@ -671,19 +671,38 @@ def _infer_swagger_endpoint(repo_root: Path, rel_path: str) -> list[MessageEndpo
 
 
 @lru_cache(maxsize=64)
-def _openapi_generator_contract_paths(repo_root_str: str) -> tuple[str, ...]:
-    repo_root = Path(repo_root_str)
-    contracts: set[str] = set()
+def _openapi_generator_contract_owners(repo_root_str: str) -> dict[str, str | None]:
+    """Map each plugin-referenced contract path to its implementing module.
+
+    The contract file frequently lives in a different (often shared
+    ``model-*``) Maven module than the one whose ``pom.xml`` configures
+    ``openapi-generator-maven-plugin`` and whose ``@RestController``s
+    actually serve it. Scanning the contract file directly (as a plain
+    ``*.yaml``/``*.json`` candidate) must still attribute its endpoints to
+    that implementing module, not to whichever module physically encloses
+    the file, or the operations silently vanish under a non-runtime
+    library module that is never rendered as a service.
+    """
+    repo_root = Path(repo_root_str).resolve()
+    owners: dict[str, str | None] = {}
     for pom_path in sorted(repo_root.rglob("pom.xml")):
         try:
             module_dir = pom_path.parent
             if not discover_rest_controllers(module_dir, set()):
                 continue
+            implementing_module = _module_for_path(
+                repo_root, pom_path.relative_to(repo_root).as_posix()
+            )
             for module_relative in maven_module.detect_openapi_generator_input_specs(pom_path):
-                contracts.add((module_dir / module_relative).relative_to(repo_root).as_posix())
+                contract_rel_path = (
+                    (module_dir / module_relative).resolve().relative_to(repo_root).as_posix()
+                )
+                owners[contract_rel_path] = implementing_module
         except ValueError:
             continue
-    return tuple(sorted(contracts))
+    return owners
+def _openapi_generator_contract_paths(repo_root_str: str) -> tuple[str, ...]:
+    return tuple(sorted(_openapi_generator_contract_owners(repo_root_str)))
 def _is_strategy1_openapi_declaration_path(rel_path: str) -> bool:
     """Recognize a Strategy1 microservice API publication declaration."""
     path = Path(rel_path)
@@ -699,18 +718,34 @@ def _is_openapi_contract_path(repo_root: Path, rel_path: str) -> bool:
         "swagger.yaml", "swagger.yml", "swagger.json",
     } or rel_path in _openapi_generator_contract_paths(str(repo_root))
 def _infer_openapi_generator_endpoints(repo_root: Path, rel_path: str) -> list[MessageEndpoint]:
+    """Inventory operations from a plugin-generated contract, attributed to
+    the implementing service even when the contract file itself physically
+    lives in a different (often shared ``model-*``) Maven module.
+
+    Grouping endpoints by ``module`` (``graph.group_endpoints_by_module``)
+    would otherwise silently move these operations onto the contract's own
+    module -- which is frequently a non-runtime library never rendered as a
+    service -- making them vanish instead of showing under the service that
+    actually serves them.
+    """
     path = repo_root / rel_path
     if path.name != "pom.xml":
         return []
     if not discover_rest_controllers(path.parent, set()):
         return []
+    implementing_module = _module_for_path(repo_root, rel_path)
     endpoints: list[MessageEndpoint] = []
     for module_relative in maven_module.detect_openapi_generator_input_specs(path):
         try:
-            contract_rel_path = (path.parent / module_relative).relative_to(repo_root).as_posix()
+            contract_rel_path = (
+                (path.parent / module_relative).resolve().relative_to(repo_root.resolve()).as_posix()
+            )
         except ValueError:
             continue
-        endpoints.extend(_infer_openapi_endpoints(repo_root, contract_rel_path))
+        endpoints.extend(
+            replace(endpoint, module=implementing_module) if endpoint.module != implementing_module else endpoint
+            for endpoint in _infer_openapi_endpoints(repo_root, contract_rel_path)
+        )
     return endpoints
 def _infer_openapi_endpoints(
     repo_root: Path, rel_path: str, *, force_contract: bool = False
@@ -770,6 +805,35 @@ def _infer_openapi_endpoints(
                 )
             )
     return endpoints
+def _infer_openapi_endpoints_attributed(repo_root: Path, rel_path: str) -> list[MessageEndpoint]:
+    """Like `_infer_openapi_endpoints`, reattributed to the module that
+    configures the contract via the generator plugin when it differs from
+    the module that physically encloses the contract file.
+
+    A contract file discovered by direct file scan (as a plain ``*.yaml``/
+    ``*.json`` candidate, not through the referencing ``pom.xml``) would
+    otherwise keep ``_build_endpoint``'s default module attribution -- the
+    contract's own enclosing module -- even when a *different* module's
+    ``openapi-generator-maven-plugin`` configuration is what actually
+    serves it. That silently moves the endpoints onto a module that is
+    frequently a non-runtime shared library, never rendered as a service.
+    """
+    endpoints = _infer_openapi_endpoints(repo_root, rel_path)
+    if not endpoints:
+        return endpoints
+    try:
+        resolved_rel_path = (
+            (repo_root / rel_path).resolve().relative_to(repo_root.resolve()).as_posix()
+        )
+    except ValueError:
+        return endpoints
+    owner = _openapi_generator_contract_owners(str(repo_root.resolve())).get(resolved_rel_path)
+    if owner is None:
+        return endpoints
+    return [
+        replace(endpoint, module=owner) if endpoint.module != owner else endpoint
+        for endpoint in endpoints
+    ]
 def _strategy1_model_openapi_contracts(repo_root: Path, api_name: str) -> tuple[str, ...]:
     """Find the ``<api>.yaml``-style contract configured by a ``model-*`` module."""
     contracts: set[str] = set()
@@ -785,7 +849,9 @@ def _strategy1_model_openapi_contracts(repo_root: Path, api_name: str) -> tuple[
                 contract_name = Path(module_relative).stem.casefold().replace("_", "-")
                 if contract_name != api_name:
                     continue
-                contracts.add((pom_path.parent / module_relative).relative_to(repo_root).as_posix())
+                contracts.add(
+                    (pom_path.parent / module_relative).resolve().relative_to(repo_root.resolve()).as_posix()
+                )
         except (OSError, ValueError):
             continue
     return tuple(sorted(contracts))
@@ -1296,11 +1362,11 @@ def infer_framework_endpoints(
             for endpoint in (
                 _infer_actuator_endpoint(repo_root, rel_path)
                 + _infer_spring_cloud_gateway_yaml_routes(repo_root, rel_path)
-                + _infer_openapi_endpoints(repo_root, rel_path)
+                + _infer_openapi_endpoints_attributed(repo_root, rel_path)
             ):
                 inferred[endpoint.id] = endpoint
         elif rel_path.endswith(".json"):
-            for endpoint in _infer_openapi_endpoints(repo_root, rel_path):
+            for endpoint in _infer_openapi_endpoints_attributed(repo_root, rel_path):
                 inferred[endpoint.id] = endpoint
         elif configured_api_client_strategy1 and _is_strategy1_openapi_declaration_path(rel_path):
             for endpoint in _infer_strategy1_declared_openapi_publications(repo_root, rel_path):
