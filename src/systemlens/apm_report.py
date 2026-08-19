@@ -1,4 +1,4 @@
-"""Bounded aggregate Elastic APM runtime report and self-contained HTML view."""
+"""Bounded aggregate Elastic APM runtime report with a Sigma.js graph view."""
 
 from __future__ import annotations
 
@@ -22,6 +22,7 @@ DEFAULT_MAX_SERVICES = 30
 DEFAULT_MAX_TRANSACTIONS = 50
 DEFAULT_MAX_DEPENDENCIES = 80
 DEFAULT_MAX_BUCKETS_PER_VIEW = 1_000
+DEFAULT_MAX_TIMELINE_EVENTS = 500
 
 
 def build_runtime_report(
@@ -33,6 +34,7 @@ def build_runtime_report(
     max_transactions: int = DEFAULT_MAX_TRANSACTIONS,
     max_dependencies: int = DEFAULT_MAX_DEPENDENCIES,
     max_buckets: int = DEFAULT_MAX_BUCKETS_PER_VIEW,
+    max_timeline_events: int = DEFAULT_MAX_TIMELINE_EVENTS,
     now: datetime | None = None,
 ) -> dict[str, object]:
     """Read three aggregate metric projections for the runtime HTML report.
@@ -46,6 +48,7 @@ def build_runtime_report(
         ("--max-transactions", max_transactions),
         ("--max-dependencies", max_dependencies),
         ("--max-buckets", max_buckets),
+        ("--max-timeline-events", max_timeline_events),
     ):
         if value < 1:
             raise ApmError(f"`{option}` doit être supérieur à zéro.")
@@ -64,6 +67,9 @@ def build_runtime_report(
     dependency_buckets, dependencies_query_truncated, target_field = (
         _read_relation_buckets(client, start, end, environment, max_buckets)
     )
+    timeline_events, timeline_truncated = _read_timeline_events(
+        client, start, end, environment, max_timeline_events
+    )
 
     services = _rank_latency_buckets(service_buckets, kind="service")
     transactions = _rank_latency_buckets(transaction_buckets, kind="transaction")
@@ -78,20 +84,23 @@ def build_runtime_report(
     )
 
     return {
-        "schema_version": "apm-runtime-report-v1",
+        "schema_version": "apm-runtime-report-v2",
         "source": {
             "kind": "elastic_apm_metric_aggregates",
-            "raw_events_exported": False,
+            "raw_event_source_exported": False,
+            "recorded_transaction_projection": True,
             "service_metricset": "service_transaction",
             "transaction_metricset": "transaction",
             "dependency_metricset": "service_destination",
             "dependency_target_field": target_field,
+            "timeline_trace_index": "traces-apm*",
         },
         "window": {"from": _iso8601(start), "to": _iso8601(end)},
         "environment": environment,
         "services": services[:max_services],
         "transactions": transactions[:max_transactions],
         "dependencies": dependencies[:max_dependencies],
+        "timeline_events": timeline_events,
         "coverage": {
             "services": _view_coverage(
                 len(services), max_services, max_buckets, services_query_truncated
@@ -108,8 +117,94 @@ def build_runtime_report(
                 max_buckets,
                 dependencies_query_truncated,
             ),
+            "timeline": {
+                "items_exported": len(timeline_events),
+                "truncated": timeline_truncated,
+                "truncation_reasons": ["max_timeline_events"] if timeline_truncated else [],
+                "max_events": max_timeline_events,
+            },
         },
     }
+
+
+def _read_timeline_events(
+    client: ElasticApmClient,
+    start: datetime,
+    end: datetime,
+    environment: str | None,
+    max_events: int,
+) -> tuple[list[dict[str, object]], bool]:
+    """Read a bounded, field-projected transaction timeline from traces.
+
+    The query explicitly disables ``_source`` and never requests identifiers,
+    request data, headers, bodies, stack traces, or error messages.
+    """
+    search_traces = getattr(client, "search_traces", None)
+    if not callable(search_traces):
+        return [], False
+    filters: list[dict[str, object]] = [
+        {"term": {"processor.event": "transaction"}},
+        {"range": {"@timestamp": {"gte": _iso8601(start), "lt": _iso8601(end)}}},
+    ]
+    if environment:
+        filters.append({"term": {"service.environment": environment}})
+    response = search_traces({
+        "size": max_events,
+        "track_total_hits": False,
+        "_source": False,
+        "sort": [{"@timestamp": {"order": "asc"}}],
+        "fields": [
+            "@timestamp", "service.name", "transaction.name", "transaction.type",
+            "transaction.duration.us", "transaction.result", "event.outcome",
+            "transaction.message.queue.name",
+        ],
+        "query": {"bool": {"filter": filters}},
+    })
+    hits = response.get("hits")
+    if not isinstance(hits, dict):
+        return [], False
+    raw_hits = hits.get("hits")
+    if not isinstance(raw_hits, list):
+        return [], False
+    events: list[dict[str, object]] = []
+    for hit in raw_hits:
+        if not isinstance(hit, dict) or not isinstance(hit.get("fields"), dict):
+            continue
+        fields = hit["fields"]
+        timestamp = _timeline_field_string(fields, "@timestamp")
+        service = _timeline_field_string(fields, "service.name")
+        transaction = _timeline_field_string(fields, "transaction.name")
+        if not timestamp or not service or not transaction:
+            continue
+        duration = _timeline_field_number(fields, "transaction.duration.us")
+        event: dict[str, object] = {
+            "timestamp": timestamp,
+            "service": service,
+            "transaction": transaction,
+            "transaction_type": _timeline_field_string(fields, "transaction.type"),
+            "duration_ms": round(duration / 1_000, 3) if duration is not None else None,
+            "result": _timeline_field_string(fields, "transaction.result"),
+            "outcome": _timeline_field_string(fields, "event.outcome"),
+        }
+        queue = _timeline_field_string(fields, "transaction.message.queue.name")
+        if queue:
+            event["messaging_target"] = queue
+        events.append(event)
+    return events, len(raw_hits) >= max_events
+
+
+def _timeline_field_string(fields: dict[str, object], name: str) -> str | None:
+    value = fields.get(name)
+    if isinstance(value, list) and value and isinstance(value[0], str):
+        return value[0]
+    return value if isinstance(value, str) else None
+
+
+def _timeline_field_number(fields: dict[str, object], name: str) -> float | None:
+    value = fields.get(name)
+    if isinstance(value, list) and value:
+        value = value[0]
+    return float(value) if isinstance(value, (int, float)) else None
 
 
 def _latency_query(
@@ -309,7 +404,7 @@ def _view_coverage(
 
 
 def render_runtime_report_html(report: dict[str, object]) -> str:
-    """Render a self-contained, aggregate-only runtime investigation report."""
+    """Render an aggregate-only runtime report with the shared Sigma.js view."""
     data = json.dumps(report, ensure_ascii=False, separators=(",", ":")).replace(
         "</", "<\\/"
     )
@@ -321,17 +416,21 @@ def render_runtime_report_html(report: dict[str, object]) -> str:
 
 _RUNTIME_REPORT_HTML = """<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>__TITLE__</title><style>
+<title>__TITLE__</title><script src="https://cdnjs.cloudflare.com/ajax/libs/graphology/0.25.4/graphology.umd.min.js"></script><script src="https://cdnjs.cloudflare.com/ajax/libs/sigma.js/2.4.0/sigma.min.js"></script><style>
 :root { color-scheme: light; --ink:#182033; --muted:#5f6b82; --line:#dde3ee; --panel:#fff; --canvas:#f5f7fb; --blue:#3156d3; --amber:#a65100; --red:#b42318; --green:#087443; }
 * { box-sizing:border-box; } body { margin:0; background:var(--canvas); color:var(--ink); font:14px/1.45 Inter,ui-sans-serif,system-ui,sans-serif; }
 main { max-width:1440px; margin:auto; padding:24px; } h1,h2 { margin:0; } h1 { font-size:25px; } h2 { font-size:16px; } .subtle { color:var(--muted); margin:4px 0 0; } .context { display:flex; flex-wrap:wrap; gap:8px; margin:18px 0; } .pill { background:#eaf0ff; color:#243e99; border-radius:999px; padding:5px 9px; font-size:12px; } .cards { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:12px; margin-bottom:12px; } .card,.panel { background:var(--panel); border:1px solid var(--line); border-radius:12px; box-shadow:0 1px 2px #1820330b; } .card { padding:14px; } .card b { display:block; font-size:24px; margin-top:4px; } .panel { padding:16px; margin-top:12px; overflow:auto; } .panel-head { display:flex; justify-content:space-between; align-items:baseline; gap:12px; margin-bottom:10px; } select { border:1px solid var(--line); border-radius:7px; background:#fff; padding:6px; max-width:260px; } table { width:100%; border-collapse:collapse; white-space:nowrap; } th { color:var(--muted); font-weight:600; text-align:left; font-size:12px; } td,th { padding:9px 8px; border-bottom:1px solid #edf0f5; } tr:last-child td { border:0; } .metric { font-variant-numeric:tabular-nums; text-align:right; } .danger { color:var(--red); font-weight:650; } .warm { color:var(--amber); font-weight:650; } .flow { display:grid; gap:7px; min-width:660px; } .flow-row { display:grid; grid-template-columns:1fr 26px 1fr 150px; align-items:center; gap:8px; } .node { overflow:hidden; text-overflow:ellipsis; padding:7px 9px; border-radius:7px; background:#f1f4fa; } .arrow { color:var(--blue); font-size:18px; text-align:center; } .edge { height:8px; min-width:14px; border-radius:99px; background:var(--blue); opacity:.25; } .edge-wrap { display:flex; align-items:center; gap:7px; } .transaction-graph { display:grid; gap:14px; min-width:660px; } .transaction-service { display:grid; grid-template-columns:minmax(150px,.3fr) 30px 1fr; align-items:stretch; gap:8px; } .transaction-service-node { display:flex; align-items:center; justify-content:center; padding:12px; border:1px solid #cbd5e1; border-radius:10px; background:#eef3ff; color:#243e99; font-weight:750; overflow-wrap:anywhere; } .transaction-service-edge { display:flex; align-items:center; justify-content:center; color:var(--blue); font-size:22px; } .transaction-nodes { display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:8px; } .transaction-node { min-height:86px; padding:10px; border:1px solid #dbe3ef; border-left:5px solid #5b74db; border-radius:9px; background:#f8faff; } .transaction-node.is-warm { border-left-color:#d48a22; background:#fffaf1; } .transaction-node.is-hot { border-left-color:#c13b31; background:#fff6f5; } .transaction-name { overflow-wrap:anywhere; font-weight:750; } .transaction-metrics { margin-top:7px; color:var(--muted); font-size:12px; } .note { color:var(--muted); font-size:12px; margin:12px 0 0; } .empty { color:var(--muted); padding:8px 0; } @media (max-width:800px) { main { padding:14px; } .cards { grid-template-columns:repeat(2,minmax(0,1fr)); } .panel { padding:12px; } } @media (max-width:460px) { .cards { grid-template-columns:1fr; } }
 .transaction-kinds { display:grid; gap:10px; } .transaction-kind { border:1px solid #e2e8f0; border-radius:10px; padding:9px; background:#fbfcff; } .transaction-kind h3 { margin:0 0 8px; color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:.04em; } .transaction-kind.kind-http { border-color:#bfdbfe; background:#f6faff; } .transaction-kind.kind-messaging { border-color:#bbf7d0; background:#f6fff9; } .kind-pill { display:inline-block; margin-left:6px; padding:1px 5px; border-radius:99px; background:#eaf0ff; color:#243e99; font-size:11px; font-weight:650; }
 .service-map { min-height:410px; border:1px solid #e4eaf3; border-radius:11px; background:radial-gradient(circle at 50% 45%,#fff 0,#f6f8fc 70%); overflow:auto; } .service-map svg { display:block; min-width:700px; width:100%; height:410px; } .service-map .map-edge { stroke:#7890bd; fill:none; cursor:pointer; } .service-map .map-edge.is-risk { stroke:var(--red); } .service-map .map-edge-label { fill:var(--muted); font-size:11px; pointer-events:none; } .service-map .map-node { cursor:pointer; } .service-map .map-node circle { fill:#eef3ff; stroke:#7890bd; stroke-width:2; } .service-map .map-node.is-selected circle { fill:#3156d3; stroke:#1d3b9e; stroke-width:4; } .service-map .map-node.is-risk circle { stroke:#c13b31; } .service-map .map-node text { fill:#172554; font-size:12px; font-weight:700; pointer-events:none; } .service-map .map-node.is-selected text { fill:#fff; } .service-map-details { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:12px; } .service-map-details h3 { margin:0 0 7px; font-size:14px; } .service-map-details h4 { color:var(--muted); font-size:12px; margin:12px 0 6px; text-transform:uppercase; } .detail-card { border:1px solid #e4eaf3; border-radius:9px; padding:11px; background:#fff; } .detail-list { display:grid; gap:6px; } .detail-item { display:flex; justify-content:space-between; gap:10px; padding:6px 0; border-bottom:1px solid #eef2f7; } .detail-item:last-child { border-bottom:0; } @media (max-width:800px) { .service-map-details { grid-template-columns:1fr; } }
+.service-map .map-topic polygon { fill:#ecfdf3; stroke:#15945c; stroke-width:2; } .service-map .map-topic.is-selected polygon { fill:#087443; stroke:#065f46; stroke-width:4; } .service-map .map-topic text { fill:#065f46; } .service-map .map-topic.is-selected text { fill:#fff; } .map-legend { display:flex; gap:12px; margin:0 0 8px; color:var(--muted); font-size:12px; } .map-legend span::before { content:''; display:inline-block; width:10px; height:10px; margin-right:5px; vertical-align:-1px; background:#eef3ff; border:1px solid #7890bd; border-radius:50%; } .map-legend .legend-topic::before { background:#ecfdf3; border-color:#15945c; border-radius:1px; transform:rotate(45deg); }
+.runtime-tabs { display:flex; gap:6px; margin:0 0 12px; } .runtime-tab { border:1px solid #cbd5e1; border-radius:7px; padding:7px 11px; color:#334155; background:#fff; font:inherit; font-weight:700; cursor:pointer; } .runtime-tab.is-active { color:#fff; border-color:#3156d3; background:#3156d3; } .timeline { display:grid; gap:8px; } .timeline-item { display:grid; grid-template-columns:160px 1fr auto; gap:10px; align-items:center; padding:9px; border-left:4px solid #3156d3; border-radius:7px; background:#f8faff; } .timeline-item.is-failure { border-left-color:#b42318; background:#fff6f5; } .timeline-item .timeline-name { overflow-wrap:anywhere; font-weight:700; } @media (max-width:800px) { .timeline-item { grid-template-columns:1fr; gap:3px; } }
 </style></head><body><main>
-<header><h1>APM runtime overview</h1><p class="subtle">Aggregate-only workload analysis. No raw events, traces, or error messages are included.</p><div id="context" class="context"></div></header>
+<header><h1>APM runtime overview</h1><p class="subtle">Bounded aggregates plus a minimal recorded-transaction projection. No event source, IDs, headers, bodies, traces, or error messages are included.</p><div id="context" class="context"></div></header>
 <section id="cards" class="cards" aria-label="Runtime summary"></section>
+<nav class="runtime-tabs" aria-label="Runtime report views"><button id="overview-tab" class="runtime-tab is-active" type="button">Overview</button><button id="timeline-tab" class="runtime-tab" type="button">Timeline</button></nav>
 <section class="panel"><div class="panel-head"><h2>Service hotspots</h2><span class="subtle">Ranked by P95, then error rate and volume</span></div><div id="services"></div></section>
 <section class="panel"><div class="panel-head"><div><h2>Runtime service map</h2><p class="subtle">Directed edges are observed dependencies. Select a service to inspect aggregate workload details; this does not assert a transaction-to-dependency call.</p></div><div><label>View <select id="map-mode" aria-label="Filter service map"></select></label> <label>Service <select id="map-service-filter" aria-label="Focus service map"></select></label> <label>Workload <select id="map-workload-filter" aria-label="Filter workload details"></select></label></div></div><div id="service-map" class="service-map"></div><div id="service-map-details" class="service-map-details"></div></section>
+<section id="timeline-panel" class="panel" hidden><div class="panel-head"><div><h2>Recorded transaction timeline</h2><p class="subtle">Bounded field projection from recorded transaction events; no event source, IDs, headers, bodies, traces, or error messages.</p></div><label>Service <select id="timeline-service-filter" aria-label="Filter timeline by service"></select></label></div><div id="timeline-events" class="timeline"></div><p id="timeline-coverage" class="note"></p></section>
 <section class="panel" hidden><div class="panel-head"><div><h2>Transaction graph</h2></div><div><label>Service <select id="transaction-service-filter" aria-label="Filter transaction graph by service"></select></label> <label>Type <select id="transaction-kind-filter" aria-label="Filter transaction graph by type"></select></label></div></div><div id="transaction-graph" class="transaction-graph"></div></section>
 <section class="panel" hidden><div class="panel-head"><h2>Focused dependency flow</h2><label>Service <select id="service-filter" aria-label="Filter dependency flow by service"></select></label></div><div id="flows" class="flow"></div></section>
 <section class="panel"><div class="panel-head"><h2>Slow transactions</h2><span class="subtle">P95 is an approximate percentile from APM histogram metrics</span></div><div id="transactions"></div></section>
@@ -352,5 +451,9 @@ $('dependencies').innerHTML=rows(data.dependencies,[{label:'Source',key:'source'
 $('failures').innerHTML=rows(failures,[{label:'Kind',key:'kind'},{label:'Workload',key:'label'},{label:'Failures',metric:true,className:()=> 'danger',html:x=>count(x.failure_calls)},{label:'Error rate',metric:true,className:()=> 'danger',html:x=>pct(x.error_rate)},{label:'P95',metric:true,html:x=>ms(x.p95_ms)}]);
 const select=$('service-filter'); const services=[...new Set(data.dependencies.flatMap(x=>[x.source,x.target]))].sort(); select.innerHTML=`<option value="">All observed flows</option>${services.map(x=>`<option value="${esc(x)}">${esc(x)}</option>`).join('')}`; function flows(){const selected=select.value;const items=data.dependencies.filter(x=>!selected||x.source===selected||x.target===selected); const max=Math.max(1,...items.map(x=>x.calls)); $('flows').innerHTML=items.length?items.map(x=>`<div class="flow-row"><div class="node">${esc(x.source)}</div><div class="arrow">→</div><div class="node">${esc(x.target)}</div><div class="edge-wrap"><span class="edge" style="width:${Math.max(8,Math.round(100*x.calls/max))}px"></span><span class="subtle">${ms(x.average_ms)} · ${count(x.calls)}</span></div></div>`).join(''):'<p class="empty">No dependency flow for this selection.</p>';} select.addEventListener('change',flows); flows();
 const mapMode=$('map-mode'),mapService=$('map-service-filter'),mapWorkload=$('map-workload-filter');const mapServices=[...new Set([...data.services.map(x=>x.service),...data.dependencies.flatMap(x=>[x.source,x.target])])].sort();mapMode.innerHTML='<option value="hotspots">Hotspots</option><option value="all">All observed dependencies</option>';mapService.innerHTML=`<option value="">All services</option>${mapServices.map(x=>`<option value="${esc(x)}">${esc(x)}</option>`).join('')}`;mapWorkload.innerHTML='<option value="">All workloads</option><option value="HTTP">HTTP</option><option value="Messaging">Messaging</option><option value="Other">Other</option>';const detailRows=(items,render)=>items.length?`<div class="detail-list">${items.map(render).join('')}</div>`:'<p class="empty">No aggregate metric was observed.</p>';function runtimeMap(){const focused=mapService.value;const riskAverage=Math.max(1,...data.dependencies.map(x=>n(x.average_ms)||0))*.7;let edges=data.dependencies.filter(x=>!focused||x.source===focused||x.target===focused);if(mapMode.value==='hotspots'){edges=edges.filter(x=>x.error_rate>0||(n(x.average_ms)||0)>=riskAverage);if(!edges.length)edges=data.dependencies.filter(x=>!focused||x.source===focused||x.target===focused).slice(0,12);}const names=[...new Set([...edges.flatMap(x=>[x.source,x.target]),...(focused?[focused]:[])])].sort();if(!names.length){$('service-map').innerHTML='<p class="empty">No observed dependency in this window.</p>';$('service-map-details').innerHTML='';return;}const centerX=450,centerY=205,radius=Math.min(145,Math.max(75,names.length*20));const points=new Map(names.map((name,index)=>{const angle=-Math.PI/2+(2*Math.PI*index/names.length);return [name,{x:centerX+radius*Math.cos(angle),y:centerY+radius*Math.sin(angle)}];}));const selected=focused||names[0];const edgeSvg=edges.filter(x=>x.source!==x.target).map((edge,index)=>{const from=points.get(edge.source),to=points.get(edge.target);if(!from||!to)return '';const risk=edge.error_rate>0||(n(edge.average_ms)||0)>=riskAverage;const width=Math.max(2,Math.min(10,1+Math.log10(Math.max(1,edge.calls))*2));const mx=(from.x+to.x)/2,my=(from.y+to.y)/2;return `<g class="map-edge ${risk?'is-risk':''}" data-edge="${index}"><line x1="${from.x}" y1="${from.y}" x2="${to.x}" y2="${to.y}" stroke-width="${width}" marker-end="url(#arrow)"></line><text class="map-edge-label" x="${mx}" y="${my}">${count(edge.calls)} · ${ms(edge.average_ms)}</text></g>`;}).join('');const nodeSvg=names.map(name=>{const point=points.get(name),metric=data.services.find(x=>x.service===name),risk=metric&&metric.error_rate>0;return `<g class="map-node ${name===selected?'is-selected':''} ${risk?'is-risk':''}" data-service="${esc(name)}"><circle cx="${point.x}" cy="${point.y}" r="45"></circle><text x="${point.x}" y="${point.y-4}" text-anchor="middle">${esc(name)}</text><text x="${point.x}" y="${point.y+14}" text-anchor="middle">${metric?`${ms(metric.p95_ms)} · ${pct(metric.error_rate)}`:'observed'}</text></g>`;}).join('');$('service-map').innerHTML=`<svg viewBox="0 0 900 410" role="img" aria-label="Observed service dependency map"><defs><marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#7890bd"></path></marker></defs>${edgeSvg}${nodeSvg}</svg>`;document.querySelectorAll('.map-node').forEach(node=>node.addEventListener('click',()=>{mapService.value=node.dataset.service||'';runtimeMap();}));const tx=data.transactions.filter(x=>x.service===selected&&(!mapWorkload.value||transactionKind(x)===mapWorkload.value));const outbound=data.dependencies.filter(x=>x.source===selected),incoming=data.dependencies.filter(x=>x.target===selected);$('service-map-details').innerHTML=`<article class="detail-card"><h3>${esc(selected)} workloads</h3>${detailRows(tx,x=>`<div class="detail-item"><span>${esc(x.transaction)} <span class="kind-pill">${esc(transactionKind(x))}</span></span><span>${ms(x.p95_ms)} · ${count(x.calls)}</span></div>`)}</article><article class="detail-card"><h3>Observed dependencies</h3><h4>Outbound</h4>${detailRows(outbound,x=>`<div class="detail-item"><span>→ ${esc(x.target)}</span><span>${count(x.calls)} · ${pct(x.error_rate)}</span></div>`)}<h4>Inbound</h4>${detailRows(incoming,x=>`<div class="detail-item"><span>${esc(x.source)} →</span><span>${count(x.calls)} · ${pct(x.error_rate)}</span></div>`)}</article>`;}mapMode.addEventListener('change',runtimeMap);mapService.addEventListener('change',runtimeMap);mapWorkload.addEventListener('change',runtimeMap);runtimeMap();
+const messagingTargetTypes=new Set(['amqp','jms','kafka','messaging','nats','pulsar','rabbitmq','sqs']);let typedSelectedNode=null;const nodeKey=(name,kind)=>`${kind}:${name}`;function typedServiceMap(){const focused=mapService.value;const riskAverage=Math.max(1,...data.dependencies.map(x=>n(x.average_ms)||0))*.7;let edges=data.dependencies.filter(x=>!focused||x.source===focused||x.target===focused).map(edge=>({...edge,target_kind:messagingTargetTypes.has(String(edge.target_type||'').toLowerCase())?'topic':'service'}));if(mapMode.value==='hotspots'){edges=edges.filter(x=>x.error_rate>0||(n(x.average_ms)||0)>=riskAverage);if(!edges.length)edges=data.dependencies.filter(x=>!focused||x.source===focused||x.target===focused).slice(0,12).map(edge=>({...edge,target_kind:messagingTargetTypes.has(String(edge.target_type||'').toLowerCase())?'topic':'service'}));}const nodes=new Map();edges.forEach(edge=>{nodes.set(nodeKey(edge.source,'service'),{name:edge.source,kind:'service'});nodes.set(nodeKey(edge.target,edge.target_kind),{name:edge.target,kind:edge.target_kind});});if(focused)nodes.set(nodeKey(focused,'service'),{name:focused,kind:'service'});const items=[...nodes.entries()].sort(([,left],[,right])=>left.name.localeCompare(right.name));if(!items.length){$('service-map').innerHTML='<p class="empty">No observed dependency in this window.</p>';$('service-map-details').innerHTML='';return;}if(!typedSelectedNode||!nodes.has(typedSelectedNode))typedSelectedNode=nodeKey(focused||items[0][1].name,'service');const centerX=450,centerY=205,radius=Math.min(145,Math.max(75,items.length*20));const points=new Map(items.map(([key,node],index)=>{const angle=-Math.PI/2+(2*Math.PI*index/items.length);return [key,{...node,x:centerX+radius*Math.cos(angle),y:centerY+radius*Math.sin(angle)}];}));const edgeSvg=edges.map(edge=>{const from=points.get(nodeKey(edge.source,'service')),to=points.get(nodeKey(edge.target,edge.target_kind));if(!from||!to)return '';const risk=edge.error_rate>0||(n(edge.average_ms)||0)>=riskAverage;const width=Math.max(2,Math.min(10,1+Math.log10(Math.max(1,edge.calls))*2));const mx=(from.x+to.x)/2,my=(from.y+to.y)/2;const direction=edge.target_kind==='topic'?'send':'HTTP';return `<g class="map-edge ${risk?'is-risk':''}"><line x1="${from.x}" y1="${from.y}" x2="${to.x}" y2="${to.y}" stroke-width="${width}" marker-end="url(#arrow)"></line><text class="map-edge-label" x="${mx}" y="${my}">${direction} → ${count(edge.calls)} · ${ms(edge.average_ms)}</text></g>`;}).join('');const nodeSvg=[...points.entries()].map(([key,node])=>{const selected=key===typedSelectedNode,metric=node.kind==='service'?data.services.find(x=>x.service===node.name):null,risk=metric&&metric.error_rate>0;const shape=node.kind==='topic'?`<polygon points="${node.x},${node.y-37} ${node.x+37},${node.y} ${node.x},${node.y+37} ${node.x-37},${node.y}"></polygon>`:`<circle cx="${node.x}" cy="${node.y}" r="45"></circle>`;return `<g class="map-node ${node.kind==='topic'?'map-topic':''} ${selected?'is-selected':''} ${risk?'is-risk':''}" data-node="${esc(key)}">${shape}<text x="${node.x}" y="${node.y-4}" text-anchor="middle">${esc(node.name)}</text><text x="${node.x}" y="${node.y+14}" text-anchor="middle">${node.kind==='topic'?'messaging target':metric?`${ms(metric.p95_ms)} · ${pct(metric.error_rate)}`:'external target'}</text></g>`;}).join('');$('service-map').innerHTML=`<div class="map-legend"><span>Observed service</span><span class="legend-topic">Observed messaging target</span></div><svg viewBox="0 0 900 410" role="img" aria-label="Directed observed service and messaging-target map"><defs><marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#7890bd"></path></marker></defs>${edgeSvg}${nodeSvg}</svg>`;document.querySelectorAll('.map-node').forEach(node=>node.addEventListener('click',()=>{typedSelectedNode=node.dataset.node||null;typedServiceMap();}));const selected=points.get(typedSelectedNode);if(!selected)return;const tx=selected.kind==='service'?data.transactions.filter(x=>x.service===selected.name&&(!mapWorkload.value||transactionKind(x)===mapWorkload.value)):[];const outbound=selected.kind==='service'?edges.filter(x=>x.source===selected.name):[];const incoming=edges.filter(x=>x.target===selected.name&&x.target_kind===selected.kind);$('service-map-details').innerHTML=`<article class="detail-card"><h3>${esc(selected.name)} ${selected.kind==='topic'?'messaging target':'service'}</h3>${selected.kind==='service'?detailRows(tx,x=>`<div class="detail-item"><span>${esc(x.transaction)} <span class="kind-pill">${esc(transactionKind(x))}</span></span><span>${ms(x.p95_ms)} · ${count(x.calls)}</span></div>`):'<p class="note">The target type identifies messaging; APM does not prove that this name is a confirmed topic.</p>'}</article><article class="detail-card"><h3>Direction</h3><h4>${selected.kind==='topic'?'Observed senders':'Outbound'}</h4>${detailRows(selected.kind==='topic'?incoming:outbound,x=>`<div class="detail-item"><span>${selected.kind==='topic'?`${esc(x.source)} sends →`: `→ ${esc(x.target)}`}</span><span>${count(x.calls)} · ${pct(x.error_rate)}</span></div>`)}${selected.kind==='service'?`<h4>Inbound</h4>${detailRows(incoming,x=>`<div class="detail-item"><span>${esc(x.source)} →</span><span>${count(x.calls)} · ${pct(x.error_rate)}</span></div>`)}`:''}</article>`;}mapMode.addEventListener('change',typedServiceMap);mapService.addEventListener('change',()=>{typedSelectedNode=null;typedServiceMap();});mapWorkload.addEventListener('change',typedServiceMap);typedServiceMap();
+if(!mapService.value&&data.dependencies.length){typedSelectedNode=nodeKey(data.dependencies[0].source,'service');typedServiceMap();}
+let apmMapRenderer=null;function sigmaServiceMap(){if(!window.graphology||!window.Sigma)return;const focused=mapService.value;const riskAverage=Math.max(1,...data.dependencies.map(x=>n(x.average_ms)||0))*.7;let edges=data.dependencies.filter(x=>!focused||x.source===focused||x.target===focused).map(edge=>({...edge,target_kind:messagingTargetTypes.has(String(edge.target_type||'').toLowerCase())?'topic':'service'}));if(mapMode.value==='hotspots'){edges=edges.filter(x=>x.error_rate>0||(n(x.average_ms)||0)>=riskAverage);if(!edges.length)edges=data.dependencies.filter(x=>!focused||x.source===focused||x.target===focused).slice(0,12).map(edge=>({...edge,target_kind:messagingTargetTypes.has(String(edge.target_type||'').toLowerCase())?'topic':'service'}));}const nodes=new Map();edges.forEach(edge=>{nodes.set(nodeKey(edge.source,'service'),{name:edge.source,kind:'service'});nodes.set(nodeKey(edge.target,edge.target_kind),{name:edge.target,kind:edge.target_kind});});if(focused)nodes.set(nodeKey(focused,'service'),{name:focused,kind:'service'});const items=[...nodes.entries()].sort(([,left],[,right])=>left.name.localeCompare(right.name));if(!items.length)return;const network=new graphology.MultiDirectedGraph();const radius=Math.max(1,items.length/5);items.forEach(([key,node],index)=>{const angle=-Math.PI/2+(2*Math.PI*index/items.length);const metric=node.kind==='service'?data.services.find(x=>x.service===node.name):null;network.addNode(key,{label:`${node.kind==='topic'?'◇ ':''}${node.name}`,x:radius*Math.cos(angle),y:radius*Math.sin(angle),size:node.kind==='topic'?10:12,color:node.kind==='topic'?'#087443':metric&&metric.error_rate>0?'#b42318':'#3156d3'});});edges.forEach((edge,index)=>{const direction=edge.target_kind==='topic'?'send':'HTTP';network.addEdgeWithKey(`apm-edge-${index}`,nodeKey(edge.source,'service'),nodeKey(edge.target,edge.target_kind),{label:`${direction} · ${count(edge.calls)} calls · ${ms(edge.average_ms)}`,size:Math.max(1,Math.min(6,1+Math.log10(Math.max(1,edge.calls)))),color:edge.error_rate>0?'#b42318':'#7890bd',type:'arrow'});});apmMapRenderer?.kill();$('service-map').innerHTML='<div class="map-legend"><span>Observed service</span><span class="legend-topic">◇ Observed messaging target</span></div><div id="service-map-canvas" style="height:400px;min-width:700px"></div>';apmMapRenderer=new Sigma(network,$('service-map-canvas'),{renderEdgeLabels:true,labelDensity:.08,labelGridCellSize:160,labelRenderedSizeThreshold:8});apmMapRenderer.on('clickNode',({node})=>{typedSelectedNode=node;typedServiceMap();sigmaServiceMap();});}mapMode.addEventListener('change',sigmaServiceMap);mapService.addEventListener('change',sigmaServiceMap);mapWorkload.addEventListener('change',sigmaServiceMap);sigmaServiceMap();
+const timelineEvents=Array.isArray(data.timeline_events)?data.timeline_events:[];const timelineService=$('timeline-service-filter');const timelineServices=[...new Set(timelineEvents.map(x=>x.service).filter(Boolean))].sort();timelineService.innerHTML=`<option value="">All observed services</option>${timelineServices.map(x=>`<option value="${esc(x)}">${esc(x)}</option>`).join('')}`;function renderTimeline(){const items=timelineEvents.filter(x=>!timelineService.value||x.service===timelineService.value);$('timeline-events').innerHTML=items.length?items.map(item=>`<article class="timeline-item ${item.outcome==='failure'?'is-failure':''}"><time>${esc(item.timestamp)}</time><div><div class="timeline-name">${esc(item.service)} · ${esc(item.transaction)}</div><div class="subtle">${esc(item.transaction_type||'other')}${item.messaging_target?` · ${esc(item.messaging_target)}`:''}${item.result?` · ${esc(item.result)}`:''}</div></div><strong>${ms(item.duration_ms)}</strong></article>`).join(''):'<p class="empty">No recorded transaction event was available in this window.</p>';const coverage=data.coverage.timeline||{};$('timeline-coverage').textContent=`Recorded events: ${count(coverage.items_exported||0)}${coverage.truncated?' (truncated at the configured event limit)':''}.`;}timelineService.addEventListener('change',renderTimeline);renderTimeline();function setRuntimeTab(tab){const timeline=tab==='timeline';document.querySelectorAll('main > .panel').forEach(panel=>{panel.hidden=timeline?panel.id!=='timeline-panel':panel.id==='timeline-panel';});$('coverage').hidden=timeline;$('overview-tab').classList.toggle('is-active',!timeline);$('timeline-tab').classList.toggle('is-active',timeline);}$('overview-tab').addEventListener('click',()=>setRuntimeTab('overview'));$('timeline-tab').addEventListener('click',()=>setRuntimeTab('timeline'));
 const cv=data.coverage; const view=(name,c)=>`${name}: ${c.items_exported}/${c.items_seen}${c.truncated?` (truncated: ${c.truncation_reasons.join(', ')})`:''}`; $('coverage').textContent=`Coverage — ${view('services',cv.services)} · ${view('transactions',cv.transactions)} · ${view('dependencies',cv.dependencies)}. A zero result means no matching aggregate was observed in the selected window.`;
 </script></body></html>"""

@@ -34,7 +34,7 @@ but does not alter AST endpoint extraction.
 | `systemlens doctor [--json]` | Read-only check of configuration, local AST readiness and index state. |
 | `systemlens apm doctor [--endpoint URL] [--api-key KEY] [--insecure] [--json]` | Read-only validation of Elasticsearch access to the APM metrics. It reports only whether the endpoint and key are configured and their source (`flag` or `env`); it never prints the URL or key. `--insecure` explicitly accepts a self-signed TLS certificate. |
 | `systemlens apm export [--since DURATION] [--environment NAME] [--endpoint URL] [--api-key KEY] [--insecure] [--max-relations N] [--max-bytes N] [--max-buckets N] [--export-curl] [--out FILE]` | Reads `service_destination` aggregates from Elasticsearch and emits compact JSON to stdout, or writes it to `FILE`. It does not export raw spans, logs, headers, identifiers, or source content. A failed export preserves the safe HTTP/access error and prints read-only diagnostic guidance; HTTP 429 guidance includes Kibana Dev Tools commands for cluster health, disk allocation, and watermark settings, never the endpoint or API key. `--insecure` explicitly accepts a self-signed TLS certificate; `--export-curl` includes curl's equivalent `--insecure` flag and prints a reproducible curl command for the export's first APM query, using environment-variable references rather than credential values. |
-| `systemlens apm report --html FILE [--since DURATION] [--environment NAME] [--endpoint URL] [--api-key KEY] [--insecure] [--max-services N] [--max-transactions N] [--max-dependencies N] [--max-buckets N]` | Reads bounded APM metric aggregates and writes a self-contained human investigation report. It never reads raw events, spans, logs, request data, trace identifiers, or unredacted error values. `--insecure` explicitly accepts a self-signed TLS certificate. |
+| `systemlens apm report --html FILE [--since DURATION] [--environment NAME] [--endpoint URL] [--api-key KEY] [--insecure] [--max-services N] [--max-transactions N] [--max-dependencies N] [--max-buckets N] [--max-timeline-events N]` | Reads bounded APM metric aggregates plus a bounded field projection of recorded transaction events and writes an HTML human investigation report. Its interactive graph uses the same Graphology/Sigma.js CDN assets as the architecture export and falls back to embedded SVG when unavailable. It never reads `_source`, trace identifiers, request data, headers, bodies, logs, credentials, or unredacted error values. `--insecure` explicitly accepts a self-signed TLS certificate. |
 | `systemlens index [MANIFEST]... [--full] [--topic-strategy default\|strategy1] [--manifest FILE]... [--kubernetes] [--kubernetes-namespace NAME]` | Incrementally extracts and persists architecture facts. `--kubernetes` queries the active `kubectl` context for Deployments and StatefulSets; `--kubernetes-namespace` restricts it to one namespace. |
 | `systemlens microservices`, `topics`, `apis`, `dtos`, `mongodb`, `modules` | Browse the indexed catalog; `microservices`, `topics` and `mongodb` list the corresponding architecture objects directly, each with a `kind` and `name`, and support the documented list/show/neighbors actions and JSON output where applicable. |
 | `systemlens analyze audit` | Reports static architecture risks. |
@@ -264,9 +264,10 @@ an architecture HTML export.
 
 `apm report` is an explicit read-only command which requires `--html FILE`.
 It accepts the same bounded UTC `--since` duration and optional exact
-environment filter as `apm export`. It queries only `metrics-apm*`, always with
-`size: 0`, and emits a versioned `apm-runtime-report-v1` aggregate observation
-embedded in the requested self-contained HTML file. It is not persisted in
+environment filter as `apm export`. It queries `metrics-apm*` with `size: 0`
+for aggregate views and `traces-apm*` for at most 500 recorded transaction
+projections (configurable with `--max-timeline-events`), then emits a versioned
+`apm-runtime-report-v2` observation embedded in the requested HTML file. It is not persisted in
 SQLite, merged into the static architecture snapshot, or exposed through MCP.
 
 The service view reads `metricset.name=service_transaction`; the transaction
@@ -280,23 +281,33 @@ first query is empty. Dependency P95 is not returned: it requires a separate,
 explicitly approved second pass over sampled span aggregates.
 
 The report has service, transaction, dependency, and recurring-failure tables.
-Its primary visual is an interactive directed service map: nodes are observed
-services and arrows are observed dependencies, with edge thickness for volume
-and risk colour for errors or comparatively high average latency. It offers
-hotspot/all, service, and workload-type filters. Selecting a service opens its
+Its primary visual is an interactive directed service map: circle nodes are
+observed services and diamond nodes are observed messaging targets. Every arrow
+is directed from the observed source service to its target; it is labelled HTTP
+for a non-messaging target and `send` for a recognized outgoing messaging target.
+Edge thickness represents volume and risk colour errors or comparatively high
+average latency. It offers hotspot/all, service, and workload-type filters. Selecting a service opens its
 HTTP (`transaction.type=request` or `http`), messaging
 (`transaction.type=messaging`), and other transaction aggregates alongside its
-inbound and outbound dependencies. The map does not assert a transaction-to-
-dependency call. Each ranking
+inbound and outbound dependencies. A messaging diamond is an APM target whose
+type indicates messaging (`kafka`, `rabbitmq`, `jms`, etc.); its name is not
+claimed to be a confirmed broker topic. The map does not assert a transaction-
+to-dependency call. Each ranking
 reports `items_seen`, `items_exported`, its result limit, bucket limit, and
 truncation reasons. A zero result means no matching aggregate was observed in
 the covered window; it does not prove a static HTTP, Kafka, MongoDB, or S3
 dependency is absent. P95 values are approximate histogram percentiles.
 
+The Timeline tab is a chronological, bounded view of recorded transaction
+events. Its Elasticsearch query sets `_source: false` and retrieves only
+`@timestamp`, service name, transaction name/type, duration, result, outcome,
+and the optional messaging queue/topic name. It never requests trace IDs,
+request or response data, headers, bodies, stack traces, logs, or error values.
+
 The report does not correlate observed names with static identities in this
-release. Its analysis is limited to aggregate metrics and failure counts: raw
-spans, trace IDs, request data, headers, log messages, credentials, and
-unredacted exception values are excluded.
+release. Its aggregate views remain separate from the Timeline's bounded
+transaction-field projection; trace IDs, request data, headers, bodies, log
+messages, credentials, and unredacted exception values are excluded.
 
 Kafka latency, consumer failures, MongoDB activity, S3 activity, and Kubernetes
 capacity signals require their own documented source fields and availability

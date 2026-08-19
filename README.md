@@ -79,15 +79,14 @@ The export defaults to 80 relations and 50 KB. Its `coverage` object states
 when either the Elasticsearch aggregation or the output budget truncated the
 result, so Pi can distinguish absence from incomplete coverage.
 
-`apm report` creates an explicit, self-contained HTML file for human review.
+`apm report` creates an explicit HTML file for human review. Its interactive
+graph uses the same Graphology/Sigma.js CDN assets as the architecture export;
+the embedded SVG fallback remains available if those assets cannot load.
 It ranks services and transactions by P95 latency (with their averages, volume,
-and aggregate failure rate), includes a filterable service-to-transaction graph,
-shows dependency average latency and a filterable source-to-target flow, and
-lists recurring aggregate failures. The transaction graph shows service
-ownership only; it does not claim that a transaction called a specific
-dependency. Dependency P95 is deliberately not estimated in this first pass.
-The report contains metric aggregates only: no raw events, trace IDs, request
-data, or error messages.
+and aggregate failure rate), includes a directed service map and lists recurring
+aggregate failures. A Timeline tab also shows a bounded projection of recorded
+transaction events. It never embeds `_source`, trace IDs, request data, headers,
+bodies, or error messages. Dependency P95 is deliberately not estimated.
 
 ### Inspect the source aggregation
 

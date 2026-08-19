@@ -353,6 +353,24 @@ def test_runtime_report_uses_histogram_p95_for_services_and_transactions() -> No
                 }
             }
 
+        def search_traces(self, body: dict[str, object]) -> dict[str, object]:
+            self.queries.append(body)
+            return {
+                "hits": {
+                    "hits": [{
+                        "fields": {
+                            "@timestamp": ["2026-08-15T09:30:00.000Z"],
+                            "service.name": ["orders"],
+                            "transaction.name": ["POST /checkout"],
+                            "transaction.type": ["request"],
+                            "transaction.duration.us": [400_000],
+                            "transaction.result": ["HTTP 201"],
+                            "event.outcome": ["success"],
+                        }
+                    }]
+                }
+            }
+
     client = RuntimeClient()
     report = build_runtime_report(
         client,  # type: ignore[arg-type]
@@ -394,6 +412,16 @@ def test_runtime_report_uses_histogram_p95_for_services_and_transactions() -> No
             "average_ms": 50.0,
         }
     ]
+    assert report["schema_version"] == "apm-runtime-report-v2"
+    assert report["timeline_events"] == [{
+        "timestamp": "2026-08-15T09:30:00.000Z",
+        "service": "orders",
+        "transaction": "POST /checkout",
+        "transaction_type": "request",
+        "duration_ms": 400.0,
+        "result": "HTTP 201",
+        "outcome": "success",
+    }]
     service_query = client.queries[0]
     service_aggs = service_query["aggs"]["items"]["aggs"]  # type: ignore[index]
     assert service_aggs["calls"] == {  # type: ignore[index]
@@ -414,6 +442,10 @@ def test_runtime_report_uses_histogram_p95_for_services_and_transactions() -> No
         "percentiles": {"field": "transaction.duration.histogram", "percents": [95]}
     }
     assert {"term": {"service.environment": "production"}} in service_query["query"]["bool"]["filter"]  # type: ignore[index]
+    timeline_query = client.queries[-1]
+    assert timeline_query["_source"] is False
+    assert "trace.id" not in timeline_query["fields"]
+    assert "transaction.duration.us" in timeline_query["fields"]
 
 
 def _latency_bucket(
@@ -450,12 +482,22 @@ def test_runtime_report_html_is_self_contained_and_does_not_embed_raw_errors() -
     document = render_runtime_report_html(report)
 
     assert '<script id="runtime-data" type="application/json">' in document
+    assert "graphology/0.25.4/graphology.umd.min.js" in document
+    assert "sigma.js/2.4.0/sigma.min.js" in document
     assert "Runtime service map" in document
+    assert 'id="timeline-tab"' in document
+    assert 'id="timeline-panel"' in document
+    assert "Recorded transaction timeline" in document
     assert "Directed edges are observed dependencies" in document
     assert 'id="map-mode"' in document
     assert 'id="map-service-filter"' in document
     assert 'id="map-workload-filter"' in document
     assert 'marker-end="url(#arrow)"' in document
+    assert "Observed messaging target" in document
+    assert "target_kind==='topic'?'send':'HTTP'" in document
+    assert "messagingTargetTypes" in document
+    assert "new graphology.MultiDirectedGraph()" in document
+    assert "new Sigma(network" in document
     assert "transaction-to-dependency call" in document
     assert "dependency P95 is a separate future pass" in document
     assert "error.message" not in document

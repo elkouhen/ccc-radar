@@ -46,8 +46,9 @@ source data and is not merged with a snapshot.
 
 ### Elastic APM runtime report projection
 
-`apm_report.py` constructs an in-memory `apm-runtime-report-v1` observation
-from three explicit read-only `metrics-apm*` aggregation queries. Its service
+`apm_report.py` constructs an in-memory `apm-runtime-report-v2` observation
+from three explicit read-only `metrics-apm*` aggregation queries and one
+bounded `traces-apm*` transaction-event query. Its service
 and transaction views page composite buckets and aggregate transaction count,
 duration sum, aggregate failure count from the `aggregate_metric_double`
 field `transaction.duration.summary`, and the P95 percentile of
@@ -55,23 +56,34 @@ field `transaction.duration.summary`, and the P95 percentile of
 `service_destination` aggregate adapter and therefore intentionally reports
 only average latency, call count, and aggregate failure rate.
 
-Every query uses `size: 0`; it never retrieves `_source` documents. Each view
-has an independent composite-bucket guard and output-result guard. The
+The aggregate queries use `size: 0`; the Timeline uses a bounded `size` and
+explicitly sets `_source: false`, requesting only timestamp, service,
+transaction name/type, duration, result, outcome, and optional messaging target.
+It never requests trace IDs, headers, bodies, stack traces, logs, or error
+values. Each view has an independent composite-bucket guard and output-result guard. The
 projection records the UTC window, environment, source metricsets/field,
 per-view coverage, limits, and truncation. `render_runtime_report_html` embeds
-only this versioned aggregate projection in an explicitly requested,
-self-contained HTML file. It does not write to SQLite, snapshots, or MCP cache.
+only this versioned aggregate projection in an explicitly requested HTML file.
+It does not write to SQLite, snapshots, or MCP cache.
 Service names and transaction names are inserted through JSON data and rendered
 with HTML escaping before insertion, so a telemetry value cannot create markup.
 The report's primary visual is a client-side directed service map. It places
-observed services on nodes and `service_destination` aggregates on directed
-edges; the edge width represents call volume and risk colour represents an
-aggregate error or comparatively high average latency. Selecting a node only
-reveals transaction buckets owned by that service, grouped from the observed
+observed services on circle nodes and recognized messaging targets on diamond
+nodes. Each `service_destination` aggregate is a directed edge from its source
+service to its target: non-messaging targets are labelled HTTP and recognized
+messaging targets are labelled `send`; edge width represents call volume and
+risk colour represents an aggregate error or comparatively high average
+latency. Recognized messaging types are `amqp`, `jms`, `kafka`, `messaging`,
+`nats`, `pulsar`, `rabbitmq`, and `sqs`. This is a presentation classification:
+the APM target name remains a messaging target rather than an asserted topic.
+Selecting a service node only reveals transaction buckets owned by that service, grouped from the observed
 `transaction.type` (`request`/`http` as HTTP, `messaging` as messaging, all
 other values as `Other`), plus inbound and outbound aggregates. It intentionally
 does not connect a transaction bucket to a dependency edge because the three
-metric aggregate queries do not prove that causal relationship.
+metric aggregate queries do not prove that causal relationship. The report uses
+the same Graphology 0.25.4 and Sigma.js 2.4.0 CDN assets as the architecture
+HTML export; if those scripts cannot load, its preceding embedded SVG rendering
+remains visible instead.
 
 The report is a standalone runtime view and does not join observed names to
 static identities. A later correlation remains a delivery-layer join, not a

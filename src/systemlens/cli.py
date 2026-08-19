@@ -1298,6 +1298,13 @@ def apm_report_cmd(
         max=100_000,
         help="Buckets Elastic maximum lus par vue avant troncature.",
     ),
+    max_timeline_events: int = typer.Option(
+        500,
+        "--max-timeline-events",
+        min=1,
+        max=10_000,
+        help="Événements de transaction enregistrés maximum dans l'onglet Timeline.",
+    ),
 ) -> None:
     """Produit une vue HTML APM interactive à partir d'agrégats bornés.
 
@@ -1315,6 +1322,7 @@ def apm_report_cmd(
             max_transactions=max_transactions,
             max_dependencies=max_dependencies,
             max_buckets=max_buckets,
+            max_timeline_events=max_timeline_events,
         )
         document = render_runtime_report_html(report)
         html.write_text(document, encoding="utf-8")

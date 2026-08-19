@@ -123,6 +123,10 @@ class ElasticApmClient:
     def search_metrics(self, body: dict[str, object]) -> dict[str, object]:
         return self._request_json("POST", "/metrics-apm*/_search", body)
 
+    def search_traces(self, body: dict[str, object]) -> dict[str, object]:
+        """Read a bounded projection of recorded APM trace events."""
+        return self._request_json("POST", "/traces-apm*/_search", body)
+
     def check_metrics_access(self) -> int | None:
         """Validate index-read access without requiring Elasticsearch monitor rights."""
         response = self.search_metrics(
