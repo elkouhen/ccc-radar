@@ -1084,6 +1084,11 @@ def apm_doctor_cmd(
         "--api-key",
         help="Clé d'API Elasticsearch en lecture seule. Sinon SYSTEMLENS_ELASTICSEARCH_API_KEY.",
     ),
+    insecure: bool = typer.Option(
+        False,
+        "--insecure",
+        help="Accepte un certificat TLS auto-signé (réduit la sécurité de la connexion).",
+    ),
     json_output: bool = typer.Option(
         False, "--json", help="Retourne le diagnostic en JSON."
     ),
@@ -1093,7 +1098,7 @@ def apm_doctor_cmd(
     Ne jamais transmettre une clé dans la sortie ou dans un export.
     """
     try:
-        result = apm_doctor(load_apm_settings(endpoint, api_key))
+        result = apm_doctor(load_apm_settings(endpoint, api_key, insecure_tls=insecure))
     except ApmError as exc:
         result = {"status": "error", "detail": str(exc), "read_access": "error"}
     if json_output:
@@ -1158,6 +1163,11 @@ def apm_export_cmd(
         "--api-key",
         help="Clé d'API Elasticsearch en lecture seule. Sinon SYSTEMLENS_ELASTICSEARCH_API_KEY.",
     ),
+    insecure: bool = typer.Option(
+        False,
+        "--insecure",
+        help="Accepte un certificat TLS auto-signé (réduit la sécurité de la connexion).",
+    ),
     max_relations: int = typer.Option(
         80,
         "--max-relations",
@@ -1190,7 +1200,7 @@ def apm_export_cmd(
     """
     now = datetime.now(UTC)
     try:
-        settings = load_apm_settings(endpoint, api_key)
+        settings = load_apm_settings(endpoint, api_key, insecure_tls=insecure)
         digest = export_digest(
             ElasticApmClient(settings),
             since=since,
@@ -1217,6 +1227,7 @@ def apm_export_cmd(
                         since=since,
                         environment=environment,
                         max_buckets=max_buckets,
+                        insecure_tls=insecure,
                         now=now,
                     ),
                     err=True,
@@ -1258,6 +1269,11 @@ def apm_report_cmd(
         "--api-key",
         help="Clé d'API Elasticsearch en lecture seule. Sinon SYSTEMLENS_ELASTICSEARCH_API_KEY.",
     ),
+    insecure: bool = typer.Option(
+        False,
+        "--insecure",
+        help="Accepte un certificat TLS auto-signé (réduit la sécurité de la connexion).",
+    ),
     max_services: int = typer.Option(
         30, "--max-services", min=1, max=1_000, help="Services maximum affichés."
     ),
@@ -1290,7 +1306,7 @@ def apm_report_cmd(
     trace, requête, identifiant ou message d'erreur.
     """
     try:
-        settings = load_apm_settings(endpoint, api_key)
+        settings = load_apm_settings(endpoint, api_key, insecure_tls=insecure)
         report = build_runtime_report(
             ElasticApmClient(settings),
             since=since,
@@ -1633,6 +1649,11 @@ def export_microservices_cmd(
         "--api-key",
         help="Clé d'API Elasticsearch en lecture seule (avec --apm-overlay).",
     ),
+    apm_insecure: bool = typer.Option(
+        False,
+        "--insecure",
+        help="Accepte un certificat TLS auto-signé (avec --apm-overlay).",
+    ),
     apm_max_relations: int = typer.Option(
         80,
         "--max-relations",
@@ -1678,7 +1699,9 @@ def export_microservices_cmd(
             | external_microservice_names(graph_data.edges)
         )
         try:
-            settings = load_apm_settings(apm_endpoint, apm_api_key)
+            settings = load_apm_settings(
+                apm_endpoint, apm_api_key, insecure_tls=apm_insecure
+            )
             overlay = build_microservice_overlay(
                 ElasticApmClient(settings),
                 since=apm_since,

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import ssl
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from urllib.error import HTTPError, URLError
@@ -37,6 +38,7 @@ class ApmSettings:
     api_key: str | None
     endpoint_source: str
     api_key_source: str
+    insecure_tls: bool = False
 
     @property
     def configured(self) -> bool:
@@ -44,7 +46,10 @@ class ApmSettings:
 
 
 def load_settings(
-    endpoint: str | None = None, api_key: str | None = None
+    endpoint: str | None = None,
+    api_key: str | None = None,
+    *,
+    insecure_tls: bool = False,
 ) -> ApmSettings:
     """Load explicit values first, then the documented environment variables."""
     selected_endpoint = (
@@ -70,6 +75,7 @@ def load_settings(
         api_key_source="flag"
         if api_key is not None
         else ("env" if selected_api_key else "missing"),
+        insecure_tls=insecure_tls,
     )
 
 
@@ -110,6 +116,9 @@ class ElasticApmClient:
         self._endpoint = settings.endpoint
         self._api_key = settings.api_key
         self._timeout_seconds = timeout_seconds
+        self._ssl_context = (
+            ssl._create_unverified_context() if settings.insecure_tls else None
+        )
 
     def search_metrics(self, body: dict[str, object]) -> dict[str, object]:
         return self._request_json("POST", "/metrics-apm*/_search", body)
@@ -147,7 +156,9 @@ class ElasticApmClient:
             f"{self._endpoint}{path}", data=payload, headers=headers, method=method
         )
         try:
-            with urlopen(request, timeout=self._timeout_seconds) as response:
+            with urlopen(
+                request, timeout=self._timeout_seconds, context=self._ssl_context
+            ) as response:
                 decoded = json.loads(response.read().decode("utf-8"))
         except HTTPError as exc:
             raise ApmHttpError(exc.code) from exc
@@ -242,6 +253,7 @@ def export_curl_command(
     since: str,
     environment: str | None,
     max_buckets: int,
+    insecure_tls: bool = False,
     now: datetime | None = None,
 ) -> str:
     """Render the first read request issued by ``export_digest`` as safe curl.
@@ -262,8 +274,10 @@ def export_curl_command(
         None,
     )
     payload = json.dumps(query, ensure_ascii=False, indent=2)
+    insecure_option = " --insecure \\\n" if insecure_tls else ""
     return (
         "curl --silent --show-error --max-time 15 \\\n"
+        f"{insecure_option}"
         '  -X POST "${SYSTEMLENS_ELASTICSEARCH_URL%/}/metrics-apm*/_search" \\\n'
         '  -H "Accept: application/json" \\\n'
         '  -H "Content-Type: application/json" \\\n'
@@ -314,6 +328,11 @@ def _read_buckets_for_target_field(
         )
         aggregations = response.get("aggregations")
         if not isinstance(aggregations, dict):
+            shards = response.get("_shards")
+            if isinstance(shards, dict) and shards.get("total") == 0:
+                # Elasticsearch omits ``aggregations`` from a successful
+                # wildcard search when no metrics-apm* index exists yet.
+                return [], False
             raise ApmError("Réponse Elasticsearch invalide : agrégations absentes.")
         relation_aggregation = aggregations.get("relations")
         if not isinstance(relation_aggregation, dict):

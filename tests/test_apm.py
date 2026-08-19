@@ -8,6 +8,7 @@ from typer.testing import CliRunner
 from systemlens.apm import (
     ApmError,
     ApmHttpError,
+    ElasticApmClient,
     export_curl_command,
     export_digest,
     load_settings,
@@ -152,6 +153,31 @@ def test_export_digest_falls_back_to_legacy_destination_field() -> None:
     assert digest["relations"][0]["target"] == "legacy-payments"  # type: ignore[index]
 
 
+def test_export_digest_returns_an_empty_digest_when_no_apm_index_exists() -> None:
+    class NoApmIndexClient:
+        def search_metrics(self, body: dict[str, object]) -> dict[str, object]:
+            return {
+                "_shards": {
+                    "total": 0,
+                    "successful": 0,
+                    "skipped": 0,
+                    "failed": 0,
+                },
+                "hits": {"total": {"value": 0, "relation": "eq"}, "hits": []},
+            }
+
+    digest = export_digest(
+        NoApmIndexClient(),  # type: ignore[arg-type]
+        since="1h",
+        environment=None,
+        now=datetime(2026, 8, 19, 7, tzinfo=UTC),
+    )
+
+    assert digest["relations"] == []
+    assert digest["coverage"]["relations_exported"] == 0  # type: ignore[index]
+    assert digest["source"]["target_field"] == "service.target.name"  # type: ignore[index]
+
+
 @pytest.mark.parametrize("value", ["0h", "one-hour", "1w"])
 def test_parse_since_rejects_ambiguous_windows(value: str) -> None:
     with pytest.raises(ApmError):
@@ -183,6 +209,17 @@ def test_load_settings_keeps_an_explicit_value_ahead_of_environment(
 
     with pytest.raises(ApmError, match="ne doit pas être vide"):
         load_settings(endpoint="https://from-flag.example", api_key="")
+
+
+def test_load_settings_can_explicitly_disable_tls_verification() -> None:
+    settings = load_settings(
+        endpoint="https://elastic.example.test",
+        api_key="not-a-real-key",
+        insecure_tls=True,
+    )
+
+    assert settings.insecure_tls is True
+    assert ElasticApmClient(settings)._ssl_context is not None
 
 
 def test_export_digest_rejects_a_budget_smaller_than_required_metadata() -> None:
@@ -244,6 +281,7 @@ def test_apm_export_429_prints_safe_cluster_diagnostics(
             "--api-key",
             "not-a-real-key",
             "--export-curl",
+            "--insecure",
         ],
     )
 
@@ -255,6 +293,7 @@ def test_apm_export_429_prints_safe_cluster_diagnostics(
     assert "filter_path=**watermark" in result.output
     assert 'POST "${SYSTEMLENS_ELASTICSEARCH_URL%/}/metrics-apm*/_search"' in result.output
     assert 'Authorization: ApiKey ${SYSTEMLENS_ELASTICSEARCH_API_KEY}' in result.output
+    assert " --insecure \\" in result.output
     assert "elastic.example.test" not in result.output
     assert "not-a-real-key" not in result.output
 
@@ -264,6 +303,7 @@ def test_export_curl_command_matches_the_first_export_query() -> None:
         since="1h",
         environment="production",
         max_buckets=5_000,
+        insecure_tls=True,
         now=datetime(2026, 8, 19, 7, tzinfo=UTC),
     )
 
@@ -276,6 +316,7 @@ def test_export_curl_command_matches_the_first_export_query() -> None:
     assert "span.destination.service.response_time.sum.us" in command
     assert "metrics-apm*/_search" in command
     assert "SYSTEMLENS_ELASTICSEARCH_API_KEY" in command
+    assert " --insecure \\" in command
 
 
 def test_runtime_report_uses_histogram_p95_for_services_and_transactions() -> None:
