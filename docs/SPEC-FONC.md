@@ -280,10 +280,12 @@ first query is empty. Dependency P95 is not returned: it requires a separate,
 explicitly approved second pass over sampled span aggregates.
 
 The report has service, transaction, dependency, and recurring-failure tables.
-Its transaction graph groups transactions beneath their observed service and
-colours them by relative P95; its service filter is client-side. Its edges show
-only service ownership, never a transaction-to-dependency call. The dependency
-table provides a separate client-side source/target flow filter. Each ranking
+Its transaction graph groups transactions beneath their observed service, in
+HTTP (`transaction.type=request` or `http`), messaging
+(`transaction.type=messaging`), and other lanes; it colours them by relative
+P95 and offers client-side service and type filters. Its edges show only service
+ownership, never a transaction-to-dependency call. The dependency table provides
+a separate client-side source/target flow filter. Each ranking
 reports `items_seen`, `items_exported`, its result limit, bucket limit, and
 truncation reasons. A zero result means no matching aggregate was observed in
 the covered window; it does not prove a static HTTP, Kafka, MongoDB, or S3

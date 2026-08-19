@@ -451,8 +451,10 @@ def test_runtime_report_html_is_self_contained_and_does_not_embed_raw_errors() -
 
     assert '<script id="runtime-data" type="application/json">' in document
     assert "Transaction graph" in document
-    assert "Service ownership only; it does not assert a transaction-to-dependency call." in document
+    assert "HTTP and messaging lanes show service ownership only; they do not assert a transaction-to-dependency call." in document
     assert 'id="transaction-service-filter"' in document
+    assert 'id="transaction-kind-filter"' in document
+    assert "type==='messaging'?'Messaging'" in document
     assert "Focused dependency flow" in document
     assert "dependency P95 is a separate future pass" in document
     assert "error.message" not in document
