@@ -143,6 +143,11 @@ For Kibana **Dev Tools → Console**, paste and execute the standalone
 [service-destination request](docs/apm-service-destination-query.http). Adjust
 the `@timestamp` range or add a `service.environment` term filter as needed.
 
+For Elastic Stack Monitoring, an importable Kibana dashboard for a primary
+Elasticsearch cluster is available in
+[`docs/kibana-primary-cluster-dashboard.ndjson`](docs/kibana-primary-cluster-dashboard.ndjson).
+See [its import guide](docs/KIBANA-PRIMARY-CLUSTER-DASHBOARD.md).
+
 ## MCP
 
 Start the stdio server from an initialized repository:
