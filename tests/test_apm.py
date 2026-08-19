@@ -413,6 +413,7 @@ def test_runtime_report_uses_histogram_p95_for_services_and_transactions() -> No
         }
     ]
     assert report["schema_version"] == "apm-runtime-report-v2"
+    assert report["generated_at"] == "2026-08-15T10:00:00Z"
     assert report["timeline_events"] == [{
         "timestamp": "2026-08-15T09:30:00.000Z",
         "service": "orders",

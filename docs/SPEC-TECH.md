@@ -67,6 +67,22 @@ only this versioned aggregate projection in an explicitly requested HTML file.
 It does not write to SQLite, snapshots, or MCP cache.
 Service names and transaction names are inserted through JSON data and rendered
 with HTML escaping before insertion, so a telemetry value cannot create markup.
+The projection also records the query-window end as `generated_at`, the
+auditable snapshot instant shown in the HTML report. The renderer derives its
+summary failure rate from `services` only, never by adding service and
+transaction failure buckets, which describe overlapping observations.
+
+The HTML renderer derives a bounded investigation-priority list from the
+already embedded aggregates: volume × error rate plus latency weighted by the
+logarithm of volume. This is a display-only ordering, explicitly labelled as
+triage rather than an SLO or health calculation, and it introduces no new APM
+query or persisted fact. Shared client-side service, workload, and failure-only
+filters are applied to the aggregate tables and synchronise map, detail, and
+Timeline selections. The Timeline renderer additionally derives three duration
+bands from the already projected duration values; it does not request any new
+trace field. The report stores no prior report and therefore
+does not calculate regressions or invent a historical baseline.
+
 The report's primary visual is a client-side directed service map. It places
 observed services on circle nodes and recognized messaging targets on diamond
 nodes. Each `service_destination` aggregate is a directed edge from its source

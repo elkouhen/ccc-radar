@@ -280,8 +280,19 @@ retries the legacy `span.destination.service.resource` field only when the
 first query is empty. Dependency P95 is not returned: it requires a separate,
 explicitly approved second pass over sampled span aggregates.
 
-The report has service, transaction, dependency, and recurring-failure tables.
-Its primary visual is an interactive directed service map: circle nodes are
+The report starts with a bounded investigation-priority ranking. It combines
+observed volume, aggregate error rate, and service/transaction P95 or dependency
+average latency only as a triage aid; it is not an SLO verdict or a causal
+claim. Its context shows the UTC window, environment, snapshot instant, and a
+visible complete/limited coverage state. The summary failure rate is calculated
+from the service aggregate only and is therefore not double-counted across the
+service and transaction views.
+
+The Overview has service, transaction, dependency, and recurring-failure tables.
+Shared service, workload, and failure-only filters keep those tables, the map,
+the Timeline service selection, and the Details views aligned. Details exposes
+the transaction ownership graph and focused dependency flows instead of leaving
+them as hidden report content. Its primary visual is an interactive directed service map: circle nodes are
 observed services and diamond nodes are observed messaging targets. Every arrow
 is directed from the observed source service to its target; it is labelled HTTP
 for a non-messaging target and `send` for a recognized outgoing messaging target.
@@ -299,7 +310,9 @@ the covered window; it does not prove a static HTTP, Kafka, MongoDB, or S3
 dependency is absent. P95 values are approximate histogram percentiles.
 
 The Timeline tab is a chronological, bounded view of recorded transaction
-events. Its Elasticsearch query sets `_source: false` and retrieves only
+events. It applies the shared service, workload, and failure-only filters and
+shows a three-band duration distribution for the selected events. Its
+Elasticsearch query sets `_source: false` and retrieves only
 `@timestamp`, service name, transaction name/type, duration, result, outcome,
 and the optional messaging queue/topic name. It never requests trace IDs,
 request or response data, headers, bodies, stack traces, logs, or error values.
@@ -308,6 +321,10 @@ The report does not correlate observed names with static identities in this
 release. Its aggregate views remain separate from the Timeline's bounded
 transaction-field projection; trace IDs, request data, headers, bodies, log
 messages, credentials, and unredacted exception values are excluded.
+
+An `apm report` file is a one-shot snapshot and does not persist or infer a
+historical baseline. It must not present a regression comparison unless a future
+explicit comparison input and coverage contract are added.
 
 Kafka latency, consumer failures, MongoDB activity, S3 activity, and Kubernetes
 capacity signals require their own documented source fields and availability

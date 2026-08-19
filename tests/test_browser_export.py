@@ -84,6 +84,8 @@ def test_apm_runtime_report_filters_observed_dependency_flows() -> None:
         assert "orders" in page.locator("#services").inner_text()
         assert "POST /checkout" in page.locator("#transactions").inner_text()
         assert "POST /checkout" in page.locator("#transaction-graph").inner_text()
+        page.get_by_role("button", name="Details").click()
+        page.locator("#details-transactions").wait_for(state="visible")
         page.locator("#transaction-service-filter").select_option("orders")
         assert "POST /checkout" in page.locator("#transaction-graph").inner_text()
         assert "GET /products" not in page.locator("#transaction-graph").inner_text()

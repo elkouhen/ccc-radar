@@ -82,11 +82,16 @@ result, so Pi can distinguish absence from incomplete coverage.
 `apm report` creates an explicit HTML file for human review. Its interactive
 graph uses the same Graphology/Sigma.js CDN assets as the architecture export;
 the embedded SVG fallback remains available if those assets cannot load.
-It ranks services and transactions by P95 latency (with their averages, volume,
-and aggregate failure rate), includes a directed service map and lists recurring
-aggregate failures. A Timeline tab also shows a bounded projection of recorded
-transaction events. It never embeds `_source`, trace IDs, request data, headers,
-bodies, or error messages. Dependency P95 is deliberately not estimated.
+It starts with an investigation-priority summary based on observed volume,
+error rate, and latency, then ranks services and transactions by P95 latency
+(with their averages, volume, and aggregate failure rate), includes a directed
+service map and lists recurring aggregate failures. Shared service, workload,
+and failure filters keep the overview and detail views aligned. The report also
+records its snapshot window and whether any view was truncated, so it can be
+shared without mistaking incomplete rankings for absence. A Timeline tab shows
+a bounded projection of recorded transaction events. It never embeds `_source`,
+trace IDs, request data, headers, bodies, or error messages. Dependency P95 is
+deliberately not estimated, and the one-shot report has no historical baseline.
 
 ### Inspect the source aggregation
 
