@@ -76,15 +76,16 @@ The HTML renderer derives a bounded investigation-priority list from the
 already embedded aggregates: volume × error rate plus latency weighted by the
 logarithm of volume. This is a display-only ordering, explicitly labelled as
 triage rather than an SLO or health calculation, and it introduces no new APM
-query or persisted fact. Shared client-side service, workload, and failure-only
-filters are applied to the aggregate tables and synchronise map, detail, and
-Timeline selections. The Timeline renderer additionally derives three duration
+query or persisted fact. Each tab owns only its relevant client-side controls:
+the Service map owns map mode, service, and workload selection; Details owns
+its focused table and graph filters; Timeline owns its service selection. The
+Timeline renderer additionally derives three duration
 bands from the already projected duration values; it does not request any new
 trace field. The report stores no prior report and therefore
 does not calculate regressions or invent a historical baseline.
-Overview uses a responsive three-region split layout: side-panel triage and
-filters, central map, and selected-node detail. At constrained widths these
-regions stack; the ranking tables remain in the separate Details view.
+The renderer exposes separate Overview, Service map, Details, and Timeline
+tabs. This avoids competing global and map-specific selectors; ranking tables
+remain in Details.
 
 The report's primary visual is a client-side directed service map. It places
 observed services on circle nodes and recognized messaging targets on diamond
