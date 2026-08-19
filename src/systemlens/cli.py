@@ -3,6 +3,7 @@ import os
 import sys
 import time
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal, Optional, cast
 
@@ -16,6 +17,7 @@ from systemlens.apm import (
     ElasticApmClient,
     compact_json as compact_apm_json,
     doctor as apm_doctor,
+    export_curl_command,
     export_digest,
     load_settings as load_apm_settings,
 )
@@ -1173,6 +1175,11 @@ def apm_export_cmd(
         max=100_000,
         help="Agrégats Elastic maximum lus avant troncature.",
     ),
+    export_curl: bool = typer.Option(
+        False,
+        "--export-curl",
+        help="En cas d'échec, affiche le curl reproductible de la première requête APM.",
+    ),
     out: Optional[Path] = typer.Option(  # noqa: UP007
         None, "--out", help="Écrit le digest JSON dans ce fichier; stdout par défaut."
     ),
@@ -1181,6 +1188,7 @@ def apm_export_cmd(
 
     Les traces, logs, en-têtes et identifiants de requêtes ne sont jamais exportés.
     """
+    now = datetime.now(UTC)
     try:
         settings = load_apm_settings(endpoint, api_key)
         digest = export_digest(
@@ -1190,12 +1198,32 @@ def apm_export_cmd(
             max_relations=max_relations,
             max_bytes=max_bytes,
             max_buckets=max_buckets,
+            now=now,
         )
         serialized = compact_apm_json(digest)
     except ApmError as exc:
         typer.echo(f"Échec de l'export APM : {exc}", err=True)
         for line in _apm_export_failure_advice(exc):
             typer.echo(line, err=True)
+        if export_curl:
+            typer.echo(
+                "Requête curl reproductible (première page ; utilise les variables "
+                "SYSTEMLENS_ELASTICSEARCH_URL et SYSTEMLENS_ELASTICSEARCH_API_KEY) :",
+                err=True,
+            )
+            try:
+                typer.echo(
+                    export_curl_command(
+                        since=since,
+                        environment=environment,
+                        max_buckets=max_buckets,
+                        now=now,
+                    ),
+                    err=True,
+                )
+            except ApmError:
+                # The original error already explains invalid CLI input.
+                pass
         raise typer.Exit(code=2) from exc
 
     if out is None:

@@ -237,6 +237,43 @@ def export_digest(
     )
 
 
+def export_curl_command(
+    *,
+    since: str,
+    environment: str | None,
+    max_buckets: int,
+    now: datetime | None = None,
+) -> str:
+    """Render the first read request issued by ``export_digest`` as safe curl.
+
+    Endpoint and credentials intentionally remain shell variable references:
+    diagnostic output must never disclose either value, even when the export
+    was configured through CLI flags rather than environment variables.
+    """
+    if max_buckets < 1:
+        raise ApmError("`--max-buckets` doit être supérieur à zéro.")
+    start, end = parse_since(since, now=now)
+    query = _service_destination_query(
+        start,
+        end,
+        environment,
+        "service.target.name",
+        min(1_000, max_buckets),
+        None,
+    )
+    payload = json.dumps(query, ensure_ascii=False, indent=2)
+    return (
+        "curl --silent --show-error --max-time 15 \\\n"
+        '  -X POST "${SYSTEMLENS_ELASTICSEARCH_URL%/}/metrics-apm*/_search" \\\n'
+        '  -H "Accept: application/json" \\\n'
+        '  -H "Content-Type: application/json" \\\n'
+        '  -H "Authorization: ApiKey ${SYSTEMLENS_ELASTICSEARCH_API_KEY}" \\\n'
+        "  --data-binary @- <<'SYSTEMLENS_APM_QUERY'\n"
+        f"{payload}\n"
+        "SYSTEMLENS_APM_QUERY"
+    )
+
+
 def _read_relation_buckets(
     client: ElasticApmClient,
     start: datetime,

@@ -5,7 +5,14 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from systemlens.apm import ApmError, ApmHttpError, export_digest, load_settings, parse_since
+from systemlens.apm import (
+    ApmError,
+    ApmHttpError,
+    export_curl_command,
+    export_digest,
+    load_settings,
+    parse_since,
+)
 from systemlens.apm_report import build_runtime_report, render_runtime_report_html
 from systemlens.cli import app
 
@@ -236,6 +243,7 @@ def test_apm_export_429_prints_safe_cluster_diagnostics(
             "https://elastic.example.test",
             "--api-key",
             "not-a-real-key",
+            "--export-curl",
         ],
     )
 
@@ -245,8 +253,29 @@ def test_apm_export_429_prints_safe_cluster_diagnostics(
     assert "GET _cluster/health" in result.output
     assert "GET _cat/allocation?v" in result.output
     assert "filter_path=**watermark" in result.output
+    assert 'POST "${SYSTEMLENS_ELASTICSEARCH_URL%/}/metrics-apm*/_search"' in result.output
+    assert 'Authorization: ApiKey ${SYSTEMLENS_ELASTICSEARCH_API_KEY}' in result.output
     assert "elastic.example.test" not in result.output
     assert "not-a-real-key" not in result.output
+
+
+def test_export_curl_command_matches_the_first_export_query() -> None:
+    command = export_curl_command(
+        since="1h",
+        environment="production",
+        max_buckets=5_000,
+        now=datetime(2026, 8, 19, 7, tzinfo=UTC),
+    )
+
+    assert '"gte": "2026-08-19T06:00:00Z"' in command
+    assert '"lt": "2026-08-19T07:00:00Z"' in command
+    assert '"service.environment": "production"' in command
+    assert '"size": 1000' in command
+    assert '"field": "service.target.name"' in command
+    assert "span.destination.service.response_time.count" in command
+    assert "span.destination.service.response_time.sum.us" in command
+    assert "metrics-apm*/_search" in command
+    assert "SYSTEMLENS_ELASTICSEARCH_API_KEY" in command
 
 
 def test_runtime_report_uses_histogram_p95_for_services_and_transactions() -> None:
