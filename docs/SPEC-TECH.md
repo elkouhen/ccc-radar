@@ -217,6 +217,13 @@ fields, enum values, and conservative nested-type references. The HTML export
 uses those stored facts and only derives its VS Code URI at render time; it
 does not reopen a Java or OpenAPI source file.
 
+For Strategy1 OpenAPI publication, `xxx.rest` selects both same-named contract
+files anywhere in the repository and all YAML or JSON candidates under a
+`model-xxx/src/main/resources/openapi/` module. Each candidate is validated as
+an OpenAPI document before endpoint facts are persisted; endpoints remain
+attributed to the module containing the declaration while the contract source
+path stays evidence.
+
 ## Export snapshot contract
 
 HTML and JSON graph exports only consume the loaded architecture snapshot.

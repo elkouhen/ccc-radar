@@ -836,23 +836,33 @@ def _infer_openapi_endpoints_attributed(repo_root: Path, rel_path: str) -> list[
     ]
 @lru_cache(maxsize=256)
 def _strategy1_openapi_contracts(repo_root_str: str, api_name: str) -> tuple[str, ...]:
-    """Find same-named OpenAPI contracts anywhere in the indexed repository.
+    """Find OpenAPI contracts published by a Strategy1 declaration.
 
     A Strategy1 ``*.rest`` file is a publication declaration, not the
-    contract itself. The matching ``<api>.yaml``/``.yml``/``.json`` document
-    may live in any sibling module, including a shared module without an
-    openapi-generator Maven configuration. Filename matching only narrows
-    the candidates; callers still parse each candidate as OpenAPI before
-    publishing an endpoint.
+    contract itself. A matching ``<api>.yaml``/``.yml``/``.json`` document
+    may live anywhere in the repository. A ``model-<api>`` module is a
+    broader, explicit convention: every YAML or JSON document below its
+    ``src/main/resources/openapi`` directory is a candidate. This lets a
+    single published API include several independently named contracts.
+    Callers still parse each candidate as OpenAPI before publishing an
+    endpoint.
     """
     repo_root = Path(repo_root_str).resolve()
     contracts: set[str] = set()
+    model_module_name = f"model-{api_name}"
     for path in sorted(repo_root.rglob("*")):
         try:
             if not path.is_file() or path.suffix.casefold() not in {".json", ".yaml", ".yml"}:
                 continue
             contract_name = path.stem.casefold().replace("_", "-")
-            if contract_name == api_name:
+            relative_path = path.resolve().relative_to(repo_root)
+            parts = relative_path.parts
+            is_model_contract = any(
+                part.casefold().replace("_", "-") == model_module_name
+                and parts[index + 1:index + 5] == ("src", "main", "resources", "openapi")
+                for index, part in enumerate(parts)
+            )
+            if contract_name == api_name or is_model_contract:
                 contracts.add(path.resolve().relative_to(repo_root).as_posix())
         except (OSError, ValueError):
             continue

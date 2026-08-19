@@ -438,6 +438,42 @@ def test_strategy1_rest_declaration_finds_same_named_contract_in_another_module(
     assert "systemlens-openapi-contract:shared-contracts/api/orders.yaml" in contract_endpoints[0].snippet
 
 
+def test_strategy1_rest_declaration_finds_all_contracts_in_matching_model_module(
+    tmp_path: Path,
+) -> None:
+    """A model-<API> module can publish contracts with different file names."""
+    publisher = tmp_path / "orders-service"
+    declaration = publisher / "src" / "main" / "resources" / "openapi" / "orders.rest"
+    declaration.parent.mkdir(parents=True)
+    declaration.write_text("published API declaration\n", encoding="utf-8")
+    (publisher / "pom.xml").write_text(
+        '<project xmlns="http://maven.apache.org/POM/4.0.0">'
+        "<modelVersion>4.0.0</modelVersion><artifactId>orders-service</artifactId>"
+        "<version>1.0.0</version></project>",
+        encoding="utf-8",
+    )
+    contract = tmp_path / "model-orders" / "src" / "main" / "resources" / "openapi" / "order-lines.yaml"
+    contract.parent.mkdir(parents=True)
+    contract.write_text(
+        "openapi: 3.0.0\npaths:\n  /order-lines:\n    get:\n      summary: List order lines\n",
+        encoding="utf-8",
+    )
+    (contract.parent / "orders-health.json").write_text(
+        '{"openapi":"3.0.0","paths":{"/orders/health":{"get":{}}}}',
+        encoding="utf-8",
+    )
+
+    endpoints = infer_framework_endpoints(tmp_path, configured_api_client_strategy1=True)
+    contract_endpoints = [endpoint for endpoint in endpoints if endpoint.framework == "openapi"]
+
+    assert [(endpoint.module, endpoint.path, endpoint.topic) for endpoint in contract_endpoints] == [
+        ("orders-service", "orders-service/src/main/resources/openapi/orders.rest", "GET /order-lines"),
+        ("orders-service", "orders-service/src/main/resources/openapi/orders.rest", "GET /orders/health"),
+    ]
+    assert "systemlens-openapi-contract:model-orders/src/main/resources/openapi/order-lines.yaml" in contract_endpoints[0].snippet
+    assert "systemlens-openapi-contract:model-orders/src/main/resources/openapi/orders-health.json" in contract_endpoints[1].snippet
+
+
 def test_indexed_kafka_facts_build_a_traceable_service_edge(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     shutil.copytree(FIXTURES / "kafka_repo", repo)

@@ -183,9 +183,12 @@ also enables the `getXxxServiceUrl()` REST target-name convention.
 For a `src/main/resources/openapi/xxx.rest` publication declaration, it
 searches the entire indexed repository for same-named `xxx.yaml`,
 `xxx.yml`, or `xxx.json` OpenAPI contracts, including contracts in a sibling
-shared module without an `openapi-generator` Maven configuration. Only a
-valid OpenAPI document is attached, and its resulting endpoints remain
-attributed to the module that owns the `.rest` declaration.
+shared module without an `openapi-generator` Maven configuration. It also
+searches every YAML or JSON document below
+`model-xxx/src/main/resources/openapi/`, so that module may contain several
+contracts with distinct names. Only a valid OpenAPI document is attached, and
+its resulting endpoints remain attributed to the module that owns the `.rest`
+declaration.
 It may also derive a high-confidence request/reply pair
 when both sides follow the `retour_<request-topic>` convention.
 
