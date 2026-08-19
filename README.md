@@ -66,6 +66,7 @@ Set credentials in your shell rather than putting them in a command history:
 
 ```bash
 export SYSTEMLENS_ELASTICSEARCH_URL=https://elastic.example
+# Raw Elasticsearch id:secret API keys are accepted and encoded by SystemLens.
 export SYSTEMLENS_ELASTICSEARCH_API_KEY=...
 systemlens apm doctor --json
 systemlens apm export --since 1h --environment production --out apm-digest.json
@@ -90,9 +91,15 @@ Services, Transactions, Dependencies, and Timeline tabs; each ranking and its
 filters live in the matching operational view.
 The report also
 records its snapshot window and whether any view was truncated, so it can be
-shared without mistaking incomplete rankings for absence. A Timeline tab shows
-a bounded projection of recorded transaction events. It never embeds `_source`,
-trace IDs, request data, headers, bodies, or error messages. Dependency P95 is
+shared without mistaking incomplete rankings for absence. The Transactions tab
+also shows recent distributed-trace waterfalls, grouped by their HTTP source
+service or an observed Kafka producer-topic label, with nested service and
+database spans. Each card shows the cross-service route and the distributed
+transaction operations before the detailed waterfall, and can be filtered by
+origin. IDs are used only in memory to form the tree and are never
+embedded. A Timeline tab shows a bounded projection of recorded transaction
+events. It never embeds `_source`, trace IDs, request data, headers, bodies, or
+error messages. Dependency P95 is
 deliberately not estimated, and the one-shot report has no historical baseline.
 Timeline records are limited to 500 by default (2,000 maximum). If their
 bounded query times out, the aggregate report is still written and explicitly
@@ -144,7 +151,9 @@ curl --fail --silent --show-error \
   "${SYSTEMLENS_ELASTICSEARCH_URL}/metrics-apm*/_search"
 ```
 
-The response contains aggregate source/destination buckets only. A zero bucket
+The response contains aggregate source/destination buckets only. The CLI reads
+both Elastic APM and compatible OpenTelemetry runtime data streams; the curl
+example remains the Elastic APM-only projection. A zero bucket
 count means no observed outgoing destination metrics in the selected window;
 it does not prove that a static dependency is absent.
 

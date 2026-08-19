@@ -246,7 +246,10 @@ endpoint. It accepts `--since` as a positive `s`, `m`, `h`, or `d` duration
 connection values take precedence over `SYSTEMLENS_ELASTICSEARCH_URL` and
 `SYSTEMLENS_ELASTICSEARCH_API_KEY`. An endpoint must be an absolute HTTP(S) URL.
 
-The command queries only `metrics-apm*` documents with
+The command queries the Elastic APM metric streams and the compatible
+OpenTelemetry metric streams (`metrics-service_destination.1m.otel-*`,
+`metrics-service_transaction.1m.otel-*`, and `metrics-transaction.1m.otel-*`)
+with
 `metricset.name=service_destination`. It aggregates source service, destination
 service, destination type, outcome, call count, failure count, error rate, and
 average latency. It first uses `service.target.name`, then retries the legacy
@@ -264,8 +267,9 @@ an architecture HTML export.
 
 `apm report` is an explicit read-only command which requires `--html FILE`.
 It accepts the same bounded UTC `--since` duration and optional exact
-environment filter as `apm export`. It queries `metrics-apm*` with `size: 0`
-for aggregate views and `traces-apm*` for at most 500 recorded transaction
+environment filter as `apm export`. It queries the same APM and OpenTelemetry
+metric streams with `size: 0` for aggregate views and both `traces-apm*` and
+`traces-generic.otel-*` for at most 500 recorded transaction
 projections by default (configurable with `--max-timeline-events`, capped at
 2,000), then emits a versioned
 `apm-runtime-report-v2` observation embedded in the requested HTML file. It is not persisted in
@@ -288,6 +292,18 @@ claim. Its context shows the UTC window, environment, snapshot instant, and a
 visible complete/limited coverage state. The summary failure rate is calculated
 from the service aggregate only and is therefore not double-counted across the
 service and transaction views.
+
+The Transactions tab additionally displays up to 20 recent distributed-trace
+waterfalls. They are grouped and sorted by the HTTP source service, or by the
+Kafka source topic when a producer span label follows the observed
+`<topic> publish` instrumentation convention. Other sources are grouped by
+their root service. Trace, span, and parent identifiers are used only in memory
+to reconstruct the tree and are never embedded in the HTML or persisted. Each
+waterfall exports only timestamp, service, operation name, transaction kind,
+outcome, relative timing, duration, and tree depth; it is therefore an exemplar
+for investigation, not a complete trace archive. Its card starts with the
+cross-service route and distributed transaction operations, and the tab offers
+an origin filter so database spans can be read as details of the selected flow.
 
 The report separates its investigation modes into Services, Transactions,
 Dependencies, and Timeline tabs. Services contains the context, priority
@@ -326,6 +342,11 @@ The report does not correlate observed names with static identities in this
 release. Its aggregate views remain separate from the Timeline's bounded
 transaction-field projection; trace IDs, request data, headers, bodies, log
 messages, credentials, and unredacted exception values are excluded.
+
+The Transactions view contains only transaction workloads with at least one
+recent trace spanning more than one `service.name`. SystemLens uses trace IDs
+only transiently inside Elasticsearch to select those traces; it never exports,
+persists, or displays them.
 
 The APM HTTP client bounds each Elasticsearch request to 15 seconds. If the
 bounded Timeline query times out, `apm report` still writes the aggregate

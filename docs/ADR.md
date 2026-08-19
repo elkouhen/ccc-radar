@@ -300,3 +300,69 @@ analysis, or any other static or persisted view, which remain governed by the
 stricter exact-alias policy of a future SL-010. When SL-010 ships a configured
 alias mechanism, an exact alias must take precedence over the heuristic
 containment match for the same observed name.
+
+## ADR-17 — Read compatible Elastic APM and OpenTelemetry runtime streams
+
+**Status:** Accepted.
+
+**Context:** Elastic APM Server/Elastic Agent writes APM metric and trace data
+to `metrics-apm*` and `traces-apm*`, while the Elasticsearch OpenTelemetry
+exporter writes compatible runtime aggregates and transaction events to
+dedicated `.otel` data streams. Querying only the APM patterns yields an empty
+report for an OpenTelemetry-only deployment.
+
+**Decision:** The read-only SystemLens APM adapter queries the existing APM
+patterns together with the narrowly targeted OpenTelemetry service-destination,
+service-transaction, transaction, and generic-trace patterns. It keeps the
+same bounded aggregate and field-projection contracts; it neither writes data
+nor reads raw trace identifiers. API keys supplied as raw Elasticsearch
+`id:secret` values are encoded to the `Authorization: ApiKey` header form, while
+already encoded header values remain supported.
+
+**Consequences:** One report can cover either ingestion path without a
+configuration switch. If the same runtime signal is intentionally sent through
+both paths, Elasticsearch may contain duplicate aggregates; SystemLens reports
+the observed documents and does not infer cross-stream identity from forbidden
+raw trace identifiers.
+
+## ADR-18 — Restrict transaction workloads to distributed trace exemplars
+
+**Status:** Accepted.
+
+**Context:** Aggregate transaction metrics include health checks and local
+operations. The runtime report's Transactions view must focus on workloads
+that actually crossed a service boundary, without exporting raw traces.
+
+**Decision:** SystemLens first performs a bounded Elasticsearch aggregation on
+`trace.id`, retaining only trace buckets with spans from more than one
+`service.name`. It uses those identifiers only in memory to constrain the
+bounded transaction-event query, then retains aggregate transaction workloads
+that have at least one selected event. Trace identifiers are never emitted,
+persisted, or embedded in HTML.
+
+**Consequences:** The Transactions view can be empty when no distributed trace
+is present even though service metrics exist. Candidate traces are capped and
+the report exposes any candidate or timeline limit in coverage; the aggregate
+service and dependency views remain unchanged.
+
+## ADR-19 — Export bounded, identifier-free distributed trace waterfalls
+
+**Status:** Accepted.
+
+**Context:** Aggregate transaction rows identify distributed workloads but do
+not show the cross-service and database work that makes a trace actionable.
+Operators need a compact view comparable to an APM waterfall, sorted by the
+HTTP source service or the Kafka source topic.
+
+**Decision:** After selecting multi-service trace candidates, SystemLens reads
+at most 20 recent traces with `_source: false` and a bounded span count. It may
+read `trace.id`, `span.id`, and `parent.id` only in memory to rebuild tree depth
+and relative timings. The HTML projection excludes those identifiers and keeps
+only safe operational fields. It groups first by an HTTP root service, then by
+a Kafka topic inferred only from a producer span named `<topic> publish`; any
+other trace is grouped by its root service.
+
+**Consequences:** The report gains useful, bounded trace exemplars without
+becoming a raw-trace export or a persistent store. A topic label is explicitly
+an instrumentation-based inference, so deployments with different producer
+span naming fall back to the root service instead of guessing a destination.

@@ -1,4 +1,4 @@
-POST metrics-apm*/_search
+POST metrics-apm*,metrics-service_destination.1m.otel-*/_search
 {
   "size": 0,
   "track_total_hits": false,

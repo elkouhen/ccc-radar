@@ -35,8 +35,9 @@ Credentials come from one-off flags or environment variables, are not persisted,
 and are not included in errors or digest JSON. `apm doctor` uses the same
 read query, so it does not require Elasticsearch `monitor` privileges.
 
-The adapter queries `metrics-apm*` with a composite aggregation over Elastic
-APM `service_destination` metrics. It pages at most `max_buckets` aggregate
+The adapter queries `metrics-apm*` and the compatible, narrowly targeted
+OpenTelemetry service-destination, service-transaction, and transaction metric
+streams with a composite aggregation over `service_destination` metrics. It pages at most `max_buckets` aggregate
 buckets, combines success/failure outcomes by source, target, and target type,
 then ranks relations by call volume. It retains only the prefix that fits both
 the relation and serialized-byte limits. The resulting `apm-digest-v1` payload
@@ -47,8 +48,10 @@ source data and is not merged with a snapshot.
 ### Elastic APM runtime report projection
 
 `apm_report.py` constructs an in-memory `apm-runtime-report-v2` observation
-from three explicit read-only `metrics-apm*` aggregation queries and one
-bounded `traces-apm*` transaction-event query. Its service
+from three explicit read-only aggregate queries over both Elastic APM and
+compatible OpenTelemetry metric streams, plus bounded transaction-event and
+distributed-trace exemplar queries over `traces-apm*` and
+`traces-generic.otel-*`. Its service
 and transaction views page composite buckets and aggregate transaction count,
 duration sum, aggregate failure count from the `aggregate_metric_double`
 field `transaction.duration.summary`, and the P95 percentile of
@@ -56,11 +59,18 @@ field `transaction.duration.summary`, and the P95 percentile of
 `service_destination` aggregate adapter and therefore intentionally reports
 only average latency, call count, and aggregate failure rate.
 
-The aggregate queries use `size: 0`; the Timeline uses a bounded `size` and
-explicitly sets `_source: false`, requesting only timestamp, service,
+The aggregate queries use `size: 0`. Before the bounded Timeline query,
+SystemLens uses a bounded trace-ID aggregation to retain only recent traces
+with spans from more than one service; IDs remain in memory and are never
+included in the report. The Timeline then explicitly sets `_source: false`, requesting only timestamp, service,
 transaction name/type, duration, result, outcome, and optional messaging target.
-It never requests trace IDs, headers, bodies, stack traces, logs, or error
-values. Each view has an independent composite-bucket guard and output-result guard. The
+To produce at most 20 waterfall exemplars, a second `_source: false` request
+temporarily reads trace, span, and parent IDs plus timestamp, service, operation,
+duration and outcome. It reconstructs each span tree in memory, determines an
+HTTP root-service source or the conservative `<topic> publish` Kafka-source
+label, then discards all IDs. The exported projection never contains those IDs,
+headers, bodies, stack traces, logs, or error values. Each view has an
+independent composite-bucket guard and output-result guard. The
 projection records the UTC window, environment, source metricsets/field,
 per-view coverage, limits, and truncation. `render_runtime_report_html` embeds
 only this versioned aggregate projection in an explicitly requested HTML file.

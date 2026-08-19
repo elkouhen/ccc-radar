@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import json
 import os
 import re
@@ -16,6 +17,13 @@ DEFAULT_MAX_BUCKETS = 5_000
 DEFAULT_MAX_BYTES = 50_000
 DEFAULT_MAX_RELATIONS = 80
 _DURATION_PATTERN = re.compile(r"^(?P<amount>[1-9][0-9]*)(?P<unit>[smhd])$")
+APM_METRIC_INDEX_PATTERNS = (
+    "metrics-apm*",
+    "metrics-service_destination.1m.otel-*",
+    "metrics-service_transaction.1m.otel-*",
+    "metrics-transaction.1m.otel-*",
+)
+APM_TRACE_INDEX_PATTERNS = ("traces-apm*", "traces-generic.otel-*")
 
 
 class ApmError(RuntimeError):
@@ -73,6 +81,8 @@ def load_settings(
         selected_endpoint = _normalise_endpoint(selected_endpoint)
     if selected_api_key is not None and not selected_api_key.strip():
         raise ApmError("La clé d'API Elasticsearch ne doit pas être vide.")
+    if selected_api_key is not None:
+        selected_api_key = _normalise_api_key(selected_api_key)
     return ApmSettings(
         endpoint=selected_endpoint,
         api_key=selected_api_key,
@@ -109,6 +119,14 @@ def _normalise_endpoint(value: str) -> str:
     return value.rstrip("/")
 
 
+def _normalise_api_key(value: str) -> str:
+    """Accept either an Elasticsearch ``id:secret`` key or its header value."""
+    key = value.strip()
+    if ":" not in key:
+        return key
+    return base64.b64encode(key.encode("utf-8")).decode("ascii")
+
+
 class ElasticApmClient:
     """Small Elasticsearch JSON client which never performs write requests."""
 
@@ -128,11 +146,15 @@ class ElasticApmClient:
         )
 
     def search_metrics(self, body: dict[str, object]) -> dict[str, object]:
-        return self._request_json("POST", "/metrics-apm*/_search", body)
+        return self._request_json(
+            "POST", f"/{','.join(APM_METRIC_INDEX_PATTERNS)}/_search", body
+        )
 
     def search_traces(self, body: dict[str, object]) -> dict[str, object]:
         """Read a bounded projection of recorded APM trace events."""
-        return self._request_json("POST", "/traces-apm*/_search", body)
+        return self._request_json(
+            "POST", f"/{','.join(APM_TRACE_INDEX_PATTERNS)}/_search", body
+        )
 
     def check_metrics_access(self) -> int | None:
         """Validate index-read access without requiring Elasticsearch monitor rights."""
@@ -293,7 +315,7 @@ def export_curl_command(
     return (
         "curl --silent --show-error --max-time 15 \\\n"
         f"{insecure_option}"
-        '  -X POST "${SYSTEMLENS_ELASTICSEARCH_URL%/}/metrics-apm*/_search" \\\n'
+        '  -X POST "${SYSTEMLENS_ELASTICSEARCH_URL%/}/metrics-apm*,metrics-service_destination.1m.otel-*,metrics-service_transaction.1m.otel-*,metrics-transaction.1m.otel-*/_search" \\\n'
         '  -H "Accept: application/json" \\\n'
         '  -H "Content-Type: application/json" \\\n'
         '  -H "Authorization: ApiKey ${SYSTEMLENS_ELASTICSEARCH_API_KEY}" \\\n'

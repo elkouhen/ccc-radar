@@ -1,4 +1,5 @@
 import json
+from base64 import b64encode
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -15,7 +16,11 @@ from systemlens.apm import (
     load_settings,
     parse_since,
 )
-from systemlens.apm_report import build_runtime_report, render_runtime_report_html
+from systemlens.apm_report import (
+    _project_distributed_trace,
+    build_runtime_report,
+    render_runtime_report_html,
+)
 from systemlens.cli import app
 
 
@@ -223,6 +228,38 @@ def test_load_settings_can_explicitly_disable_tls_verification() -> None:
     assert ElasticApmClient(settings)._ssl_context is not None
 
 
+def test_client_encodes_a_raw_elasticsearch_api_key_and_queries_both_sources(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    requests = []
+
+    class Response:
+        def __enter__(self) -> "Response":
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            return None
+
+        def read(self) -> bytes:
+            return b"{}"
+
+    def fake_urlopen(request: object, **kwargs: object) -> Response:
+        requests.append(request)
+        return Response()
+
+    monkeypatch.setattr("systemlens.apm.urlopen", fake_urlopen)
+    client = ElasticApmClient(
+        load_settings(endpoint="https://elastic.example.test", api_key="id:secret")
+    )
+
+    client.search_metrics({"size": 0})
+    client.search_traces({"size": 0})
+
+    assert requests[0].get_header("Authorization") == f"ApiKey {b64encode(b'id:secret').decode()}"  # type: ignore[union-attr]
+    assert requests[0].full_url.endswith("/metrics-apm*,metrics-service_destination.1m.otel-*,metrics-service_transaction.1m.otel-*,metrics-transaction.1m.otel-*/_search")  # type: ignore[union-attr]
+    assert requests[1].full_url.endswith("/traces-apm*,traces-generic.otel-*/_search")  # type: ignore[union-attr]
+
+
 def test_export_digest_rejects_a_budget_smaller_than_required_metadata() -> None:
     with pytest.raises(ApmError, match="métadonnées obligatoires"):
         export_digest(  # type: ignore[arg-type]
@@ -292,7 +329,10 @@ def test_apm_export_429_prints_safe_cluster_diagnostics(
     assert "GET _cluster/health" in result.output
     assert "GET _cat/allocation?v" in result.output
     assert "filter_path=**watermark" in result.output
-    assert 'POST "${SYSTEMLENS_ELASTICSEARCH_URL%/}/metrics-apm*/_search"' in result.output
+    assert (
+        'POST "${SYSTEMLENS_ELASTICSEARCH_URL%/}/metrics-apm*,metrics-service_destination.1m.otel-*'
+        in result.output
+    )
     assert 'Authorization: ApiKey ${SYSTEMLENS_ELASTICSEARCH_API_KEY}' in result.output
     assert " --insecure \\" in result.output
     assert "elastic.example.test" not in result.output
@@ -315,7 +355,7 @@ def test_export_curl_command_matches_the_first_export_query() -> None:
     assert '"field": "service.target.name"' in command
     assert "span.destination.service.response_time.count" in command
     assert "span.destination.service.response_time.sum.us" in command
-    assert "metrics-apm*/_search" in command
+    assert "metrics-apm*,metrics-service_destination.1m.otel-*" in command
     assert "SYSTEMLENS_ELASTICSEARCH_API_KEY" in command
     assert " --insecure \\" in command
 
@@ -356,6 +396,30 @@ def test_runtime_report_uses_histogram_p95_for_services_and_transactions() -> No
 
         def search_traces(self, body: dict[str, object]) -> dict[str, object]:
             self.queries.append(body)
+            if "aggs" in body:
+                return {
+                    "aggregations": {
+                        "traces": {
+                            "buckets": [{
+                                "key": "distributed-trace",
+                                "services": {"value": 2},
+                            }],
+                            "sum_other_doc_count": 0,
+                        }
+                    }
+                }
+            if "span.id" in body["fields"]:  # type: ignore[operator]
+                return {"hits": {"hits": [{"fields": {
+                    "@timestamp": ["2026-08-15T09:30:00.000Z"],
+                    "trace.id": ["distributed-trace"],
+                    "span.id": ["root"],
+                    "service.name": ["orders"],
+                    "processor.event": ["transaction"],
+                    "transaction.name": ["POST /checkout"],
+                    "transaction.type": ["request"],
+                    "transaction.duration.us": [400_000],
+                    "event.outcome": ["success"],
+                }}]}}
             return {
                 "hits": {
                     "hits": [{
@@ -444,9 +508,10 @@ def test_runtime_report_uses_histogram_p95_for_services_and_transactions() -> No
         "percentiles": {"field": "transaction.duration.histogram", "percents": [95]}
     }
     assert {"term": {"service.environment": "production"}} in service_query["query"]["bool"]["filter"]  # type: ignore[index]
-    timeline_query = client.queries[-1]
+    timeline_query = next(query for query in client.queries if "transaction.result" in query.get("fields", []))
     assert timeline_query["_source"] is False
     assert "trace.id" not in timeline_query["fields"]
+    assert {"terms": {"trace.id": ["distributed-trace"]}} in timeline_query["query"]["bool"]["filter"]  # type: ignore[index]
     assert "transaction.duration.us" in timeline_query["fields"]
     assert report["coverage"]["timeline"] == {  # type: ignore[index]
         "items_exported": 1,
@@ -456,6 +521,89 @@ def test_runtime_report_uses_histogram_p95_for_services_and_transactions() -> No
         "available": True,
         "unavailable_reason": None,
     }
+    assert report["distributed_traces"] == [{
+        "source_kind": "http_service",
+        "source": "orders",
+        "timestamp": "2026-08-15T09:30:00.000Z",
+        "service": "orders",
+        "name": "POST /checkout",
+        "duration_ms": 400.0,
+        "outcome": "success",
+        "route": ["orders"],
+        "distributed_operations": ["orders · POST /checkout"],
+        "spans": [{
+            "service": "orders", "name": "POST /checkout", "kind": "transaction",
+            "transaction_type": "request", "outcome": "success", "depth": 0,
+            "offset_ms": 0, "duration_ms": 400.0,
+        }],
+    }]
+    exported = json.dumps(report)
+    assert '"trace.id"' not in exported
+    assert '"span.id"' not in exported
+    assert '"parent.id"' not in exported
+
+
+def test_distributed_trace_uses_producer_span_as_kafka_topic_source() -> None:
+    trace = _project_distributed_trace([
+        {
+            "id": "producer", "parent": None, "timestamp": "2026-08-15T09:30:00Z",
+            "service": "api", "name": "POST /work", "kind": "transaction",
+            "transaction_type": "request", "duration_ms": 300.0, "outcome": "success",
+        },
+        {
+            "id": "publish", "parent": "producer", "timestamp": "2026-08-15T09:30:00.050Z",
+            "service": "api", "name": "work.requested publish", "kind": "span",
+            "transaction_type": None, "duration_ms": 10.0, "outcome": "success",
+        },
+        {
+            "id": "consumer", "parent": "publish", "timestamp": "2026-08-15T09:30:00.080Z",
+            "service": "worker", "name": "work.requested process", "kind": "transaction",
+            "transaction_type": "messaging", "duration_ms": 120.0, "outcome": "success",
+        },
+    ])
+
+    assert trace is not None
+    assert trace["source_kind"] == "topic"
+    assert trace["source"] == "work.requested"
+    assert [span["depth"] for span in trace["spans"]] == [0, 1, 2]  # type: ignore[index]
+    assert "producer" not in json.dumps(trace)
+    assert "consumer" not in json.dumps(trace)
+
+
+def test_runtime_report_excludes_transactions_without_distributed_trace() -> None:
+    class DistributedOnlyClient:
+        def search_metrics(self, body: dict[str, object]) -> dict[str, object]:
+            metricset = body["query"]["bool"]["filter"][0]["term"]["metricset.name"]  # type: ignore[index]
+            if metricset == "transaction":
+                return {"aggregations": {"items": {"buckets": [
+                    _latency_bucket({"service": "orders", "transaction": "distributed", "transaction_type": "request"}, 2, 20_000, 15_000, 0),
+                    _latency_bucket({"service": "orders", "transaction": "local", "transaction_type": "request"}, 9, 90_000, 15_000, 0),
+                ]}}}
+            if metricset == "service_transaction":
+                return {"aggregations": {"items": {"buckets": []}}}
+            return {"aggregations": {"relations": {"buckets": []}}}
+
+        def search_traces(self, body: dict[str, object]) -> dict[str, object]:
+            if "aggs" in body:
+                return {"aggregations": {"traces": {"buckets": [
+                    {"key": "shared", "services": {"value": 2}},
+                    {"key": "local", "services": {"value": 1}},
+                ], "sum_other_doc_count": 0}}}
+            return {"hits": {"hits": [{"fields": {
+                "@timestamp": ["2026-08-15T09:30:00.000Z"],
+                "service.name": ["orders"],
+                "transaction.name": ["distributed"],
+                "transaction.type": ["request"],
+            }}]}}
+
+    report = build_runtime_report(
+        DistributedOnlyClient(),  # type: ignore[arg-type]
+        since="1h",
+        environment=None,
+        now=datetime(2026, 8, 15, 10, tzinfo=UTC),
+    )
+
+    assert [item["transaction"] for item in report["transactions"]] == ["distributed"]  # type: ignore[index]
 
 
 def test_runtime_report_keeps_aggregates_when_timeline_times_out() -> None:
