@@ -82,6 +82,9 @@ Timeline selections. The Timeline renderer additionally derives three duration
 bands from the already projected duration values; it does not request any new
 trace field. The report stores no prior report and therefore
 does not calculate regressions or invent a historical baseline.
+Overview uses a responsive three-region split layout: side-panel triage and
+filters, central map, and selected-node detail. At constrained widths these
+regions stack; the ranking tables remain in the separate Details view.
 
 The report's primary visual is a client-side directed service map. It places
 observed services on circle nodes and recognized messaging targets on diamond

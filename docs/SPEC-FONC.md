@@ -288,11 +288,14 @@ visible complete/limited coverage state. The summary failure rate is calculated
 from the service aggregate only and is therefore not double-counted across the
 service and transaction views.
 
-The Overview has service, transaction, dependency, and recurring-failure tables.
-Shared service, workload, and failure-only filters keep those tables, the map,
-the Timeline service selection, and the Details views aligned. Details exposes
-the transaction ownership graph and focused dependency flows instead of leaving
-them as hidden report content. Its primary visual is an interactive directed service map: circle nodes are
+Overview is a split investigation workspace: priorities and shared filters are
+in a narrow side panel, the map is central, and the selected node's aggregate
+workloads and observed directions appear alongside it. Service, transaction,
+dependency, and recurring-failure tables are moved to Details to keep Overview
+focused. Shared service, workload, and failure-only filters keep those tables,
+the map, the Timeline service selection, and the Details views aligned. Details
+also exposes the transaction ownership graph and focused dependency flows
+instead of leaving them as hidden report content. Its primary visual is an interactive directed service map: circle nodes are
 observed services and diamond nodes are observed messaging targets. Every arrow
 is directed from the observed source service to its target; it is labelled HTTP
 for a non-messaging target and `send` for a recognized outgoing messaging target.

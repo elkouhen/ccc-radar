@@ -85,8 +85,10 @@ the embedded SVG fallback remains available if those assets cannot load.
 It starts with an investigation-priority summary based on observed volume,
 error rate, and latency, then ranks services and transactions by P95 latency
 (with their averages, volume, and aggregate failure rate), includes a directed
-service map and lists recurring aggregate failures. Shared service, workload,
-and failure filters keep the overview and detail views aligned. The report also
+service map and lists recurring aggregate failures. The Overview is a split
+workspace: priorities and filters at left, the map at centre, and selected-node
+details beside it; rankings remain in Details. Shared service, workload, and
+failure filters keep the overview and detail views aligned. The report also
 records its snapshot window and whether any view was truncated, so it can be
 shared without mistaking incomplete rankings for absence. A Timeline tab shows
 a bounded projection of recorded transaction events. It never embeds `_source`,
