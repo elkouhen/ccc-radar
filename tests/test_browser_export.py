@@ -52,7 +52,7 @@ def test_apm_runtime_report_filters_observed_dependency_flows() -> None:
             "window": {"from": "2026-08-15T09:00:00Z", "to": "2026-08-15T10:00:00Z"},
             "environment": "production",
             "services": [
-                {"service": "orders", "calls": 10, "failure_calls": 1, "error_rate": 0.1, "average_ms": 80.0, "p95_ms": 240.0}
+                {"service": "orders", "calls": 10, "failure_calls": 1, "outcome_calls": 8, "error_rate": 0.125, "average_ms": 80.0, "p95_ms": 240.0}
             ],
             "transactions": [
                 {"service": "orders", "transaction": "POST /checkout", "calls": 6, "failure_calls": 1, "error_rate": 0.166667, "average_ms": 90.0, "p95_ms": 250.0},
@@ -62,10 +62,41 @@ def test_apm_runtime_report_filters_observed_dependency_flows() -> None:
                 {"source": "orders", "target": "payments", "target_type": "http", "calls": 6, "failure_calls": 1, "error_rate": 0.166667, "average_ms": 70.0},
                 {"source": "catalog", "target": "mongo", "target_type": "db", "calls": 3, "failure_calls": 0, "error_rate": 0.0, "average_ms": 10.0},
             ],
+            "timeline_events": [
+                {"timestamp": "2026-08-15T09:01:00Z", "service": "orders", "transaction": "HTTP transaction", "transaction_type": "request", "duration_ms": 90.0, "outcome": "success", "waterfall_refs": ["waterfall-1"]},
+                {"timestamp": "2026-08-15T09:02:00Z", "service": "catalog", "transaction": "HTTP transaction", "transaction_type": "request", "duration_ms": 20.0, "outcome": "failure"},
+            ],
+            "distributed_traces": [{
+                "source_kind": "http_service",
+                "source": "orders",
+                "timestamp": "2026-08-15T09:01:00Z",
+                "service": "orders",
+                "name": "HTTP transaction",
+                "duration_ms": 90.0,
+                "route": ["orders", "payments"],
+                "distributed_operations": ["orders · HTTP transaction"],
+                "spans": [],
+                "truncated": False,
+                "waterfall_ref": "waterfall-1",
+            }, {
+                "source_kind": "http_service",
+                "source": "catalog",
+                "timestamp": "2026-08-15T09:02:00Z",
+                "service": "catalog",
+                "name": "HTTP transaction",
+                "duration_ms": 20.0,
+                "route": ["catalog", "orders"],
+                "distributed_operations": ["Distributed transaction"],
+                "spans": [],
+                "truncated": True,
+                "waterfall_ref": "waterfall-2",
+            }],
             "coverage": {
                 "services": {"items_seen": 1, "items_exported": 1, "truncated": False, "truncation_reasons": []},
                 "transactions": {"items_seen": 1, "items_exported": 1, "truncated": False, "truncation_reasons": []},
                 "dependencies": {"items_seen": 2, "items_exported": 2, "truncated": False, "truncation_reasons": []},
+                "timeline": {"items_exported": 2, "truncated": False, "truncation_reasons": [], "available": True},
+                "distributed_traces": {"items_exported": 1, "max_traces": 20, "truncated": True, "truncation_reasons": ["max_spans_per_trace"], "available": True},
             },
         }
     )
@@ -82,23 +113,61 @@ def test_apm_runtime_report_filters_observed_dependency_flows() -> None:
         page.set_content(document, wait_until="load")
 
         assert "orders" in page.locator("#services").inner_text()
-        assert "POST /checkout" in page.locator("#transactions").inner_text()
-        assert "POST /checkout" in page.locator("#transaction-graph").inner_text()
+        assert "Outcome coverage" in page.locator("#cards").inner_text()
+        assert "Transaction" in page.locator("#transactions").inner_text()
+        assert "Transaction" in page.locator("#transaction-graph").inner_text()
         assert page.locator("#global-service-filter").is_visible()
         page.get_by_role("button", name="Dependencies").click()
         page.locator("#map-panel").wait_for(state="visible")
+        dependencies_filter = page.locator("#dependencies-observed-service-filter")
+        assert dependencies_filter.is_visible()
+        dependencies_filter.select_option("orders")
         assert page.locator("#map-service-filter").is_visible()
-        page.get_by_role("button", name="Transactions").click()
+        assert page.locator("#map-service-filter").input_value() == "orders"
+        page.get_by_role("button", name="Transactions", exact=True).click()
         page.locator("#details-transactions").wait_for(state="visible")
+        assert page.locator("#transactions-observed-service-filter").is_visible()
+        assert page.locator("#transactions-observed-service-filter").input_value() == "orders"
+        assert not page.locator("#details-distributed-traces").is_visible()
+        assert page.evaluate(
+            """() => Boolean(
+                document.getElementById('details-slow-transactions')
+                    .compareDocumentPosition(document.getElementById('details-transactions'))
+                & Node.DOCUMENT_POSITION_FOLLOWING
+            )"""
+        )
+        assert "Partial waterfall" in page.locator("#distributed-traces").inner_text()
         page.locator("#transaction-service-filter").select_option("orders")
-        assert "POST /checkout" in page.locator("#transaction-graph").inner_text()
-        assert "GET /products" not in page.locator("#transaction-graph").inner_text()
+        assert "orders" in page.locator("#transaction-graph").inner_text()
+        assert "catalog" not in page.locator("#transaction-graph").inner_text()
         page.get_by_role("button", name="Dependencies").click()
         page.locator("#details-flows").wait_for(state="visible")
         assert "payments" in page.locator("#flows").inner_text()
         page.locator("#service-filter").select_option("orders")
         assert "payments" in page.locator("#flows").inner_text()
         assert "mongo" not in page.locator("#flows").inner_text()
+        page.get_by_role("button", name="Timeline").click()
+        page.locator("#timeline-panel").wait_for(state="visible")
+        assert page.locator("#timeline-observed-service-filter").is_visible()
+        assert page.locator("#timeline-observed-service-filter").input_value() == "orders"
+        assert page.locator("#timeline-workload-filter").is_visible()
+        assert page.locator("#timeline-failures-only-filter").is_visible()
+        page.locator("#timeline-service-filter").select_option("orders")
+        assert "orders" in page.locator("#timeline-events").inner_text()
+        assert "catalog" not in page.locator("#timeline-events").inner_text()
+        page.locator("#timeline-failures-only-filter").check()
+        assert "No recorded transaction event matches this selection." in page.locator("#timeline-events").inner_text()
+        page.locator("#timeline-failures-only-filter").uncheck()
+        page.locator("#timeline-events .timeline-item").click()
+        page.locator("#details-distributed-traces").wait_for(state="visible")
+        assert page.get_by_role("button", name="Distributed transactions").get_attribute("class") == "runtime-tab is-active"
+        assert page.locator("#distributed-observed-service-filter").is_visible()
+        assert page.locator("#clear-timeline-waterfall-focus").is_visible()
+        assert "exact" in page.locator("#clear-timeline-waterfall-focus").inner_text()
+        assert "Partial waterfall" not in page.locator("#distributed-traces").inner_text()
+        assert "catalog" not in page.locator("#distributed-traces").inner_text()
+        page.get_by_role("button", name="Transactions", exact=True).click()
+        assert not page.locator("#details-distributed-traces").is_visible()
         assert "P95 is an approximate percentile" in page.content()
         assert not errors
         browser.close()

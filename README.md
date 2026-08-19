@@ -94,13 +94,13 @@ The report also
 records its snapshot window and whether any view was truncated, so it can be
 shared without mistaking incomplete rankings for absence. The Transactions tab
 also shows recent distributed-trace waterfalls, grouped by their HTTP source
-service or an observed Kafka producer-topic label, with nested service and
-database spans. Each card shows the cross-service route and the distributed
-transaction operations before the detailed waterfall, and can be filtered by
-origin. IDs are used only in memory to form the tree and are never
-embedded. A Timeline tab shows a bounded projection of recorded transaction
-events. It never embeds `_source`, trace IDs, request data, headers, bodies, or
-error messages. Dependency P95 is
+service or a generic messaging source, with nested service and database spans.
+Each card shows the cross-service route and safe workload labels before the
+detailed waterfall, and can be filtered by origin. IDs and arbitrary operation
+values are used only in memory to form the tree and are never embedded. A
+Timeline tab shows a bounded projection of recorded transaction events. It
+never embeds `_source`, trace IDs, request data, headers, bodies, error
+messages, results, messaging targets, or arbitrary operation values. Dependency P95 is
 deliberately not estimated, and the one-shot report has no historical baseline.
 Timeline records are limited to 500 by default (2,000 maximum). If their
 bounded query times out, the aggregate report is still written and explicitly
@@ -149,7 +149,7 @@ curl --fail --silent --show-error \
       }
     }
   }' \
-  "${SYSTEMLENS_ELASTICSEARCH_URL}/metrics-apm*/_search"
+  "${SYSTEMLENS_ELASTICSEARCH_URL}/metrics-apm.service_destination.1m-*/_search"
 ```
 
 The response contains aggregate source/destination buckets only. The CLI reads

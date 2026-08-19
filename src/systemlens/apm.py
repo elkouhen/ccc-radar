@@ -18,7 +18,9 @@ DEFAULT_MAX_BYTES = 50_000
 DEFAULT_MAX_RELATIONS = 80
 _DURATION_PATTERN = re.compile(r"^(?P<amount>[1-9][0-9]*)(?P<unit>[smhd])$")
 APM_METRIC_INDEX_PATTERNS = (
-    "metrics-apm*",
+    "metrics-apm.service_destination.1m-*",
+    "metrics-apm.service_transaction.1m-*",
+    "metrics-apm.transaction.1m-*",
     "metrics-service_destination.1m.otel-*",
     "metrics-service_transaction.1m.otel-*",
     "metrics-transaction.1m.otel-*",
@@ -315,7 +317,7 @@ def export_curl_command(
     return (
         "curl --silent --show-error --max-time 15 \\\n"
         f"{insecure_option}"
-        '  -X POST "${SYSTEMLENS_ELASTICSEARCH_URL%/}/metrics-apm*,metrics-service_destination.1m.otel-*,metrics-service_transaction.1m.otel-*,metrics-transaction.1m.otel-*/_search" \\\n'
+        '  -X POST "${SYSTEMLENS_ELASTICSEARCH_URL%/}/metrics-apm.service_destination.1m-*,metrics-apm.service_transaction.1m-*,metrics-apm.transaction.1m-*,metrics-service_destination.1m.otel-*,metrics-service_transaction.1m.otel-*,metrics-transaction.1m.otel-*/_search" \\\n'
         '  -H "Accept: application/json" \\\n'
         '  -H "Content-Type: application/json" \\\n'
         '  -H "Authorization: ApiKey ${SYSTEMLENS_ELASTICSEARCH_API_KEY}" \\\n'

@@ -82,14 +82,28 @@ def build_runtime_report(
     ) = _read_timeline_events(
         client, start, end, environment, max_timeline_events
     )
-    distributed_traces, traces_unavailable_reason = _read_distributed_traces(
-        client, start, end, environment
-    )
+    (
+        distributed_traces,
+        traces_truncated,
+        traces_truncation_reasons,
+        traces_unavailable_reason,
+    ) = _read_distributed_traces(client, start, end, environment)
+    waterfall_refs_by_trace_id: dict[str, list[str]] = {}
+    for index, trace in enumerate(distributed_traces, start=1):
+        trace_id = trace.pop("_trace_id", None)
+        waterfall_ref = f"waterfall-{index}"
+        trace["waterfall_ref"] = waterfall_ref
+        if isinstance(trace_id, str):
+            waterfall_refs_by_trace_id.setdefault(trace_id, []).append(waterfall_ref)
 
     services = _rank_latency_buckets(service_buckets, kind="service")
     transactions = _rank_latency_buckets(transaction_buckets, kind="transaction")
     distributed_transactions = {
-        (item["service"], item["transaction"], item["transaction_type"])
+        (
+            item["service"],
+            item["_transaction_identity"],
+            item["transaction_type"],
+        )
         for item in timeline_events
     }
     transactions = [
@@ -97,11 +111,19 @@ def build_runtime_report(
         for item in transactions
         if (
             item.get("service"),
-            item.get("transaction"),
+            item.get("_transaction_identity"),
             item.get("transaction_type"),
         )
         in distributed_transactions
     ]
+    for item in transactions:
+        item.pop("_transaction_identity", None)
+    for item in timeline_events:
+        item.pop("_transaction_identity", None)
+        trace_id = item.pop("_trace_id", None)
+        if isinstance(trace_id, str) and trace_id in waterfall_refs_by_trace_id:
+            item["waterfall_refs"] = waterfall_refs_by_trace_id[trace_id]
+    transactions = _group_redacted_transactions(transactions)
     dependencies = _aggregate_relations(dependency_buckets)
     dependencies.sort(
         key=lambda item: (
@@ -111,7 +133,6 @@ def build_runtime_report(
             str(item.get("target")),
         )
     )
-
     return {
         "schema_version": "apm-runtime-report-v2",
         "source": {
@@ -164,6 +185,9 @@ def build_runtime_report(
             "distributed_traces": {
                 "items_exported": len(distributed_traces),
                 "max_traces": DEFAULT_MAX_DISTRIBUTED_TRACES,
+                "max_spans_per_trace": MAX_SPANS_PER_DISTRIBUTED_TRACE,
+                "truncated": traces_truncated,
+                "truncation_reasons": traces_truncation_reasons,
                 "available": traces_unavailable_reason is None,
                 "unavailable_reason": traces_unavailable_reason,
             },
@@ -176,7 +200,7 @@ def _read_distributed_traces(
     start: datetime,
     end: datetime,
     environment: str | None,
-) -> tuple[list[dict[str, object]], str | None]:
+) -> tuple[list[dict[str, object]], bool, list[str], str | None]:
     """Return recent distributed trace waterfalls without exporting identifiers.
 
     Trace, span and parent identifiers are required briefly to rebuild the tree,
@@ -184,68 +208,107 @@ def _read_distributed_traces(
     """
     search_traces = getattr(client, "search_traces", None)
     if not callable(search_traces):
-        return [], "unsupported_client"
+        return [], False, [], "unsupported_client"
     filters: list[dict[str, object]] = [
         {"range": {"@timestamp": {"gte": _iso8601(start), "lt": _iso8601(end)}}},
     ]
     if environment:
         filters.append({"term": {"service.environment": environment}})
     try:
-        trace_ids, _ = _read_distributed_trace_ids(
+        trace_ids, candidates_truncated = _read_distributed_trace_ids(
             search_traces, filters, DEFAULT_MAX_DISTRIBUTED_TRACES
         )
+        reasons = ["max_trace_candidates"] if candidates_truncated else []
+        if len(trace_ids) > DEFAULT_MAX_DISTRIBUTED_TRACES:
+            reasons.append("max_distributed_traces")
         trace_ids = trace_ids[:DEFAULT_MAX_DISTRIBUTED_TRACES]
         if not trace_ids:
-            return [], None
+            return [], bool(reasons), reasons, None
         response = search_traces({
-            "size": DEFAULT_MAX_DISTRIBUTED_TRACES * MAX_SPANS_PER_DISTRIBUTED_TRACE,
+            "size": 0,
             "track_total_hits": False,
             "_source": False,
-            "sort": [{"@timestamp": {"order": "asc"}}],
-            "fields": [
-                "@timestamp", "trace.id", "span.id", "parent.id", "span.name",
-                "service.name", "processor.event", "transaction.name",
-                "transaction.type", "transaction.duration.us", "span.duration.us",
-                "event.outcome",
-            ],
             "query": {"bool": {"filter": [*filters, {"terms": {"trace.id": trace_ids}}]}},
+            "aggs": {
+                "traces": {
+                    "terms": {"field": "trace.id", "size": len(trace_ids)},
+                    "aggs": {
+                        "spans": {
+                            "top_hits": {
+                                "size": MAX_SPANS_PER_DISTRIBUTED_TRACE,
+                                "track_total_hits": True,
+                                "_source": False,
+                                "sort": [{"@timestamp": {"order": "asc"}}],
+                                "fields": [
+                                    "@timestamp", "span.id", "parent.id",
+                                    "span.name", "service.name", "processor.event",
+                                    "transaction.name", "transaction.type",
+                                    "transaction.duration.us", "span.duration.us",
+                                    "event.outcome",
+                                ],
+                            }
+                        }
+                    },
+                }
+            },
         })
     except ApmTimeoutError:
-        return [], "timeout"
-    hits = response.get("hits")
-    raw_hits = hits.get("hits") if isinstance(hits, dict) else None
-    if not isinstance(raw_hits, list):
-        return [], None
+        return [], False, [], "timeout"
+    aggregations = response.get("aggregations")
+    traces_aggregation = aggregations.get("traces") if isinstance(aggregations, dict) else None
+    trace_buckets = traces_aggregation.get("buckets") if isinstance(traces_aggregation, dict) else None
+    if not isinstance(trace_buckets, list):
+        return [], bool(reasons), reasons, None
     by_trace: dict[str, list[dict[str, object]]] = {}
-    for hit in raw_hits:
-        fields = hit.get("fields") if isinstance(hit, dict) else None
-        if not isinstance(fields, dict):
+    truncated_trace_ids: set[str] = set()
+    for trace_bucket in trace_buckets:
+        if not isinstance(trace_bucket, dict):
             continue
-        trace_id = _timeline_field_string(fields, "trace.id")
-        span_id = _timeline_field_string(fields, "span.id")
-        timestamp = _timeline_field_string(fields, "@timestamp")
-        service = _timeline_field_string(fields, "service.name")
-        name = _timeline_field_string(fields, "transaction.name") or _timeline_field_string(fields, "span.name")
-        if not trace_id or not span_id or not timestamp or not service or not name:
+        trace_id = trace_bucket.get("key")
+        spans = trace_bucket.get("spans")
+        hits = spans.get("hits") if isinstance(spans, dict) else None
+        raw_hits = hits.get("hits") if isinstance(hits, dict) else None
+        total = hits.get("total") if isinstance(hits, dict) else None
+        total_value = total.get("value") if isinstance(total, dict) else total
+        if isinstance(total_value, int) and total_value > MAX_SPANS_PER_DISTRIBUTED_TRACE:
+            reasons.append("max_spans_per_trace")
+            if isinstance(trace_id, str):
+                truncated_trace_ids.add(trace_id)
+        if not isinstance(trace_id, str) or not isinstance(raw_hits, list):
             continue
-        duration_us = _timeline_field_number(fields, "transaction.duration.us")
-        if duration_us is None:
-            duration_us = _timeline_field_number(fields, "span.duration.us")
-        by_trace.setdefault(trace_id, []).append({
-            "id": span_id,
-            "parent": _timeline_field_string(fields, "parent.id"),
-            "timestamp": timestamp,
-            "service": service,
-            "name": name,
-            "kind": "transaction" if _timeline_field_string(fields, "processor.event") == "transaction" else "span",
-            "transaction_type": _timeline_field_string(fields, "transaction.type"),
-            "duration_ms": round(duration_us / 1_000, 3) if duration_us is not None else None,
-            "outcome": _timeline_field_string(fields, "event.outcome"),
-        })
+        for hit in raw_hits:
+            fields = hit.get("fields") if isinstance(hit, dict) else None
+            if not isinstance(fields, dict):
+                continue
+            span_id = _timeline_field_string(fields, "span.id")
+            timestamp = _timeline_field_string(fields, "@timestamp")
+            service = _timeline_field_string(fields, "service.name")
+            name = (
+                _timeline_field_string(fields, "transaction.name")
+                or _timeline_field_string(fields, "span.name")
+            )
+            if not span_id or not timestamp or not service or name is None:
+                continue
+            duration_us = _timeline_field_number(fields, "transaction.duration.us")
+            if duration_us is None:
+                duration_us = _timeline_field_number(fields, "span.duration.us")
+            by_trace.setdefault(trace_id, []).append({
+                "id": span_id,
+                "parent": _timeline_field_string(fields, "parent.id"),
+                "timestamp": timestamp,
+                "service": service,
+                "name": name,
+                "kind": "transaction" if _timeline_field_string(fields, "processor.event") == "transaction" else "span",
+                "transaction_type": _timeline_field_string(fields, "transaction.type"),
+                "duration_ms": round(duration_us / 1_000, 3) if duration_us is not None else None,
+                "outcome": _timeline_field_string(fields, "event.outcome"),
+            })
     traces: list[dict[str, object]] = []
-    for raw_trace in by_trace.values():
+    for trace_id, raw_trace in by_trace.items():
         trace = _project_distributed_trace(raw_trace)
         if trace is not None:
+            trace["_trace_id"] = trace_id
+            trace["truncated"] = trace_id in truncated_trace_ids
             traces.append(trace)
     return sorted(
         traces,
@@ -254,7 +317,7 @@ def _read_distributed_traces(
             str(item["source"]).lower(),
             str(item["timestamp"]),
         ),
-    ), None
+    ), bool(reasons), list(dict.fromkeys(reasons)), None
 
 
 def _project_distributed_trace(
@@ -286,18 +349,26 @@ def _project_distributed_trace(
         if item.get("kind") != "transaction" or item.get("transaction_type") != "messaging":
             continue
         parent = by_id.get(str(item.get("parent")))
-        match = re.match(r"^(.+) publish$", str(parent.get("name")) if parent else "")
+        match = re.match(r"^.+ publish$", str(parent.get("name")) if parent else "")
         if match:
-            source_kind, source = "topic", match.group(1)
+            source_kind, source = "topic", "Messaging topic"
             break
     if source_kind == "service" and str(root.get("transaction_type") or "").lower() in {"request", "http"}:
         source_kind = "http_service"
     start_ms = _iso_timestamp_milliseconds(str(root["timestamp"]))
     spans: list[dict[str, object]] = []
-    for item in ordered[:MAX_SPANS_PER_DISTRIBUTED_TRACE]:
+    for item in ordered:
         timestamp_ms = _iso_timestamp_milliseconds(str(item["timestamp"]))
         spans.append({
-            "service": item["service"], "name": item["name"], "kind": item["kind"],
+            "service": item["service"],
+            "name": _safe_operation_label(
+                str(item["name"]),
+                str(item["kind"]),
+                item["transaction_type"]
+                if isinstance(item["transaction_type"], str)
+                else None,
+            ),
+            "kind": item["kind"],
             "transaction_type": item["transaction_type"], "outcome": item["outcome"],
             "depth": depth(item),
             "offset_ms": round(max(0, timestamp_ms - start_ms), 3),
@@ -312,13 +383,21 @@ def _project_distributed_trace(
         )
     services = list(dict.fromkeys(str(item["service"]) for item in ordered))
     operations = [
-        f"{item['service']} · {item['name']}"
+        f"{item['service']} · {_safe_operation_label(str(item['name']), 'transaction', item['transaction_type'] if isinstance(item['transaction_type'], str) else None)}"
         for item in ordered
         if item.get("kind") == "transaction"
     ]
     return {
         "source_kind": source_kind, "source": source, "timestamp": root["timestamp"],
-        "service": root["service"], "name": root["name"], "duration_ms": duration,
+        "service": root["service"],
+        "name": _safe_operation_label(
+            str(root["name"]),
+            "transaction",
+            root["transaction_type"]
+            if isinstance(root["transaction_type"], str)
+            else None,
+        ),
+        "duration_ms": duration,
         "outcome": root["outcome"], "route": services,
         "distributed_operations": list(dict.fromkeys(operations)), "spans": spans,
     }
@@ -371,9 +450,8 @@ def _read_timeline_events(
             "_source": False,
             "sort": [{"@timestamp": {"order": "asc"}}],
             "fields": [
-                "@timestamp", "service.name", "transaction.name", "transaction.type",
-                "transaction.duration.us", "transaction.result", "event.outcome",
-                "transaction.message.queue.name",
+                "@timestamp", "trace.id", "service.name", "transaction.name", "transaction.type",
+                "transaction.duration.us", "event.outcome",
             ],
             "query": {"bool": {"filter": transaction_filters}},
         })
@@ -392,22 +470,26 @@ def _read_timeline_events(
         fields = hit["fields"]
         timestamp = _timeline_field_string(fields, "@timestamp")
         service = _timeline_field_string(fields, "service.name")
-        transaction = _timeline_field_string(fields, "transaction.name")
-        if not timestamp or not service or not transaction:
+        transaction = _safe_operation_label(
+            _timeline_field_string(fields, "transaction.name"),
+            "transaction",
+            _timeline_field_string(fields, "transaction.type"),
+        )
+        if not timestamp or not service or transaction is None:
             continue
         duration = _timeline_field_number(fields, "transaction.duration.us")
         event: dict[str, object] = {
             "timestamp": timestamp,
             "service": service,
             "transaction": transaction,
+            "_transaction_identity": _timeline_field_string(
+                fields, "transaction.name"
+            ),
+            "_trace_id": _timeline_field_string(fields, "trace.id"),
             "transaction_type": _timeline_field_string(fields, "transaction.type"),
             "duration_ms": round(duration / 1_000, 3) if duration is not None else None,
-            "result": _timeline_field_string(fields, "transaction.result"),
             "outcome": _timeline_field_string(fields, "event.outcome"),
         }
-        queue = _timeline_field_string(fields, "transaction.message.queue.name")
-        if queue:
-            event["messaging_target"] = queue
         events.append(event)
     reasons = ["max_trace_candidates"] if candidates_truncated else []
     if len(raw_hits) >= max_events:
@@ -478,6 +560,21 @@ def _timeline_field_number(fields: dict[str, object], name: str) -> float | None
     return float(value) if isinstance(value, (int, float)) else None
 
 
+def _safe_operation_label(
+    value: str | None, processor_event: str | None, transaction_type: str | None
+) -> str | None:
+    """Replace instrumentation-controlled operation values before export."""
+    if value is None:
+        return None
+    if processor_event == "span":
+        return "Span"
+    if str(transaction_type).lower() in {"request", "http"}:
+        return "HTTP transaction"
+    if str(transaction_type).lower() == "messaging":
+        return "Messaging transaction"
+    return "Transaction"
+
+
 def _latency_query(
     kind: str, start: datetime, end: datetime, environment: str | None
 ) -> Callable[[int, dict[str, object] | None], dict[str, object]]:
@@ -542,15 +639,11 @@ def _latency_query(
                                 "percents": [95],
                             }
                         },
-                        "failures": {
-                            "filter": {"term": {"event.outcome": "failure"}},
-                            "aggs": {
-                                "calls": {
-                                    "value_count": {
-                                        "field": "transaction.duration.summary"
-                                    }
-                                }
-                            },
+                        "outcome_calls": {
+                            "value_count": {"field": "event.success_count"}
+                        },
+                        "success_calls": {
+                            "sum": {"field": "event.success_count"}
                         },
                     },
                 }
@@ -602,12 +695,16 @@ def _rank_latency_buckets(
             continue
         calls = round(_metric_value(bucket, "calls"))
         duration_us = _metric_value(bucket, "duration_us")
-        failures = _nested_metric_value(bucket, "failures", "calls")
+        outcome_calls = round(_metric_value(bucket, "outcome_calls"))
+        success_calls = round(_metric_value(bucket, "success_calls"))
+        failures = max(0, outcome_calls - success_calls)
         item: dict[str, object] = {
             "service": service,
             "calls": calls,
             "failure_calls": round(failures),
-            "error_rate": round(failures / calls, 6) if calls else None,
+            "outcome_calls": outcome_calls,
+            "error_rate": round(failures / outcome_calls, 6) if outcome_calls else None,
+            "outcome_coverage": round(outcome_calls / calls, 6) if calls else None,
             "average_ms": round(duration_us / calls / 1_000, 3) if calls else None,
             "p95_ms": _percentile_ms(bucket),
         }
@@ -615,8 +712,11 @@ def _rank_latency_buckets(
             name = key.get("transaction")
             if not isinstance(name, str) or not name:
                 continue
-            item["transaction"] = name
             transaction_type = key.get("transaction_type")
+            item["_transaction_identity"] = name
+            item["transaction"] = _safe_operation_label(
+                name, "transaction", transaction_type if isinstance(transaction_type, str) else None
+            )
             if isinstance(transaction_type, str):
                 item["transaction_type"] = transaction_type
         result.append(item)
@@ -628,6 +728,69 @@ def _rank_latency_buckets(
             -_as_number(item.get("calls")),
             str(item["service"]),
             str(item.get("transaction", "")),
+        ),
+    )
+
+
+def _group_redacted_transactions(
+    transactions: list[dict[str, object]],
+) -> list[dict[str, object]]:
+    """Merge raw operation buckets after their safe labels have been assigned."""
+    grouped: dict[tuple[str, str, str | None], list[dict[str, object]]] = {}
+    for item in transactions:
+        service = item.get("service")
+        transaction = item.get("transaction")
+        transaction_type = item.get("transaction_type")
+        if not isinstance(service, str) or not isinstance(transaction, str):
+            continue
+        key = (
+            service,
+            transaction,
+            transaction_type if isinstance(transaction_type, str) else None,
+        )
+        grouped.setdefault(key, []).append(item)
+    result: list[dict[str, object]] = []
+    for (service, transaction, transaction_type), items in grouped.items():
+        calls = sum(round(_as_number(item.get("calls"))) for item in items)
+        failures = sum(round(_as_number(item.get("failure_calls"))) for item in items)
+        outcome_calls = sum(
+            round(_as_number(item.get("outcome_calls"))) for item in items
+        )
+        duration_us = sum(
+            _as_number(item.get("average_ms")) * _as_number(item.get("calls")) * 1_000
+            for item in items
+        )
+        p95_values = [
+            value
+            for candidate in items
+            if isinstance((value := candidate.get("p95_ms")), (int, float))
+        ]
+        grouped_item: dict[str, object] = {
+            "service": service,
+            "transaction": transaction,
+            "calls": calls,
+            "failure_calls": failures,
+            "outcome_calls": outcome_calls,
+            "error_rate": round(failures / outcome_calls, 6)
+            if outcome_calls
+            else None,
+            "outcome_coverage": round(outcome_calls / calls, 6) if calls else None,
+            "average_ms": round(duration_us / calls / 1_000, 3) if calls else None,
+            "p95_ms": max(p95_values) if p95_values else None,
+            "p95_scope": "max_operation_p95",
+            "operation_count": len(items),
+        }
+        if transaction_type is not None:
+            grouped_item["transaction_type"] = transaction_type
+        result.append(grouped_item)
+    return sorted(
+        result,
+        key=lambda item: (
+            -_as_number(item.get("p95_ms")),
+            -_as_number(item.get("error_rate")),
+            -_as_number(item.get("calls")),
+            str(item["service"]),
+            str(item["transaction"]),
         ),
     )
 
@@ -676,7 +839,9 @@ def _view_coverage(
 
 def render_runtime_report_html(report: dict[str, object]) -> str:
     """Render an aggregate-only runtime report with the shared Sigma.js view."""
-    data = json.dumps(report, ensure_ascii=False, separators=(",", ":")).replace(
+    data = json.dumps(
+        _redact_report_operations(report), ensure_ascii=False, separators=(",", ":")
+    ).replace(
         "</", "<\\/"
     )
     title = escape("SystemLens · APM runtime overview")
@@ -686,17 +851,79 @@ def render_runtime_report_html(report: dict[str, object]) -> str:
     return document.replace("</body>", _RUNTIME_REPORT_ENHANCEMENTS + "</body>")
 
 
+def _redact_report_operations(report: dict[str, object]) -> dict[str, object]:
+    """Defend the HTML boundary from telemetry-controlled operation values."""
+    projection = json.loads(json.dumps(report))
+    transactions = projection.get("transactions")
+    if isinstance(transactions, list):
+        for item in transactions:
+            if isinstance(item, dict):
+                item["transaction"] = _safe_operation_label(
+                    item.get("transaction") if isinstance(item.get("transaction"), str) else None,
+                    "transaction",
+                    item.get("transaction_type")
+                    if isinstance(item.get("transaction_type"), str)
+                    else None,
+                )
+    timeline_events = projection.get("timeline_events")
+    if isinstance(timeline_events, list):
+        for event in timeline_events:
+            if isinstance(event, dict):
+                event["transaction"] = _safe_operation_label(
+                    event.get("transaction")
+                    if isinstance(event.get("transaction"), str)
+                    else None,
+                    "transaction",
+                    event.get("transaction_type")
+                    if isinstance(event.get("transaction_type"), str)
+                    else None,
+                )
+                event.pop("result", None)
+                event.pop("messaging_target", None)
+                event.pop("_trace_id", None)
+    traces = projection.get("distributed_traces")
+    if isinstance(traces, list):
+        for trace in traces:
+            if not isinstance(trace, dict):
+                continue
+            trace.pop("_trace_id", None)
+            trace["name"] = _safe_operation_label(
+                trace.get("name") if isinstance(trace.get("name"), str) else None,
+                "transaction",
+                trace.get("transaction_type")
+                if isinstance(trace.get("transaction_type"), str)
+                else None,
+            )
+            if trace.get("source_kind") == "topic":
+                trace["source"] = "Messaging topic"
+            trace["distributed_operations"] = ["Distributed transaction"]
+            spans = trace.get("spans")
+            if isinstance(spans, list):
+                for span in spans:
+                    if isinstance(span, dict):
+                        span["name"] = _safe_operation_label(
+                            span.get("name") if isinstance(span.get("name"), str) else None,
+                            span.get("kind") if isinstance(span.get("kind"), str) else None,
+                            span.get("transaction_type")
+                            if isinstance(span.get("transaction_type"), str)
+                            else None,
+                        )
+    return projection
+
+
 _RUNTIME_REPORT_ENHANCEMENTS = """<style>
 .distributed-trace-group { margin:0 0 18px; } .distributed-trace-group h3 { margin:0 0 8px; font-size:13px; color:#243e99; }
 .distributed-trace { border:1px solid #dbe3ef; border-radius:10px; margin:8px 0; overflow:auto; } .distributed-trace header { min-width:760px; display:flex; justify-content:space-between; gap:14px; padding:10px 12px; border-bottom:1px solid #edf0f5; }
 .trace-identity { display:flex; flex-wrap:wrap; gap:6px; margin-top:5px; } .trace-identity span { border-radius:999px; background:#eef3ff; color:#243e99; padding:2px 7px; font-size:12px; }
-.trace-waterfall { min-width:760px; padding:8px 12px; } .trace-span { display:grid; grid-template-columns: minmax(260px,.8fr) minmax(280px,1.2fr) 80px; align-items:center; gap:10px; min-height:28px; }
+.trace-waterfall { min-width:760px; padding:8px 12px; } .trace-span { display:grid; grid-template-columns: minmax(260px,.8fr) minmax(280px,1.2fr) 80px; align-items:center; gap:10px; min-height:28px; } .timeline-item.is-waterfall-link { cursor:pointer; }
 .trace-span-name { padding-left:calc(var(--depth) * 14px); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; } .trace-track { position:relative; height:15px; border-left:1px solid #dce3ee; background:repeating-linear-gradient(90deg,#f7f9fc 0,#f7f9fc calc(25% - 1px),#e7edf6 calc(25% - 1px),#e7edf6 25%); }
 .trace-bar { position:absolute; top:2px; height:11px; min-width:2px; border-radius:3px; background:#7c92c9; } .trace-bar.is-transaction { background:#11b9b4; } .trace-span small { color:#5f6b82; font-variant-numeric:tabular-nums; text-align:right; }
 </style><script>
 (() => {
   const data = JSON.parse(document.getElementById('runtime-data').textContent);
   const byId = id => document.getElementById(id);
+  const sharedServiceFilters = [...document.querySelectorAll('.tab-service-filter')];
+  const sharedService = () => byId('global-service-filter').value;
   const number = value => typeof value === 'number' ? value : 0;
   const esc = value => String(value ?? '—').replace(/[&<>"']/g, character => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[character]));
   const formatMs = value => typeof value === 'number' ? `${value.toLocaleString(undefined,{maximumFractionDigits:3})} ms` : '—';
@@ -713,15 +940,17 @@ _RUNTIME_REPORT_ENHANCEMENTS = """<style>
     const transactions = view === 'details';
     const dependencies = view === 'map';
     const timeline = view === 'timeline';
+    const distributed = view === 'distributed';
     byId('services-panel').hidden = !services;
     document.querySelectorAll('.service-panel').forEach(panel => { panel.hidden = !services; });
     document.querySelectorAll('.transaction-panel').forEach(panel => { panel.hidden = !transactions; });
     document.querySelectorAll('.dependency-panel').forEach(panel => { panel.hidden = !dependencies; });
+    document.querySelectorAll('.distributed-panel').forEach(panel => { panel.hidden = !distributed; });
     byId('timeline-panel').hidden = !timeline;
     byId('coverage').hidden = !services;
-    ['overview', 'map', 'details', 'timeline'].forEach(name => byId(`${name}-tab`).classList.toggle('is-active', name === view));
+    ['overview', 'map', 'details', 'distributed', 'timeline'].forEach(name => byId(`${name}-tab`).classList.toggle('is-active', name === view));
   }
-  ['overview', 'map', 'details', 'timeline'].forEach(name => byId(`${name}-tab`).addEventListener('click', () => selectView(name)));
+  ['overview', 'map', 'details', 'distributed', 'timeline'].forEach(name => byId(`${name}-tab`).addEventListener('click', () => selectView(name)));
   function renderTimelineTriage() {
     const timelineCoverage = (data.coverage && data.coverage.timeline) || {};
     if (timelineCoverage.available === false) {
@@ -729,9 +958,9 @@ _RUNTIME_REPORT_ENHANCEMENTS = """<style>
       byId('timeline-events').innerHTML = '<p class="empty">Recorded transaction timeline is unavailable because its bounded query timed out. Aggregate views are still available.</p>';
       return;
     }
-    const service = byId('global-service-filter').value;
-    const kind = byId('global-workload-filter').value;
-    const failuresOnly = byId('failures-only-filter').checked;
+    const service = byId('timeline-service-filter').value;
+    const kind = byId('timeline-workload-filter').value;
+    const failuresOnly = byId('timeline-failures-only-filter').checked;
     const events = (Array.isArray(data.timeline_events) ? data.timeline_events : []).filter(event =>
       (!service || event.service === service) &&
       (!kind || workload(event) === kind) &&
@@ -741,23 +970,149 @@ _RUNTIME_REPORT_ENHANCEMENTS = """<style>
     events.forEach(event => { const duration = number(event.duration_ms); buckets[duration < 100 ? 0 : duration < 500 ? 1 : 2][1] += 1; });
     summary.innerHTML = buckets.map(([label, count]) => `<div class="timeline-bucket"><b>${count.toLocaleString()}</b>${label}</div>`).join('');
     byId('timeline-events').innerHTML = events.length ? events.map(event => `<article class="timeline-item ${event.outcome === 'failure' ? 'is-failure' : ''}"><time>${esc(event.timestamp)}</time><div><div class="timeline-name">${esc(event.service)} · ${esc(event.transaction)}</div><div class="subtle">${esc(event.transaction_type || 'other')}${event.messaging_target ? ` · ${esc(event.messaging_target)}` : ''}${event.result ? ` · ${esc(event.result)}` : ''}</div></div><strong>${formatMs(event.duration_ms)}</strong></article>`).join('') : '<p class="empty">No recorded transaction event matches this selection.</p>';
+    const aggregateCalls = (Array.isArray(data.services) ? data.services : []).reduce((total, item) => total + number(item.calls), 0);
+    const waterfallCount = Array.isArray(data.distributed_traces) ? data.distributed_traces.length : 0;
+    byId('timeline-coverage').textContent = `Showing ${events.length.toLocaleString()} recorded cross-service event${events.length === 1 ? '' : 's'} from ${aggregateCalls.toLocaleString()} aggregate calls and ${waterfallCount.toLocaleString()} waterfall exemplar${waterfallCount === 1 ? '' : 's'}${timelineCoverage.truncated ? ' (Timeline result limit reached)' : ''}.`;
   }
-  ['global-service-filter', 'global-workload-filter', 'failures-only-filter', 'timeline-service-filter'].forEach(id => byId(id).addEventListener('change', renderTimelineTriage));
+  byId('timeline-workload-filter').innerHTML = '<option value="">All workloads</option><option value="HTTP">HTTP</option><option value="Messaging">Messaging</option><option value="Other">Other</option>';
+  ['timeline-service-filter', 'timeline-workload-filter', 'timeline-failures-only-filter'].forEach(id => byId(id).addEventListener('change', renderTimelineTriage));
   renderTimelineTriage();
   const sourceLabel = trace => trace.source_kind === 'topic' ? `Kafka topic · ${trace.source}` : trace.source_kind === 'http_service' ? `HTTP service · ${trace.source}` : `Source service · ${trace.source}`;
   const distributedSourceFilter = byId('distributed-trace-source-filter');
+  let timelineWaterfallRefs = new Set();
+  const clearTimelineWaterfallFocus = document.createElement('button');
+  clearTimelineWaterfallFocus.id = 'clear-timeline-waterfall-focus';
+  clearTimelineWaterfallFocus.type = 'button';
+  clearTimelineWaterfallFocus.hidden = true;
+  clearTimelineWaterfallFocus.textContent = 'Clear Timeline waterfall filter';
+  distributedSourceFilter.closest('.panel-head').append(clearTimelineWaterfallFocus);
+  function visibleDistributedTraces() {
+    const allTraces = Array.isArray(data.distributed_traces) ? data.distributed_traces : [];
+    return allTraces.filter(trace =>
+      (!distributedSourceFilter.value || `${trace.source_kind}:${trace.source}` === distributedSourceFilter.value) &&
+      (!sharedService() || trace.service === sharedService() || (trace.route || []).includes(sharedService())) &&
+      (!timelineWaterfallRefs.size || timelineWaterfallRefs.has(trace.waterfall_ref))
+    );
+  }
   function renderDistributedTraces() {
     const container = byId('distributed-traces');
     const allTraces = Array.isArray(data.distributed_traces) ? data.distributed_traces : [];
     if (!distributedSourceFilter.options.length) { const sourceOptions = [...new Map(allTraces.map(trace => [`${trace.source_kind}:${trace.source}`, sourceLabel(trace)])).entries()]; distributedSourceFilter.innerHTML = `<option value="">All origins</option>${sourceOptions.map(([value,label]) => `<option value="${esc(value)}">${esc(label)}</option>`).join('')}`; }
-    const traces = allTraces.filter(trace => !distributedSourceFilter.value || `${trace.source_kind}:${trace.source}` === distributedSourceFilter.value);
+    const traces = visibleDistributedTraces();
     if (!traces.length) { container.innerHTML = '<p class="empty">No distributed trace was observed in this window.</p>'; return; }
     const groups = new Map();
     traces.forEach(trace => { const key = `${trace.source_kind}:${trace.source}`; if (!groups.has(key)) groups.set(key, []); groups.get(key).push(trace); });
     container.innerHTML = [...groups.entries()].map(([,items]) => `<section class="distributed-trace-group"><h3>${esc(sourceLabel(items[0]))}</h3>${items.map(trace => { const total = Math.max(1, number(trace.duration_ms), ...trace.spans.map(span => number(span.offset_ms) + number(span.duration_ms))); const operations = (trace.distributed_operations || []).join(' → '); const route = (trace.route || []).join(' → '); return `<article class="distributed-trace"><header><div><b>${esc(trace.service)} · ${esc(trace.name)}</b><div class="trace-identity"><span>${esc(route)}</span><span>${esc(operations)}</span></div><div class="subtle">${esc(trace.timestamp)} · ${trace.spans.length} spans</div></div><strong>${formatMs(trace.duration_ms)}</strong></header><div class="trace-waterfall">${trace.spans.map(span => { const left = Math.min(100, 100 * number(span.offset_ms) / total); const width = Math.max(1, Math.min(100 - left, 100 * Math.max(number(span.duration_ms), 1) / total)); return `<div class="trace-span" style="--depth:${number(span.depth)}"><span class="trace-span-name">${esc(span.service)} · ${esc(span.name)}</span><span class="trace-track"><i class="trace-bar ${span.kind === 'transaction' ? 'is-transaction' : ''}" style="left:${left}%;width:${width}%"></i></span><small>${formatMs(span.duration_ms)}</small></div>`; }).join('')}</div></article>`; }).join('')}</section>`).join('');
   }
   distributedSourceFilter.addEventListener('change', renderDistributedTraces);
+  clearTimelineWaterfallFocus.addEventListener('click', () => {
+    timelineWaterfallRefs = new Set();
+    clearTimelineWaterfallFocus.hidden = true;
+    renderDistributedTraces();
+  });
   renderDistributedTraces();
+  function renderOutcomeSummary() {
+    const services = Array.isArray(data.services) ? data.services : [];
+    const calls = services.reduce((sum, item) => sum + number(item.calls), 0);
+    const outcomes = services.reduce((sum, item) => sum + number(item.outcome_calls), 0);
+    const failures = services.reduce((sum, item) => sum + number(item.failure_calls), 0);
+    const failureRate = outcomes ? failures / outcomes : null;
+    const outcomeCoverage = calls ? outcomes / calls : null;
+    byId('cards').innerHTML = [
+      ['Observed services', services.length.toLocaleString()],
+      ['Observed calls', calls.toLocaleString()],
+      ['Failure rate (known outcomes)', typeof failureRate === 'number' ? `${(failureRate * 100).toFixed(1)}%` : '—'],
+      ['Outcome coverage', typeof outcomeCoverage === 'number' ? `${(outcomeCoverage * 100).toFixed(1)}%` : '—'],
+      ['Observed dependencies', (Array.isArray(data.dependencies) ? data.dependencies.length : 0).toLocaleString()],
+    ].map(([label, value]) => `<article class="card"><span class="subtle">${label}</span><b>${value}</b></article>`).join('');
+  }
+  function renderTraceCoverage() {
+    const coverage = (data.coverage && data.coverage.distributed_traces) || {};
+    const status = byId('report-status');
+    if (coverage.truncated && !status.querySelector('[data-distributed-trace-coverage]')) {
+      status.insertAdjacentHTML('beforeend', `<span class="status status-limited" data-distributed-trace-coverage>Limited distributed-trace coverage: ${esc((coverage.truncation_reasons || []).join(', '))}. Waterfalls may be partial.</span>`);
+    }
+    const coverageNote = byId('coverage');
+    if (coverageNote && !coverageNote.dataset.distributedTraceCoverage) {
+      coverageNote.textContent += ` · Distributed traces: ${number(coverage.items_exported)}/${number(coverage.max_traces)}${coverage.truncated ? ` (truncated: ${(coverage.truncation_reasons || []).join(', ')})` : ''}.`;
+      coverageNote.dataset.distributedTraceCoverage = 'true';
+    }
+    const visible = visibleDistributedTraces();
+    document.querySelectorAll('.distributed-trace').forEach((card, index) => {
+      if (visible[index] && visible[index].truncated) {
+        const detail = card.querySelector('.subtle');
+        if (detail) detail.textContent += ' · Partial waterfall';
+      }
+    });
+  }
+  function labelTransactionP95() {
+    document.querySelectorAll('#transactions th').forEach(header => {
+      if (header.textContent === 'P95') header.textContent = 'Highest operation P95';
+    });
+    document.querySelectorAll('#transaction-graph .transaction-metrics').forEach(metric => {
+      metric.innerHTML = metric.innerHTML.replace('P95 ', 'Highest operation P95 ');
+    });
+  }
+  function openTimelineWaterfalls(refs) {
+    timelineWaterfallRefs = new Set(refs);
+    clearTimelineWaterfallFocus.textContent = `Clear exact Timeline waterfall filter (${refs.length})`;
+    clearTimelineWaterfallFocus.hidden = false;
+    selectView('distributed');
+    renderDistributedTraces();
+    renderTraceCoverage();
+    byId('details-distributed-traces').scrollIntoView({block:'start'});
+  }
+  function decorateTimelineEvents() {
+    const selectedService = byId('timeline-service-filter').value;
+    const selectedWorkload = byId('timeline-workload-filter').value;
+    const failuresOnly = byId('timeline-failures-only-filter').checked;
+    const visibleEvents = (Array.isArray(data.timeline_events) ? data.timeline_events : []).filter(event =>
+      (!selectedService || event.service === selectedService) &&
+      (!selectedWorkload || workload(event) === selectedWorkload) &&
+      (!failuresOnly || event.outcome === 'failure')
+    );
+    byId('timeline-events').querySelectorAll('.timeline-item').forEach((event, index) => {
+      const refs = visibleEvents[index] && Array.isArray(visibleEvents[index].waterfall_refs) ? visibleEvents[index].waterfall_refs : [];
+      if (!refs.length) return;
+      event.classList.add('is-waterfall-link');
+      event.tabIndex = 0;
+      event.setAttribute('role', 'button');
+      event.setAttribute('aria-label', `Show the ${refs.length} matching distributed waterfall${refs.length === 1 ? '' : 's'}`);
+      event.dataset.waterfallRefs = refs.join(',');
+    });
+  }
+  byId('timeline-events').addEventListener('click', event => {
+    const target = event.target.closest('.timeline-item');
+    if (target && target.dataset.waterfallRefs) openTimelineWaterfalls(target.dataset.waterfallRefs.split(','));
+  });
+  byId('timeline-events').addEventListener('keydown', event => {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    const target = event.target.closest('.timeline-item');
+    if (!target || !target.dataset.waterfallRefs) return;
+    event.preventDefault();
+    openTimelineWaterfalls(target.dataset.waterfallRefs.split(','));
+  });
+  ['timeline-service-filter', 'timeline-workload-filter', 'timeline-failures-only-filter'].forEach(id => byId(id).addEventListener('change', decorateTimelineEvents));
+  decorateTimelineEvents();
+  renderOutcomeSummary();
+  renderTraceCoverage();
+  labelTransactionP95();
+  distributedSourceFilter.addEventListener('change', renderTraceCoverage);
+  ['transaction-service-filter', 'transaction-kind-filter'].forEach(id => byId(id).addEventListener('change', labelTransactionP95));
+  sharedServiceFilters.forEach(filter => {
+    filter.innerHTML = byId('global-service-filter').innerHTML;
+    filter.value = sharedService();
+    if (filter === byId('global-service-filter')) return;
+    filter.addEventListener('change', () => {
+      byId('global-service-filter').value = filter.value;
+      byId('global-service-filter').dispatchEvent(new Event('change'));
+    });
+  });
+  byId('global-service-filter').addEventListener('change', () => {
+    sharedServiceFilters.forEach(filter => { filter.value = sharedService(); });
+    renderDistributedTraces();
+    renderTraceCoverage();
+  });
 })();
 </script>"""
 
@@ -777,17 +1132,20 @@ main { max-width:1440px; margin:auto; padding:24px; } h1,h2 { margin:0; } h1 { f
 #map-panel[hidden] { display:grid !important; position:absolute; left:-100000px; width:calc(100vw - 48px); visibility:hidden; }
 </style></head><body><main>
 <header><h1>APM runtime overview</h1><p class="subtle">Bounded aggregates plus a minimal recorded-transaction projection. No event source, IDs, headers, bodies, traces, or error messages are included.</p><div id="context" class="context"></div><div id="report-status" class="report-status"></div></header>
-<nav class="runtime-tabs" aria-label="Runtime report views"><button id="overview-tab" class="runtime-tab is-active" type="button">Services</button><button id="details-tab" class="runtime-tab" type="button">Transactions</button><button id="map-tab" class="runtime-tab" type="button">Dependencies</button><button id="timeline-tab" class="runtime-tab" type="button">Timeline</button></nav>
+<nav class="runtime-tabs" aria-label="Runtime report views"><button id="overview-tab" class="runtime-tab is-active" type="button">Services</button><button id="details-tab" class="runtime-tab" type="button">Transactions</button><button id="distributed-tab" class="runtime-tab" type="button">Distributed transactions</button><button id="map-tab" class="runtime-tab" type="button">Dependencies</button><button id="timeline-tab" class="runtime-tab" type="button">Timeline</button></nav>
 <section id="services-panel"><section id="cards" class="cards" aria-label="Runtime summary"></section><div id="overview-layout"><aside class="overview-sidebar">
 <section id="triage" class="panel triage"><div class="panel-head"><div><h2>Investigation priorities</h2><p class="subtle">Impact combines observed volume, error rate, and tail latency; it is a triage aid, not an SLO verdict.</p></div></div><div id="triage-items" class="triage-items"></div></section>
-<section class="panel filter-bar"><label>Service <select id="global-service-filter" aria-label="Filter service view"></select></label><select id="global-workload-filter" hidden></select><input id="failures-only-filter" type="checkbox" hidden><button id="clear-filters" type="button" hidden>Clear filters</button></section>
+<section class="panel filter-bar"><label>Observed service <select id="global-service-filter" class="tab-service-filter" aria-label="Filter Services by observed service"></select></label><select id="global-workload-filter" hidden></select><input id="failures-only-filter" type="checkbox" hidden><button id="clear-filters" type="button" hidden>Clear filters</button></section>
 </aside></div></section><section id="map-panel" class="panel map-panel dependency-panel" hidden><div class="panel-head"><div><h2>Runtime service map</h2><p class="subtle">Directed edges are observed dependencies. Select a service to inspect aggregate workload details; this does not assert a transaction-to-dependency call.</p></div><div><label>View <select id="map-mode" aria-label="Filter service map"></select></label> <label>Service <select id="map-service-filter" aria-label="Focus service map"></select></label> <label>Workload <select id="map-workload-filter" aria-label="Filter workload details"></select></label></div></div><div id="service-map" class="service-map"></div><div id="service-map-details" class="service-map-details"></div></section>
 <section id="details-hotspots" class="panel service-panel" hidden><div class="panel-head"><h2>Service hotspots</h2><span class="subtle">Ranked by P95, then error rate and volume</span></div><div id="services"></div></section>
-<section id="timeline-panel" class="panel" hidden><div class="panel-head"><div><h2>Recorded transaction timeline</h2><p class="subtle">Bounded field projection from recorded transaction events; no event source, IDs, headers, bodies, traces, or error messages.</p></div><label>Service <select id="timeline-service-filter" aria-label="Filter timeline by service"></select></label></div><div id="timeline-events" class="timeline"></div><p id="timeline-coverage" class="note"></p></section>
-<section id="details-distributed-traces" class="panel transaction-panel detail-panel" hidden><div class="panel-head"><div><h2>Distributed transactions</h2><p class="subtle">Recent multi-service traces, grouped by HTTP source service or inferred Kafka source topic. Identifiers are not included in this export.</p></div><label>Origin <select id="distributed-trace-source-filter" aria-label="Filter distributed traces by origin"></select></label></div><div id="distributed-traces"></div></section>
-<section id="details-transactions" class="panel transaction-panel detail-panel" hidden><div class="panel-head"><div><h2>Transaction graph</h2><p class="subtle">Transactions remain owned by their service; no transaction-to-dependency call is asserted.</p></div><div><label>Service <select id="transaction-service-filter" aria-label="Filter transaction graph by service"></select></label> <label>Type <select id="transaction-kind-filter" aria-label="Filter transaction graph by type"></select></label></div></div><div id="transaction-graph" class="transaction-graph"></div></section>
-<section id="details-flows" class="panel dependency-panel" hidden><div class="panel-head"><h2>Focused dependency flow</h2><label>Service <select id="service-filter" aria-label="Filter dependency flow by service"></select></label></div><div id="flows" class="flow"></div></section>
+<section id="timeline-panel" class="panel" hidden><div class="filter-bar"><label>Observed service <select id="timeline-observed-service-filter" class="tab-service-filter" aria-label="Filter Timeline by observed service"></select></label></div><div class="panel-head"><div><h2>Recorded transaction timeline</h2><p class="subtle">Bounded examples of cross-service transactions; aggregate call counts remain in Services and Transactions.</p></div><div><label>Service <select id="timeline-service-filter" aria-label="Filter timeline by service"></select></label> <label>Workload <select id="timeline-workload-filter" aria-label="Filter timeline by workload"></select></label> <label><input id="timeline-failures-only-filter" type="checkbox"> Failures only</label></div></div><div id="timeline-events" class="timeline"></div><p id="timeline-coverage" class="note"></p></section>
+<section class="panel filter-bar transaction-panel detail-panel" hidden><label>Observed service <select id="transactions-observed-service-filter" class="tab-service-filter" aria-label="Filter Transactions by observed service"></select></label></section>
 <section id="details-slow-transactions" class="panel transaction-panel detail-panel" hidden><div class="panel-head"><h2>Slow transactions</h2><span class="subtle">P95 is an approximate percentile from APM histogram metrics</span></div><div id="transactions"></div></section>
+<section id="details-transactions" class="panel transaction-panel detail-panel" hidden><div class="panel-head"><div><h2>Transaction graph</h2><p class="subtle">Transactions remain owned by their service; no transaction-to-dependency call is asserted.</p></div><div><label>Service <select id="transaction-service-filter" aria-label="Filter transaction graph by service"></select></label> <label>Type <select id="transaction-kind-filter" aria-label="Filter transaction graph by type"></select></label></div></div><div id="transaction-graph" class="transaction-graph"></div></section>
+<section class="panel filter-bar distributed-panel" hidden><label>Observed service <select id="distributed-observed-service-filter" class="tab-service-filter" aria-label="Filter Distributed transactions by observed service"></select></label></section>
+<section id="details-distributed-traces" class="panel distributed-panel" hidden><div class="panel-head"><div><h2>Distributed transactions</h2><p class="subtle">Recent multi-service traces, grouped by HTTP source service or inferred Kafka source topic. Identifiers are not included in this export.</p></div><label>Origin <select id="distributed-trace-source-filter" aria-label="Filter distributed traces by origin"></select></label></div><div id="distributed-traces"></div></section>
+<section class="panel filter-bar dependency-panel" hidden><label>Observed service <select id="dependencies-observed-service-filter" class="tab-service-filter" aria-label="Filter Dependencies by observed service"></select></label></section>
+<section id="details-flows" class="panel dependency-panel" hidden><div class="panel-head"><h2>Focused dependency flow</h2><label>Service <select id="service-filter" aria-label="Filter dependency flow by service"></select></label></div><div id="flows" class="flow"></div></section>
 <section id="details-dependencies" class="panel dependency-panel" hidden><div class="panel-head"><h2>Dependencies</h2><span class="subtle">Average latency only; dependency P95 is a separate future pass</span></div><div id="dependencies"></div></section>
 <section id="details-failures" class="panel service-panel" hidden><div class="panel-head"><h2>Recurring failures</h2><span class="subtle">Aggregated failure counts only</span></div><div id="failures"></div></section>
 <p id="coverage" class="note"></p></main><script id="runtime-data" type="application/json">__RUNTIME_DATA__</script><script>

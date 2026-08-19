@@ -35,7 +35,7 @@ but does not alter AST endpoint extraction.
 | `systemlens version` | Prints the installed `systemlens` package version. |
 | `systemlens apm doctor [--endpoint URL] [--api-key KEY] [--insecure] [--json]` | Read-only validation of Elasticsearch access to the APM metrics. It reports only whether the endpoint and key are configured and their source (`flag` or `env`); it never prints the URL or key. `--insecure` explicitly accepts a self-signed TLS certificate. |
 | `systemlens apm export [--since DURATION] [--environment NAME] [--endpoint URL] [--api-key KEY] [--insecure] [--max-relations N] [--max-bytes N] [--max-buckets N] [--export-curl] [--out FILE]` | Reads `service_destination` aggregates from Elasticsearch and emits compact JSON to stdout, or writes it to `FILE`. It does not export raw spans, logs, headers, identifiers, or source content. A failed export preserves the safe HTTP/access error and prints read-only diagnostic guidance; HTTP 429 guidance includes Kibana Dev Tools commands for cluster health, disk allocation, and watermark settings, never the endpoint or API key. `--insecure` explicitly accepts a self-signed TLS certificate; `--export-curl` includes curl's equivalent `--insecure` flag and prints a reproducible curl command for the export's first APM query, using environment-variable references rather than credential values. |
-| `systemlens apm report --html FILE [--since DURATION] [--environment NAME] [--endpoint URL] [--api-key KEY] [--insecure] [--max-services N] [--max-transactions N] [--max-dependencies N] [--max-buckets N] [--max-timeline-events N]` | Reads bounded APM metric aggregates plus a bounded field projection of recorded transaction events and writes an HTML human investigation report. Its interactive graph uses the same Graphology/Sigma.js CDN assets as the architecture export and falls back to embedded SVG when unavailable. It never reads `_source`, trace identifiers, request data, headers, bodies, logs, credentials, or unredacted error values. `--insecure` explicitly accepts a self-signed TLS certificate. |
+| `systemlens apm report --html FILE [--since DURATION] [--environment NAME] [--endpoint URL] [--api-key KEY] [--insecure] [--max-services N] [--max-transactions N] [--max-dependencies N] [--max-buckets N] [--max-timeline-events N]` | Reads bounded APM metric aggregates plus a bounded field projection of recorded transaction events and writes an HTML human investigation report. Its interactive graph uses the same Graphology/Sigma.js CDN assets as the architecture export and falls back to embedded SVG when unavailable. It never reads `_source`, request data, headers, bodies, logs, credentials, or unredacted error values; trace identifiers are held only in memory to create report-local waterfall references and are never exported. `--insecure` explicitly accepts a self-signed TLS certificate. |
 | `systemlens index [MANIFEST]... [--full] [--topic-strategy default\|strategy1] [--manifest FILE]... [--kubernetes] [--kubernetes-namespace NAME]` | Incrementally extracts and persists architecture facts. `--kubernetes` queries the active `kubectl` context for Deployments and StatefulSets; `--kubernetes-namespace` restricts it to one namespace. |
 | `systemlens microservices`, `topics`, `apis`, `dtos`, `mongodb`, `modules` | Browse the indexed catalog; `microservices`, `topics` and `mongodb` list the corresponding architecture objects directly, each with a `kind` and `name`, and support the documented list/show/neighbors actions and JSON output where applicable. |
 | `systemlens microservices topics\|apis\|mongodb\|properties\|openapi NAME [--root DIR] [--json]` | Follow one linked object kind from a single named microservice. |
@@ -284,7 +284,13 @@ SQLite, merged into the static architecture snapshot, or exposed through MCP.
 The service view reads `metricset.name=service_transaction`; the transaction
 view reads `metricset.name=transaction`; both aggregate the `value_count` and
 `sum` metrics of `transaction.duration.summary`, and the P95 of
-`transaction.duration.histogram`, plus aggregate failure counts. The dependency
+`transaction.duration.histogram`. They derive failures from known outcomes
+minus `event.success_count` successes and expose outcome coverage. The summary
+failure rate uses known outcomes only and displays its coverage. To avoid
+exporting arbitrary operation names, transaction rows with the same safe
+service/type category are merged; their displayed `Highest operation P95` is
+the maximum P95 among the merged operations, not a recomputed category
+percentile. The dependency
 view reads `metricset.name=service_destination` and reports call count, average
 latency, and aggregate failure rate. It first uses `service.target.name`, then
 retries the legacy `span.destination.service.resource` field only when the
@@ -300,25 +306,32 @@ from the service aggregate only and is therefore not double-counted across the
 service and transaction views.
 
 The Transactions tab additionally displays up to 20 recent distributed-trace
-waterfalls. They are grouped and sorted by the HTTP source service, or by the
-Kafka source topic when a producer span label follows the observed
-`<topic> publish` instrumentation convention. Other sources are grouped by
-their root service. Trace, span, and parent identifiers are used only in memory
-to reconstruct the tree and are never embedded in the HTML or persisted. Each
-waterfall exports only timestamp, service, operation name, transaction kind,
-outcome, relative timing, duration, and tree depth; it is therefore an exemplar
-for investigation, not a complete trace archive. Its card starts with the
-cross-service route and distributed transaction operations, and the tab offers
-an origin filter so database spans can be read as details of the selected flow.
+waterfalls. They are grouped and sorted by the HTTP source service, a generic
+messaging source when a producer span follows the observed publish convention,
+or their root service. Trace, span, and parent identifiers are used only in
+memory to reconstruct the tree and are never embedded in the HTML or persisted.
+Each waterfall exports only timestamp, service, safe workload labels,
+transaction kind, outcome, relative timing, duration, and tree depth; it is
+therefore an exemplar for investigation, not a complete trace archive. Trace
+selection and each per-trace span limit expose truncation in the report status
+and on each partial waterfall. Its card
+starts with the cross-service route and distributed transaction operations, and
+the tab offers an origin filter so database spans can be read as details of the
+selected flow.
 
 The report separates its investigation modes into Services, Transactions,
-Dependencies, and Timeline tabs. Services contains the context, priority
-ranking, service filter, service hotspot table, and recurring failures.
-Transactions contains the transaction ranking and ownership graph with its
-service/type filters. Dependencies contains the directed map, its map mode,
+Distributed transactions, Dependencies, and Timeline tabs. Each tab starts with
+the same observed-service filter. Selecting a service in any tab synchronizes
+the selection across all tabs and their view-specific controls. Services contains
+the context, priority ranking, service hotspot table, and recurring failures.
+Transactions starts with the slow-transaction ranking, then provides the
+ownership graph with its service/type filters. Distributed transactions provides
+the waterfall exemplars and their origin filter.
+Dependencies contains the directed map, its map mode,
 service, and workload selectors, the selected node's aggregate workloads and
-observed directions, the dependency table, and focused flows. Each selector is
-owned by its view; no duplicate global selector is shown. Its primary visual is
+observed directions, the dependency table, and focused flows. The shared
+observed-service selector is duplicated for access at the top of every tab;
+other selectors remain owned by their view. Its primary visual is
 an interactive directed service map: circle nodes are
 observed services and diamond nodes are observed messaging targets. Every arrow
 is directed from the observed source service to its target; it is labelled HTTP
@@ -334,20 +347,32 @@ to-dependency call. Each ranking
 reports `items_seen`, `items_exported`, its result limit, bucket limit, and
 truncation reasons. A zero result means no matching aggregate was observed in
 the covered window; it does not prove a static HTTP, Kafka, MongoDB, or S3
-dependency is absent. P95 values are approximate histogram percentiles.
+dependency is absent. Service P95 values are approximate histogram percentiles;
+merged transaction rows explicitly show the highest constituent-operation P95.
 
-The Timeline tab is a chronological, bounded view of recorded transaction
-events. It applies the shared service, workload, and failure-only filters and
-shows a three-band duration distribution for the selected events. Its
+The Timeline tab is a chronological, bounded view of recorded cross-service
+transaction examples. Its visible service, workload, and failure-only filters
+apply to both the event list and its three-band duration distribution. The view
+states its displayed example count alongside aggregate call volume and
+waterfall-exemplar count, so it cannot be mistaken for an exhaustive call list.
+Its
 Elasticsearch query sets `_source: false` and retrieves only
-`@timestamp`, service name, transaction name/type, duration, result, outcome,
-and the optional messaging queue/topic name. It never requests trace IDs,
-request or response data, headers, bodies, stack traces, logs, or error values.
+`@timestamp`, service name, transaction name/type, duration, and outcome.
+Transaction names are replaced with safe workload labels before export. It
+requests trace IDs only transiently for exact waterfall linking; it never
+exports them, nor request or response data, headers, bodies, stack traces, logs,
+error values, result values, or messaging queue/topic names.
+Selecting a Timeline event opens the Transactions view and filters waterfalls
+to the exact associated distributed trace. SystemLens receives trace IDs only
+in memory to create report-local opaque waterfall references, then removes the
+original IDs before serializing the report. The report exposes a clear action
+to remove this exact-waterfall filter; it never displays a route name or trace ID.
 
 The report does not correlate observed names with static identities in this
 release. Its aggregate views remain separate from the Timeline's bounded
 transaction-field projection; trace IDs, request data, headers, bodies, log
-messages, credentials, and unredacted exception values are excluded.
+messages, credentials, unredacted exception values, and telemetry-controlled
+operation labels are excluded.
 
 The Transactions view contains only transaction workloads with at least one
 recent trace spanning more than one `service.name`. SystemLens uses trace IDs

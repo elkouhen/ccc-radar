@@ -308,13 +308,13 @@ containment match for the same observed name.
 **Status:** Accepted.
 
 **Context:** Elastic APM Server/Elastic Agent writes APM metric and trace data
-to `metrics-apm*` and `traces-apm*`, while the Elasticsearch OpenTelemetry
+to interval-specific `metrics-apm.<dataset>.1m-*` and `traces-apm*` streams, while the Elasticsearch OpenTelemetry
 exporter writes compatible runtime aggregates and transaction events to
 dedicated `.otel` data streams. Querying only the APM patterns yields an empty
 report for an OpenTelemetry-only deployment.
 
-**Decision:** The read-only SystemLens APM adapter queries the existing APM
-patterns together with the narrowly targeted OpenTelemetry service-destination,
+**Decision:** The read-only SystemLens APM adapter queries only non-overlapping
+one-minute APM metric patterns together with the narrowly targeted OpenTelemetry service-destination,
 service-transaction, transaction, and generic-trace patterns. It keeps the
 same bounded aggregate and field-projection contracts; it neither writes data
 nor reads raw trace identifiers. API keys supplied as raw Elasticsearch
@@ -322,10 +322,11 @@ nor reads raw trace identifiers. API keys supplied as raw Elasticsearch
 already encoded header values remain supported.
 
 **Consequences:** One report can cover either ingestion path without a
-configuration switch. If the same runtime signal is intentionally sent through
-both paths, Elasticsearch may contain duplicate aggregates; SystemLens reports
-the observed documents and does not infer cross-stream identity from forbidden
-raw trace identifiers.
+configuration switch while avoiding double-counting APM rollups at 10- and
+60-minute intervals. If the same runtime signal is intentionally sent through
+both ingestion paths, Elasticsearch may still contain duplicate aggregates;
+SystemLens reports the observed documents and does not infer cross-stream
+identity from forbidden raw trace identifiers.
 
 ## ADR-18 — Restrict transaction workloads to distributed trace exemplars
 

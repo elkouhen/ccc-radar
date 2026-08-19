@@ -35,9 +35,10 @@ Credentials come from one-off flags or environment variables, are not persisted,
 and are not included in errors or digest JSON. `apm doctor` uses the same
 read query, so it does not require Elasticsearch `monitor` privileges.
 
-The adapter queries `metrics-apm*` and the compatible, narrowly targeted
-OpenTelemetry service-destination, service-transaction, and transaction metric
-streams with a composite aggregation over `service_destination` metrics. It pages at most `max_buckets` aggregate
+The adapter queries only the non-overlapping one-minute Elastic APM and
+compatible OpenTelemetry service-destination, service-transaction, and
+transaction metric streams with a composite aggregation over
+`service_destination` metrics. It pages at most `max_buckets` aggregate
 buckets, combines success/failure outcomes by source, target, and target type,
 then ranks relations by call volume. It retains only the prefix that fits both
 the relation and serialized-byte limits. The resulting `apm-digest-v1` payload
@@ -53,26 +54,39 @@ compatible OpenTelemetry metric streams, plus bounded transaction-event and
 distributed-trace exemplar queries over `traces-apm*` and
 `traces-generic.otel-*`. Its service
 and transaction views page composite buckets and aggregate transaction count,
-duration sum, aggregate failure count from the `aggregate_metric_double`
-field `transaction.duration.summary`, and the P95 percentile of
-`transaction.duration.histogram`. Its dependency view reuses the bounded
+duration sum, success/outcome count from `event.success_count`, and the P95
+percentile of `transaction.duration.histogram`. Failure count is known outcomes
+minus successes; error rate is calculated only over known outcomes and the
+projection records and displays its outcome coverage. Redacted transaction
+labels are merged by service and transaction type; their exported P95 is
+explicitly the maximum constituent-operation P95, never a synthetic aggregate
+percentile. Its dependency view reuses the bounded
 `service_destination` aggregate adapter and therefore intentionally reports
 only average latency, call count, and aggregate failure rate.
 
 The aggregate queries use `size: 0`. Before the bounded Timeline query,
 SystemLens uses a bounded trace-ID aggregation to retain only recent traces
 with spans from more than one service; IDs remain in memory and are never
-included in the report. The Timeline then explicitly sets `_source: false`, requesting only timestamp, service,
-transaction name/type, duration, result, outcome, and optional messaging target.
-To produce at most 20 waterfall exemplars, a second `_source: false` request
-temporarily reads trace, span, and parent IDs plus timestamp, service, operation,
-duration and outcome. It reconstructs each span tree in memory, determines an
-HTTP root-service source or the conservative `<topic> publish` Kafka-source
-label, then discards all IDs. The exported projection never contains those IDs,
-headers, bodies, stack traces, logs, or error values. Each view has an
+included in the report. The Timeline then explicitly sets `_source: false`, requesting timestamp,
+trace ID, service, transaction type/name, duration, and outcome. Trace IDs are
+held only in memory to join each Timeline event to its exact waterfall, then
+replaced by report-local opaque `waterfall-*` references before serialization.
+Instrumentation-controlled operation names are replaced by safe workload labels
+before export. The HTML labels Timeline events and waterfalls as bounded
+cross-service examples and displays their counts beside aggregate call volume;
+the view's service, workload, and failure-only filters are visible and local to
+that view. To produce
+at most 20 waterfall exemplars, a second `_source: false` terms aggregation
+uses a `top_hits` limit per selected trace, temporarily reading span and parent
+IDs plus timestamp, service, operation, duration and outcome. It
+reconstructs each span tree in memory and discards all IDs. The exported
+projection never contains those IDs, headers, bodies, stack traces, logs,
+error values, or arbitrary operation/target labels. Each view has an
 independent composite-bucket guard and output-result guard. The
 projection records the UTC window, environment, source metricsets/field,
-per-view coverage, limits, and truncation. `render_runtime_report_html` embeds
+per-view coverage, limits, and truncation, including trace selection and
+per-trace span truncation. The renderer surfaces this status globally and on
+each partial waterfall. `render_runtime_report_html` embeds
 only this versioned aggregate projection in an explicitly requested HTML file.
 It does not write to SQLite, snapshots, or MCP cache.
 The Timeline limit defaults to 500 and the CLI caps it at 2,000. Every APM
@@ -80,8 +94,9 @@ HTTP request has the adapter's 15-second timeout. A Timeline timeout is caught
 at the report boundary and recorded as `coverage.timeline.available=false` with
 `unavailable_reason="timeout"`; successfully read metric aggregates remain in
 the report.
-Service names and transaction names are inserted through JSON data and rendered
-with HTML escaping before insertion, so a telemetry value cannot create markup.
+Service names are inserted through JSON data and rendered with HTML escaping
+before insertion. Transaction, span, result, and messaging-target values are
+not exported, so telemetry cannot disclose arbitrary operation content.
 The projection also records the query-window end as `generated_at`, the
 auditable snapshot instant shown in the HTML report. The renderer derives its
 summary failure rate from `services` only, never by adding service and
@@ -99,9 +114,10 @@ Timeline renderer additionally derives three duration
 bands from the already projected duration values; it does not request any new
 trace field. The report stores no prior report and therefore
 does not calculate regressions or invent a historical baseline.
-The renderer exposes separate Services, Transactions, Dependencies, and
-Timeline tabs. This groups each aggregate ranking with its matching interaction
-and avoids competing global and map-specific selectors.
+The renderer exposes separate Services, Transactions, Distributed transactions,
+Dependencies, and Timeline tabs. Every tab contains a synchronized
+observed-service filter; changing it also updates the view-specific service
+controls where that service is available.
 
 The report's primary visual is a client-side directed service map. It places
 observed services on circle nodes and recognized messaging targets on diamond
