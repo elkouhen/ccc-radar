@@ -224,6 +224,12 @@ an OpenAPI document before endpoint facts are persisted; endpoints remain
 attributed to the module containing the declaration while the contract source
 path stays evidence.
 
+Module discovery also inventories every valid YAML or JSON OpenAPI document
+under a module's own `src/main/resources/openapi/` directory, regardless of
+its filename. This list is the physical contract ownership used for persistence;
+a Strategy1 declaration only reattributes the published endpoint facts to its
+declaring module.
+
 ## Export snapshot contract
 
 HTML and JSON graph exports only consume the loaded architecture snapshot.

@@ -8,6 +8,8 @@ import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
+
+import yaml
 from systemlens.kubernetes import KubernetesWorkload
 
 from systemlens import java_parser
@@ -214,6 +216,8 @@ _REPOSITORY_OPERATIONS = frozenset({
 _OPENAPI_FILENAMES = (
     "openapi.yaml", "openapi.yml", "openapi.json", "swagger.yaml", "swagger.yml", "swagger.json",
 )
+_OPENAPI_DOCUMENT_SUFFIXES = frozenset({".yaml", ".yml", ".json"})
+_OPENAPI_RESOURCE_DIRECTORY = ("src", "main", "resources", "openapi")
 _MAX_NESTED_MODULE_DEPTH = 5
 
 
@@ -805,11 +809,31 @@ def _discover_openapi_files(
     rest_controllers: tuple[str, ...] = (),
     build_system: str | None = None,
 ) -> tuple[str, ...]:
-    contracts = {
-        _module_relative(module_dir, path)
-        for path in _module_files(module_dir, module_roots, "*")
-        if path.name.casefold() in _OPENAPI_FILENAMES
-    }
+    """Discover valid OpenAPI documents owned by one build module.
+
+    Conventional ``openapi.*`` and ``swagger.*`` file names remain supported
+    wherever they are stored. In addition, a module may expose any number of
+    independently named contracts under ``src/main/resources/openapi``.
+    """
+    contracts: set[str] = set()
+    for path in _module_files(module_dir, module_roots, "*"):
+        relative_path = _module_relative(module_dir, path)
+        parts = Path(relative_path).parts
+        candidate = (
+            path.name.casefold() in _OPENAPI_FILENAMES
+            or (
+                path.suffix.casefold() in _OPENAPI_DOCUMENT_SUFFIXES
+                and parts[:4] == _OPENAPI_RESOURCE_DIRECTORY
+            )
+        )
+        if not candidate:
+            continue
+        try:
+            document = yaml.safe_load(path.read_text(encoding="utf-8", errors="replace"))
+        except (OSError, yaml.YAMLError):
+            continue
+        if isinstance(document, dict) and ("openapi" in document or "swagger" in document):
+            contracts.add(relative_path)
     pom_path = module_dir / "pom.xml"
     if build_system == "maven" and rest_controllers and pom_path.is_file():
         from systemlens.maven import detect_openapi_generator_input_specs

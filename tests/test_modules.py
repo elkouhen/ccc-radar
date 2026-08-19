@@ -487,6 +487,32 @@ interface OrderRepository extends MongoRepository<Order, String> {}
     assert proof.source_hash.startswith("sha256:")
 
 
+def test_module_discovers_all_valid_openapi_contracts_in_its_openapi_resources(
+    tmp_path: Path,
+) -> None:
+    module = tmp_path / "model-orders"
+    module.mkdir()
+    (module / "pom.xml").write_text(
+        "<project><modelVersion>4.0.0</modelVersion>"
+        "<artifactId>model-orders</artifactId><version>1.0.0</version></project>",
+        encoding="utf-8",
+    )
+    contracts = module / "src" / "main" / "resources" / "openapi"
+    contracts.mkdir(parents=True)
+    (contracts / "orders.yaml").write_text("openapi: 3.0.0\npaths: {}\n", encoding="utf-8")
+    (contracts / "order-lines.json").write_text(
+        '{"openapi":"3.0.0","paths":{}}', encoding="utf-8"
+    )
+    (contracts / "not-a-contract.yml").write_text("kind: configuration\n", encoding="utf-8")
+
+    modules = discover_modules(tmp_path)
+
+    assert modules[0].openapi_files == (
+        "src/main/resources/openapi/order-lines.json",
+        "src/main/resources/openapi/orders.yaml",
+    )
+
+
 def test_modules_resolve_injected_repository_collection_and_this_receiver(tmp_path: Path) -> None:
     module = tmp_path / "orders"
     source = module / "src" / "main" / "java" / "OrderStore.java"

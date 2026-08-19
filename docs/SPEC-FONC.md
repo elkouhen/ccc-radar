@@ -189,6 +189,11 @@ searches every YAML or JSON document below
 contracts with distinct names. Only a valid OpenAPI document is attached, and
 its resulting endpoints remain attributed to the module that owns the `.rest`
 declaration.
+
+Independently of Strategy1, each build module inventories every valid YAML or
+JSON OpenAPI document under its own `src/main/resources/openapi/` directory;
+contract file names do not need to follow an `openapi.*` or `swagger.*`
+pattern.
 It may also derive a high-confidence request/reply pair
 when both sides follow the `retour_<request-topic>` convention.
 
