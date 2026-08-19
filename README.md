@@ -55,10 +55,11 @@ documented Strategy1 Kafka and REST conventions.
 Dynamic paths and topic values are retained as dynamic facts; the tool does not
 guess a concrete dependency.
 
-## Elastic APM digest for Pi
+## Elastic APM digest for external AI agents (for example, Pi)
 
 When read-only Elasticsearch access is available, SystemLens can export a
-small runtime-behaviour digest for an external agent. It reads aggregated Elastic
+small runtime-behaviour digest for an external agent such as Pi, a
+CLI-based coding-agent tool that can be pointed at a local file. It reads aggregated Elastic
 APM `service_destination` metrics, never raw spans, logs, request headers, or
 source code. It does not modify the local index.
 

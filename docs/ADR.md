@@ -268,8 +268,10 @@ waiting for the full SL-009/SL-010 ranking and alias-mapping adapters.
 
 **Decision:** `systemlens export microservices --html FILE` accepts an opt-in
 `--apm-overlay` flag (plus the same `--since`, `--environment`, `--endpoint`,
-`--api-key`, `--max-relations`, and `--max-buckets` connection/window options as
-`apm export`). When set, the export additionally queries `service_destination`
+`--api-key`, `--max-relations`, and `--max-buckets` connection/window flags as
+`apm export`, though `--max-buckets` defaults to 2,000 for the overlay versus
+5,000 for `apm export`, because the overlay reads two aggregate queries per
+export). When set, the export additionally queries `service_destination`
 (edge call volume and error rate) and `service_transaction` (node average
 latency) aggregates, using the same bounded, read-only adapter as `apm export`
 and `apm report`. The result is joined to indexed microservice names through a

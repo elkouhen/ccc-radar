@@ -18,14 +18,14 @@ facts and discovery (`scanner/`, `modules.py`, `maven.py`, `gradle.py`,
 models and persistence (`models.py`, `store.py`)
 ```
 
-`render.py` is an output adapter. It may consume query results and models, but
-must not perform indexing or persist data. `config.py`, `paths.py`, and
-`inventory_freshness.py` are small cross-cutting utilities.
+The `render/` package (formerly the single `render.py` file, still imported as
+`from systemlens.render import ...`) is an output adapter. It may consume
+query results and models, but must not perform indexing or persist data.
+`config.py`, `paths.py`, and `inventory_freshness.py` are small cross-cutting
+utilities.
 
-`render.py` was split into the `render/` package (see below): the public
-import surface stays `from systemlens.render import ...`, unchanged for every
-other module and test. `scanner.py` was split into the `scanner/` package
-(see below) the same way: `from systemlens.scanner import ...` is unchanged.
+`scanner.py` was split into the `scanner/` package (see below) the same way:
+`from systemlens.scanner import ...` is unchanged.
 
 ## Call hierarchies
 
@@ -170,8 +170,8 @@ package remains prohibited.
    not extend to importing them from outside the package.
 4. Add a focused test beside the owning module. End-to-end tests cover the
    adapter wiring; they are not the first home for an extraction rule.
-5. Keep new output formats in `render.py` (or a future dedicated renderer),
-   not in query or discovery code.
+5. Keep new output formats in the `render/` package (a focused new submodule
+   if needed), not in query or discovery code.
 
 Browser integration tests live in `tests/test_browser_export.py`. They are
 marked both `integration` and `slow`, so they do not run in the default
@@ -189,6 +189,14 @@ uv run pytest -m slow tests/test_browser_export.py
 The `Browser acceptance (Chromium)` GitHub Actions job runs that command
 separately from the default unit suite. The lockfile pins the Playwright
 version, which in turn pins the Chromium revision used by CI.
+
+## Diagnostics
+
+Set `SYSTEMLENS_TRACE=1` to print stage-timing lines
+(`SYSTEMLENS_TRACE ts=<monotonic> stage=<name> ...`) to stderr from `cli.py`,
+`indexer.py`, `java_parser.py`, `modules.py`, and `graph.py`. This is an
+internal debugging aid for slow-index investigations; it never changes
+persisted facts, CLI/MCP output, or any documented contract.
 
 ## Maintenance focus
 

@@ -32,17 +32,23 @@ but does not alter AST endpoint extraction.
 |---|---|
 | `systemlens init` | Creates `.systemlens/config.yml`; it never overwrites an existing file. |
 | `systemlens doctor [--json]` | Read-only check of configuration, local AST readiness and index state. |
+| `systemlens version` | Prints the installed `systemlens` package version. |
 | `systemlens apm doctor [--endpoint URL] [--api-key KEY] [--insecure] [--json]` | Read-only validation of Elasticsearch access to the APM metrics. It reports only whether the endpoint and key are configured and their source (`flag` or `env`); it never prints the URL or key. `--insecure` explicitly accepts a self-signed TLS certificate. |
 | `systemlens apm export [--since DURATION] [--environment NAME] [--endpoint URL] [--api-key KEY] [--insecure] [--max-relations N] [--max-bytes N] [--max-buckets N] [--export-curl] [--out FILE]` | Reads `service_destination` aggregates from Elasticsearch and emits compact JSON to stdout, or writes it to `FILE`. It does not export raw spans, logs, headers, identifiers, or source content. A failed export preserves the safe HTTP/access error and prints read-only diagnostic guidance; HTTP 429 guidance includes Kibana Dev Tools commands for cluster health, disk allocation, and watermark settings, never the endpoint or API key. `--insecure` explicitly accepts a self-signed TLS certificate; `--export-curl` includes curl's equivalent `--insecure` flag and prints a reproducible curl command for the export's first APM query, using environment-variable references rather than credential values. |
 | `systemlens apm report --html FILE [--since DURATION] [--environment NAME] [--endpoint URL] [--api-key KEY] [--insecure] [--max-services N] [--max-transactions N] [--max-dependencies N] [--max-buckets N] [--max-timeline-events N]` | Reads bounded APM metric aggregates plus a bounded field projection of recorded transaction events and writes an HTML human investigation report. Its interactive graph uses the same Graphology/Sigma.js CDN assets as the architecture export and falls back to embedded SVG when unavailable. It never reads `_source`, trace identifiers, request data, headers, bodies, logs, credentials, or unredacted error values. `--insecure` explicitly accepts a self-signed TLS certificate. |
 | `systemlens index [MANIFEST]... [--full] [--topic-strategy default\|strategy1] [--manifest FILE]... [--kubernetes] [--kubernetes-namespace NAME]` | Incrementally extracts and persists architecture facts. `--kubernetes` queries the active `kubectl` context for Deployments and StatefulSets; `--kubernetes-namespace` restricts it to one namespace. |
 | `systemlens microservices`, `topics`, `apis`, `dtos`, `mongodb`, `modules` | Browse the indexed catalog; `microservices`, `topics` and `mongodb` list the corresponding architecture objects directly, each with a `kind` and `name`, and support the documented list/show/neighbors actions and JSON output where applicable. |
-| `systemlens analyze audit` | Reports static architecture risks. |
-| `systemlens analyze coverage [--json]` | Reports inventory coverage and unresolved integrations. |
-| `systemlens analyze indexing-issues [--json]` | Lists unresolved indexing facts. JSON includes source evidence suitable for reviewing proposed heuristics. |
-| `systemlens analyze microservices impact NAME` | Lists direct and transitive impact paths. |
-| `systemlens analyze microservices path FROM TO` | Lists bounded paths between services. |
-| `systemlens analyze request-reply` | Lists Strategy1 Kafka request/reply candidates. |
+| `systemlens microservices topics\|apis\|mongodb\|properties\|openapi NAME [--root DIR] [--json]` | Follow one linked object kind from a single named microservice. |
+| `systemlens microservices implementation KIND ID [--root DIR] [--json]` | Jump to the source implementation of one identified integration. |
+| `systemlens modules integrations MODULE [--json]` | Lists the integrations owned by one module. |
+| `systemlens modules graph [--json]` | Prints the Maven/Gradle build-dependency graph between modules. |
+| `systemlens analyze audit [--workspace DIR]` | Reports static architecture risks; `--workspace` analyzes a parent workspace of independently indexed services instead of the current repository. |
+| `systemlens analyze coverage [--root DIR] [--json]` | Reports inventory coverage and unresolved integrations. |
+| `systemlens analyze indexing-issues [--root DIR] [--json]` | Lists unresolved indexing facts. JSON includes source evidence suitable for reviewing proposed heuristics. |
+| `systemlens analyze microservices calls\|dependencies\|external-apis\|orphan-integrations [NAME] [--root DIR] [--json]` | Lists a service's outgoing calls, dependencies, external APIs, or integrations with no resolved caller/callee, depending on the subcommand. `external-apis` and `orphan-integrations` accept an optional `NAME` to scope the result to one service. |
+| `systemlens analyze microservices impact NAME [--root DIR] [--json]` | Lists direct and transitive impact paths. |
+| `systemlens analyze microservices path FROM TO [--root DIR] [--json] [--max-depth N] [--limit N]` | Lists bounded paths between services. |
+| `systemlens analyze request-reply [--root DIR] [--json]` | Lists Strategy1 Kafka request/reply candidates. |
 | `systemlens export microservices (--html FILE \| --c4 DIRECTORY \| --json) [--root-path DIRECTORY] [--apm-overlay --since DURATION --environment NAME --endpoint URL --api-key KEY --insecure --max-relations N --max-buckets N]` | Exports the microservice, Kafka-topic and MongoDB-collection topology. `--root-path` provides the local source root for HTML VS Code links. `--apm-overlay` (HTML only) additionally queries bounded Elastic APM aggregates and overlays them on the graph; `--insecure` explicitly accepts a self-signed TLS certificate; see "Elastic APM microservice overlay". |
 | `systemlens export modules --html FILE` | Exports the Maven/Gradle build-dependency view. |
 | `systemlens export request-reply --html FILE` | Exports Strategy1 Kafka request/reply candidates. |
@@ -367,7 +373,9 @@ estimated from another telemetry type.
 `export microservices --html FILE --apm-overlay` decorates the static
 microservice graph with the same bounded, read-only APM aggregates as
 `apm export`/`apm report`, using the same `--since` (default `1h`),
-`--environment`, connection, and result-limit flags. It is opt-in and requires
+`--environment`, connection, and result-limit flags — except `--max-buckets`,
+which defaults to 2,000 for the overlay versus 5,000 for `apm export`, because
+the overlay reads two aggregate queries per export. It is opt-in and requires
 network access; without `--apm-overlay` the export behaves exactly as before,
 fully offline.
 

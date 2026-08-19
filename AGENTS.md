@@ -13,7 +13,15 @@ documents and summarizes the documentation hygiene expected in this repository.
 | [`docs/SPEC-TECH.md`](docs/SPEC-TECH.md) | Modules, data model, SQLite schema, algorithms, JSON contract | Before changing internal architecture in `src/systemlens/` |
 | [`docs/ADR.md`](docs/ADR.md) | Architecture decisions: context, choice, consequences | Before revisiting an existing technical choice |
 | [`BACKLOG.md`](BACKLOG.md) | Prioritized, acceptance-tested architecture and delivery work | When planning or implementing deferred improvements |
-| [`../ccc-radar-skill/`](../ccc-radar-skill/) | Companion skill repo: agent workflow, bundled rule packs, operational guidance | Whenever an SystemLens change can affect the skill or its docs |
+| [`../systemlens-skill/`](../systemlens-skill/) | Companion skill repo: agent workflow, bundled rule packs, operational guidance | Whenever an SystemLens change can affect the skill or its docs |
+| [`../systemlens-observability-lab/`](../systemlens-observability-lab/) | Infrastructure and a test application for observability/integration testing | When validating SystemLens against a real running app/infra, or working on observability-related integration tests |
+
+`../systemlens-skill/` and `../systemlens-observability-lab/` are separate
+repositories (`https://github.com/elkouhen/systemlens-skill` and
+`https://github.com/elkouhen/systemlens-observability-lab`), expected as
+siblings of this repository in a multi-repo workspace. If a directory is
+absent from the current checkout, skip the rules that reference it rather
+than treating it as a broken link.
 
 `README.md` stays intentionally short. The specifications and ADRs hold the
 authoritative detail.
@@ -42,7 +50,7 @@ test together.
 5. Record durable design decisions in `docs/ADR.md` instead of leaving them only
    in commit messages.
 6. If a change in SystemLens affects the companion skill, update
-   `../ccc-radar-skill/` in the same pass.
+   `../systemlens-skill/` in the same pass.
 7. Keep changes consistent with the existing codebase and ensure the code is
    correct, including its behavior, contracts, and edge cases.
 
