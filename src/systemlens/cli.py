@@ -1375,11 +1375,19 @@ def apm_report_cmd(
     except OSError as exc:
         typer.echo(f"Impossible d'écrire le rapport APM : {exc}", err=True)
         raise typer.Exit(code=1) from exc
+    services = cast(list[object], report.get("services", []))
+    transactions = cast(list[object], report.get("transactions", []))
+    dependencies = cast(list[object], report.get("dependencies", []))
+    timeline_spans = cast(list[object], report.get("timeline_spans", []))
+    distributed_traces = cast(list[object], report.get("distributed_traces", []))
+    typer.echo(f"Rapport APM écrit : {html}.")
     typer.echo(
-        "Rapport APM écrit : "
-        f"{html} ({len(cast(list[object], report['services']))} services, "
-        f"{len(cast(list[object], report['transactions']))} transactions, "
-        f"{len(cast(list[object], report['dependencies']))} dépendances)."
+        "Résumé de génération : "
+        f"{len(services)} services, "
+        f"{len(transactions)} transactions distribuées, "
+        f"{len(dependencies)} dépendances, "
+        f"{len(timeline_spans)} spans affichés, "
+        f"{len(distributed_traces)} traces distribuées."
     )
 
 

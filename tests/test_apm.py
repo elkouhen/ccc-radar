@@ -1095,6 +1095,34 @@ def test_apm_report_writes_html(
 
     assert result.exit_code == 0, result.output
     assert output.read_text(encoding="utf-8") == "<html>report</html>"
+    assert "Résumé de génération : 0 services, 0 transactions distribuées, 0 dépendances, 0 spans affichés, 0 traces distribuées." in result.output
+
+
+def test_apm_report_prints_generation_summary(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(
+        "systemlens.cli.build_runtime_report",
+        lambda *args, **kwargs: {
+            "services": [{"service": "checkout"}],
+            "transactions": [{"transaction": "HTTP transaction"}] * 2,
+            "dependencies": [{"target": "postgres"}] * 3,
+            "timeline_spans": [{"span": "Span"}] * 4,
+            "distributed_traces": [{"waterfall_ref": "waterfall-1"}] * 5,
+        },
+    )
+    monkeypatch.setattr(
+        "systemlens.cli.render_runtime_report_html", lambda report: "<html>report</html>"
+    )
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "apm", "report", "--html", str(tmp_path / "runtime.html"), "--endpoint",
+            "https://elastic.example.test", "--api-key", "not-a-real-key",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "Résumé de génération : 1 services, 2 transactions distribuées, 3 dépendances, 4 spans affichés, 5 traces distribuées." in result.output
 
 
 def test_apm_report_writes_a_json_sidecar(
