@@ -594,7 +594,7 @@ def test_runtime_report_uses_histogram_p95_for_services_and_transactions() -> No
     assert timeline_query["_source"] is False
     assert "systemlens.trace_id" in timeline_query["fields"]
     assert timeline_query["runtime_mappings"]["systemlens.trace_id"]["type"] == "keyword"  # type: ignore[index]
-    assert {"terms": {"trace.id": ["distributed-trace"]}} in timeline_query["query"]["bool"]["filter"]  # type: ignore[index]
+    assert {"terms": {"systemlens.trace_id": ["distributed-trace"]}} in timeline_query["query"]["bool"]["filter"]  # type: ignore[index]
     assert {
         "bool": {
             "should": [
@@ -656,6 +656,7 @@ def test_runtime_report_uses_histogram_p95_for_services_and_transactions() -> No
         if "spans" in query.get("aggs", {}).get("traces", {}).get("aggs", {})  # type: ignore[union-attr]
     )
     assert waterfall_query["size"] == 0
+    assert {"terms": {"systemlens.trace_id": ["distributed-trace"]}} in waterfall_query["query"]["bool"]["filter"]  # type: ignore[index]
     assert waterfall_query["aggs"]["traces"]["aggs"]["spans"]["top_hits"]["size"] == 100  # type: ignore[index]
     exported = json.dumps(report)
     assert '"trace.id"' not in exported
@@ -838,6 +839,56 @@ def test_runtime_report_excludes_transactions_without_distributed_trace() -> Non
     )
 
     assert [item["transaction"] for item in report["transactions"]] == ["HTTP transaction"]  # type: ignore[index]
+
+
+def test_runtime_report_keeps_distributed_transactions_with_all_spans() -> None:
+    class AllSpansClient:
+        def search_metrics(self, body: dict[str, object]) -> dict[str, object]:
+            metricset = body["query"]["bool"]["filter"][0]["term"]["metricset.name"]  # type: ignore[index]
+            if metricset == "transaction":
+                return {"aggregations": {"items": {"buckets": [
+                    _latency_bucket(
+                        {"service": "orders", "transaction": "checkout", "transaction_type": "request"},
+                        1, 100_000, 100_000, 0,
+                    )
+                ]}}}
+            if metricset == "service_transaction":
+                return {"aggregations": {"items": {"buckets": []}}}
+            return {"aggregations": {"relations": {"buckets": []}}}
+
+        def search_traces(self, body: dict[str, object]) -> dict[str, object]:
+            if "aggs" in body:
+                return {"aggregations": {"traces": {"buckets": [
+                    {"key": "otel-trace", "services": {"value": 2}},
+                ], "sum_other_doc_count": 0}}}
+            filters = body["query"]["bool"]["filter"]  # type: ignore[index]
+            if {"term": {"processor.event": "transaction"}} in filters:
+                assert {"terms": {"systemlens.trace_id": ["otel-trace"]}} in filters
+                return {"hits": {"hits": [{"fields": {
+                    "service.name": ["orders"],
+                    "transaction.name": ["checkout"],
+                    "transaction.type": ["request"],
+                }}]}}
+            return {"hits": {"hits": []}}
+
+        def search_all_traces(self, body: dict[str, object]) -> list[dict[str, object]]:
+            return [{"fields": {
+                "@timestamp": ["2026-08-15T09:30:00.000Z"],
+                "service.name": ["orders"],
+                "span.name": ["query"],
+                "span.duration.us": [1_000],
+            }}]
+
+    report = build_runtime_report(
+        AllSpansClient(),  # type: ignore[arg-type]
+        since="1h",
+        environment=None,
+        all_spans=True,
+        now=datetime(2026, 8, 15, 10, tzinfo=UTC),
+    )
+
+    assert [item["transaction"] for item in report["transactions"]] == ["HTTP transaction"]  # type: ignore[index]
+    assert len(report["timeline_spans"]) == 1  # type: ignore[arg-type]
 
 
 def test_runtime_report_keeps_aggregates_when_timeline_times_out() -> None:

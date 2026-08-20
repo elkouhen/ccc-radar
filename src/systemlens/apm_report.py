@@ -260,7 +260,14 @@ def _read_distributed_traces(
             "track_total_hits": False,
             "_source": False,
             "runtime_mappings": TRACE_ID_RUNTIME_MAPPINGS,
-            "query": {"bool": {"filter": [*filters, {"terms": {"trace.id": trace_ids}}]}},
+            "query": {
+                "bool": {
+                    "filter": [
+                        *filters,
+                        {"terms": {TRACE_ID_RUNTIME_FIELD: trace_ids}},
+                    ]
+                }
+            },
             "aggs": {
                 "traces": {
                     "terms": {"field": TRACE_ID_RUNTIME_FIELD, "size": len(trace_ids)},
@@ -486,6 +493,32 @@ def _read_timeline_spans(
     if environment:
         filters.append({"term": {"service.environment": environment}})
     try:
+        trace_ids, candidates_truncated = _read_distributed_trace_ids(
+            search_traces, filters, max_events
+        )
+        transaction_response: dict[str, object] = {"hits": {"hits": []}}
+        if trace_ids:
+            transaction_filters = [
+                {"term": {"processor.event": "transaction"}},
+                *filters,
+                {"terms": {TRACE_ID_RUNTIME_FIELD: trace_ids}},
+            ]
+            transaction_response = search_traces({
+                "size": max_events,
+                "track_total_hits": False,
+                "_source": False,
+                "runtime_mappings": TRACE_ID_RUNTIME_MAPPINGS,
+                "sort": [{"@timestamp": {"order": "desc"}}],
+                "fields": [
+                    "@timestamp", TRACE_ID_RUNTIME_FIELD, "service.name", "transaction.name", "transaction.type",
+                    "transaction.duration.us", "event.outcome",
+                ],
+                "query": {"bool": {"filter": transaction_filters}},
+            })
+        elif not all_spans:
+            reasons = ["max_trace_candidates"] if candidates_truncated else []
+            return [], set(), candidates_truncated, reasons, None
+
         if all_spans:
             search_all_traces = getattr(client, "search_all_traces", None)
             if not callable(search_all_traces):
@@ -502,51 +535,26 @@ def _read_timeline_spans(
                 "query": {"bool": {"filter": [SPAN_EVENT_FILTER, *filters]}},
             })
             response = {"hits": {"hits": raw_hits}}
-            transaction_response = {"hits": {"hits": []}}
-            candidates_truncated = False
         else:
-            trace_ids, candidates_truncated = _read_distributed_trace_ids(
-                search_traces, filters, max_events
-            )
-            if not trace_ids:
-                reasons = ["max_trace_candidates"] if candidates_truncated else []
-                return [], set(), candidates_truncated, reasons, None
-            transaction_filters = [
-                {"term": {"processor.event": "transaction"}},
-                *filters,
-                {"terms": {"trace.id": trace_ids}},
-            ]
-            transaction_response = search_traces({
-            "size": max_events,
-            "track_total_hits": False,
-            "_source": False,
-            "runtime_mappings": TRACE_ID_RUNTIME_MAPPINGS,
-            "sort": [{"@timestamp": {"order": "desc"}}],
-            "fields": [
-                "@timestamp", TRACE_ID_RUNTIME_FIELD, "service.name", "transaction.name", "transaction.type",
-                "transaction.duration.us", "event.outcome",
-            ],
-            "query": {"bool": {"filter": transaction_filters}},
-        })
             span_filters = [
-            SPAN_EVENT_FILTER,
-            *filters,
-            {"terms": {"trace.id": trace_ids}},
-        ]
+                SPAN_EVENT_FILTER,
+                *filters,
+                {"terms": {TRACE_ID_RUNTIME_FIELD: trace_ids}},
+            ]
             response = search_traces({
-            "size": max_events,
-            "track_total_hits": False,
-            "_source": False,
-            "runtime_mappings": TRACE_ID_RUNTIME_MAPPINGS,
-            "sort": [{"@timestamp": {"order": "desc"}}],
-            "fields": [
-                "@timestamp", TRACE_ID_RUNTIME_FIELD, "service.name", "span.name", "span.type", "span.subtype",
-                "span.duration.us", "event.outcome", "http.request.method", "http.route",
-                "url.path", "messaging.destination.name", "messaging.kafka.destination",
-                "messaging.system",
-            ],
-            "query": {"bool": {"filter": span_filters}},
-        })
+                "size": max_events,
+                "track_total_hits": False,
+                "_source": False,
+                "runtime_mappings": TRACE_ID_RUNTIME_MAPPINGS,
+                "sort": [{"@timestamp": {"order": "desc"}}],
+                "fields": [
+                    "@timestamp", TRACE_ID_RUNTIME_FIELD, "service.name", "span.name", "span.type", "span.subtype",
+                    "span.duration.us", "event.outcome", "http.request.method", "http.route",
+                    "url.path", "messaging.destination.name", "messaging.kafka.destination",
+                    "messaging.system",
+                ],
+                "query": {"bool": {"filter": span_filters}},
+            })
     except ApmTimeoutError:
         return [], set(), False, [], "timeout"
     transaction_hits = transaction_response.get("hits")
