@@ -483,9 +483,10 @@ def _read_timeline_spans(
             "size": max_events,
             "track_total_hits": False,
             "_source": False,
+            "runtime_mappings": TRACE_ID_RUNTIME_MAPPINGS,
             "sort": [{"@timestamp": {"order": "desc"}}],
             "fields": [
-                "@timestamp", "trace.id", "service.name", "transaction.name", "transaction.type",
+                "@timestamp", TRACE_ID_RUNTIME_FIELD, "service.name", "transaction.name", "transaction.type",
                 "transaction.duration.us", "event.outcome",
             ],
             "query": {"bool": {"filter": transaction_filters}},
@@ -499,9 +500,10 @@ def _read_timeline_spans(
             "size": max_events,
             "track_total_hits": False,
             "_source": False,
+            "runtime_mappings": TRACE_ID_RUNTIME_MAPPINGS,
             "sort": [{"@timestamp": {"order": "desc"}}],
             "fields": [
-                "@timestamp", "trace.id", "service.name", "span.name", "span.type", "span.subtype",
+                "@timestamp", TRACE_ID_RUNTIME_FIELD, "service.name", "span.name", "span.type", "span.subtype",
                 "span.duration.us", "event.outcome", "http.request.method", "http.route",
                 "url.path", "messaging.destination.name", "messaging.kafka.destination",
                 "messaging.system",
@@ -550,7 +552,8 @@ def _read_timeline_spans(
             "timestamp": timestamp,
             "service": service,
             "span": span,
-            "_trace_id": _timeline_field_string(fields, "trace.id"),
+            "_trace_id": _timeline_field_string(fields, TRACE_ID_RUNTIME_FIELD)
+            or _timeline_field_string(fields, "trace.id"),
             "span_type": _safe_span_type(_timeline_field_string(fields, "span.type")),
             "origin": _span_origin(fields),
             "duration_ms": round(duration / 1_000, 3) if duration is not None else None,

@@ -575,7 +575,8 @@ def test_runtime_report_uses_histogram_p95_for_services_and_transactions() -> No
     assert {"term": {"service.environment": "production"}} in service_query["query"]["bool"]["filter"]  # type: ignore[index]
     timeline_query = next(query for query in client.queries if "span.name" in query.get("fields", []))
     assert timeline_query["_source"] is False
-    assert "trace.id" in timeline_query["fields"]
+    assert "systemlens.trace_id" in timeline_query["fields"]
+    assert timeline_query["runtime_mappings"]["systemlens.trace_id"]["type"] == "keyword"  # type: ignore[index]
     assert {"terms": {"trace.id": ["distributed-trace"]}} in timeline_query["query"]["bool"]["filter"]  # type: ignore[index]
     assert {"term": {"processor.event": "span"}} in timeline_query["query"]["bool"]["filter"]  # type: ignore[index]
     assert timeline_query["sort"] == [{"@timestamp": {"order": "desc"}}]
