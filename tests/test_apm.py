@@ -261,6 +261,37 @@ def test_client_encodes_a_raw_elasticsearch_api_key_and_queries_both_sources(
     assert requests[0].get_header("Authorization") == f"ApiKey {b64encode(b'id:secret').decode()}"  # type: ignore[union-attr]
     assert requests[0].full_url.endswith("/metrics-apm.service_destination.1m-*,metrics-apm.service_transaction.1m-*,metrics-apm.transaction.1m-*,metrics-service_destination.1m.otel-*,metrics-service_transaction.1m.otel-*,metrics-transaction.1m.otel-*/_search")  # type: ignore[union-attr]
     assert requests[1].full_url.endswith("/traces-apm*,traces-generic.otel-*/_search")  # type: ignore[union-attr]
+    curl = client.last_request_curl()
+    assert curl is not None
+    assert 'POST "${SYSTEMLENS_ELASTICSEARCH_URL%/}/traces-apm*,traces-generic.otel-*/_search"' in curl
+    assert 'Authorization: ApiKey ${SYSTEMLENS_ELASTICSEARCH_API_KEY}' in curl
+    assert "id:secret" not in curl
+
+
+def test_apm_report_prints_the_failed_request_curl(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    def reject_report(*args: object, **kwargs: object) -> dict[str, object]:
+        raise ApmHttpError(400)
+
+    monkeypatch.setattr("systemlens.cli.build_runtime_report", reject_report)
+    monkeypatch.setattr(
+        "systemlens.cli.ElasticApmClient.last_request_curl",
+        lambda self: 'curl -X POST "${SYSTEMLENS_ELASTICSEARCH_URL%/}/traces-apm*/_search"',
+    )
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "apm", "report", "--html", str(tmp_path / "report.html"),
+            "--endpoint", "https://elastic.example.test", "--api-key", "not-a-real-key",
+        ],
+    )
+
+    assert result.exit_code == 2
+    assert "Elasticsearch a répondu HTTP 400." in result.output
+    assert "Requête curl équivalente" in result.output
+    assert "${SYSTEMLENS_ELASTICSEARCH_URL%/}" in result.output
+    assert "elastic.example.test" not in result.output
+    assert "not-a-real-key" not in result.output
 
 
 def test_export_digest_rejects_a_budget_smaller_than_required_metadata() -> None:

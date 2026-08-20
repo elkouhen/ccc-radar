@@ -1147,6 +1147,20 @@ def _apm_export_failure_advice(error: ApmError) -> list[str]:
     return advice
 
 
+def _print_apm_failed_request_curl(client: ElasticApmClient) -> bool:
+    """Print a reproducible request while keeping endpoint and key secret."""
+    command = client.last_request_curl()
+    if command is None:
+        return False
+    typer.echo(
+        "Requête curl équivalente (utilise SYSTEMLENS_ELASTICSEARCH_URL et "
+        "SYSTEMLENS_ELASTICSEARCH_API_KEY) :",
+        err=True,
+    )
+    typer.echo(command, err=True)
+    return True
+
+
 @apm_app.command("export")
 def apm_export_cmd(
     since: str = typer.Option("1h", "--since", help="Fenêtre : 15m, 1h, 7d, etc."),
@@ -1199,10 +1213,12 @@ def apm_export_cmd(
     Les traces, logs, en-têtes et identifiants de requêtes ne sont jamais exportés.
     """
     now = datetime.now(UTC)
+    client: ElasticApmClient | None = None
     try:
         settings = load_apm_settings(endpoint, api_key, insecure_tls=insecure)
+        client = ElasticApmClient(settings)
         digest = export_digest(
-            ElasticApmClient(settings),
+            client,
             since=since,
             environment=environment,
             max_relations=max_relations,
@@ -1213,9 +1229,12 @@ def apm_export_cmd(
         serialized = compact_apm_json(digest)
     except ApmError as exc:
         typer.echo(f"Échec de l'export APM : {exc}", err=True)
+        request_curl_printed = (
+            _print_apm_failed_request_curl(client) if client is not None else False
+        )
         for line in _apm_export_failure_advice(exc):
             typer.echo(line, err=True)
-        if export_curl:
+        if export_curl and not request_curl_printed:
             typer.echo(
                 "Requête curl reproductible (première page ; utilise les variables "
                 "SYSTEMLENS_ELASTICSEARCH_URL et SYSTEMLENS_ELASTICSEARCH_API_KEY) :",
@@ -1312,10 +1331,12 @@ def apm_report_cmd(
     pour les dépendances et des comptes d'échecs agrégés. Il n'exporte aucune
     trace, requête, identifiant ou message d'erreur.
     """
+    client: ElasticApmClient | None = None
     try:
         settings = load_apm_settings(endpoint, api_key, insecure_tls=insecure)
+        client = ElasticApmClient(settings)
         report = build_runtime_report(
-            ElasticApmClient(settings),
+            client,
             since=since,
             environment=environment,
             max_services=max_services,
@@ -1328,6 +1349,8 @@ def apm_report_cmd(
         html.write_text(document, encoding="utf-8")
     except ApmError as exc:
         typer.echo(str(exc), err=True)
+        if client is not None:
+            _print_apm_failed_request_curl(client)
         raise typer.Exit(code=2) from exc
     except OSError as exc:
         typer.echo(f"Impossible d'écrire le rapport APM : {exc}", err=True)

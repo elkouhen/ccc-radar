@@ -146,6 +146,8 @@ class ElasticApmClient:
         self._ssl_context = (
             ssl._create_unverified_context() if settings.insecure_tls else None
         )
+        self._insecure_tls = settings.insecure_tls
+        self._last_request: tuple[str, str, dict[str, object] | None] | None = None
 
     def search_metrics(self, body: dict[str, object]) -> dict[str, object]:
         return self._request_json(
@@ -177,9 +179,34 @@ class ElasticApmClient:
             return total
         return None
 
+    def last_request_curl(self) -> str | None:
+        """Render the latest request with shell variables instead of secrets."""
+        if self._last_request is None:
+            return None
+        method, path, body = self._last_request
+        payload = json.dumps(body, ensure_ascii=False, indent=2) if body is not None else None
+        insecure_option = " --insecure \\\n" if self._insecure_tls else ""
+        command = (
+            "curl --silent --show-error --max-time 15 \\\n"
+            f"{insecure_option}"
+            f'  -X {method} "${{SYSTEMLENS_ELASTICSEARCH_URL%/}}{path}" \\\n'
+            '  -H "Accept: application/json" \\\n'
+            '  -H "Authorization: ApiKey ${SYSTEMLENS_ELASTICSEARCH_API_KEY}"'
+        )
+        if payload is None:
+            return command
+        return (
+            f"{command} \\\n"
+            '  -H "Content-Type: application/json" \\\n'
+            "  --data-binary @- <<'SYSTEMLENS_APM_QUERY'\n"
+            f"{payload}\n"
+            "SYSTEMLENS_APM_QUERY"
+        )
+
     def _request_json(
         self, method: str, path: str, body: dict[str, object] | None = None
     ) -> dict[str, object]:
+        self._last_request = (method, path, body)
         payload = json.dumps(body).encode("utf-8") if body is not None else None
         headers = {
             "Accept": "application/json",
