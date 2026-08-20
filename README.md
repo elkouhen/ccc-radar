@@ -75,6 +75,9 @@ pi -p @apm-digest.json "Analyse the service dependencies, error rates and latenc
 
 # Self-contained runtime overview for human investigation
 systemlens apm report --since 1h --environment production --html apm-runtime.html
+
+# Lightweight HTML plus a JSON sidecar, useful with --all-spans
+systemlens apm report --since 1h --all-spans --html apm-runtime.html --data apm-runtime.json
 ```
 
 The export defaults to 80 relations and 50 KB. Its `coverage` object states
@@ -90,6 +93,10 @@ error rate, and latency, then ranks services and transactions by P95 latency
 service map and lists recurring aggregate failures. Its modes are separated into
 Services, Transactions, Dependencies, and Timeline tabs; each ranking and its
 filters live in the matching operational view.
+Without `--data`, the report is self-contained. With `--data`, the HTML stays
+small and loads the adjacent JSON file; serve their directory over HTTP (for
+example in WSL: `python3 -m http.server 8000`) then open
+`http://localhost:8000/apm-runtime.html` from the Windows browser.
 The report also
 records its snapshot window and whether any view was truncated, so it can be
 shared without mistaking incomplete rankings for absence. The Transactions tab

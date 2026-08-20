@@ -21,7 +21,11 @@ from systemlens.apm import (
     export_digest,
     load_settings as load_apm_settings,
 )
-from systemlens.apm_report import build_runtime_report, render_runtime_report_html
+from systemlens.apm_report import (
+    build_runtime_report,
+    render_runtime_report_html,
+    runtime_report_json,
+)
 from systemlens.apm_overlay import build_microservice_overlay
 from systemlens.architecture import (
     analyze as analyze_architecture,
@@ -1274,6 +1278,11 @@ def apm_export_cmd(
 @apm_app.command("report")
 def apm_report_cmd(
     html: Path = typer.Option(..., "--html", help="Fichier HTML autonome à produire."),
+    data: Optional[Path] = typer.Option(  # noqa: UP007
+        None,
+        "--data",
+        help="JSON séparé chargé par le HTML ; servir le répertoire via HTTP.",
+    ),
     since: str = typer.Option("1h", "--since", help="Fenêtre : 15m, 1h, 7d, etc."),
     environment: Optional[str] = typer.Option(  # noqa: UP007
         None, "--environment", help="Filtre exact service.environment (optionnel)."
@@ -1351,7 +1360,12 @@ def apm_report_cmd(
             max_timeline_events=max_timeline_events,
             all_spans=all_spans,
         )
-        document = render_runtime_report_html(report)
+        if data is not None:
+            data.write_text(runtime_report_json(report), encoding="utf-8")
+            data_url = os.path.relpath(data, html.parent)
+            document = render_runtime_report_html(report, data_url=data_url)
+        else:
+            document = render_runtime_report_html(report)
         html.write_text(document, encoding="utf-8")
     except ApmError as exc:
         typer.echo(str(exc), err=True)

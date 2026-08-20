@@ -1041,18 +1041,33 @@ def _view_coverage(
     }
 
 
-def render_runtime_report_html(report: dict[str, object]) -> str:
-    """Render an aggregate-only runtime report with the shared Sigma.js view."""
-    data = json.dumps(
+def runtime_report_json(report: dict[str, object]) -> str:
+    """Serialize the safe report projection for embedding or a sidecar file."""
+    return json.dumps(
         _redact_report_operations(report), ensure_ascii=False, separators=(",", ":")
-    ).replace(
-        "</", "<\\/"
-    )
+    ).replace("</", "<\\/")
+
+
+def render_runtime_report_html(
+    report: dict[str, object], *, data_url: str | None = None
+) -> str:
+    """Render an aggregate-only runtime report with the shared Sigma.js view."""
+    data = runtime_report_json(report) if data_url is None else ""
+    loader = ""
+    if data_url is not None:
+        loader = (
+            "<script>(function(){const request=new XMLHttpRequest();"
+            f"request.open('GET',{json.dumps(data_url)},false);request.send(null);"
+            "if(request.status !== 200){document.body.innerHTML='<main><h1>Données APM indisponibles</h1><p>Servez ce répertoire via HTTP et vérifiez la présence du fichier JSON associé.</p></main>';throw new Error('Unable to load APM report data');}"
+            "document.getElementById('runtime-data').textContent=request.responseText;})();</script>"
+        )
     title = escape("SystemLens · APM runtime overview")
     document = _RUNTIME_REPORT_HTML.replace("__TITLE__", title).replace(
         "__RUNTIME_DATA__", data
     )
-    return document.replace("</body>", _RUNTIME_REPORT_ENHANCEMENTS + "</body>")
+    return document.replace("__RUNTIME_DATA_LOADER__", loader).replace(
+        "</body>", _RUNTIME_REPORT_ENHANCEMENTS + "</body>"
+    )
 
 
 def _redact_report_operations(report: dict[str, object]) -> dict[str, object]:
@@ -1511,7 +1526,7 @@ main { max-width:1440px; margin:auto; padding:24px; } h1,h2 { margin:0; } h1 { f
 <section id="details-flows" class="panel dependency-panel" hidden><div class="panel-head"><h2>Focused dependency flow</h2><label>Service <select id="service-filter" aria-label="Filter dependency flow by service"></select></label></div><div id="flows" class="flow"></div></section>
 <section id="details-dependencies" class="panel dependency-panel" hidden><div class="panel-head"><h2>Dependencies</h2><span class="subtle">Average latency only; dependency P95 is a separate future pass</span></div><div id="dependencies"></div></section>
 <section id="details-failures" class="panel service-panel" hidden><div class="panel-head"><h2>Recurring failures</h2><span class="subtle">Aggregated failure counts only</span></div><div id="failures"></div></section>
-<p id="coverage" class="note"></p></main><script id="runtime-data" type="application/json">__RUNTIME_DATA__</script><script>
+<p id="coverage" class="note"></p></main><script id="runtime-data" type="application/json">__RUNTIME_DATA__</script>__RUNTIME_DATA_LOADER__<script>
 const data=JSON.parse(document.getElementById('runtime-data').textContent); const $=id=>document.getElementById(id); const n=v=>typeof v==='number'?v:null; const ms=v=>n(v)===null?'—':`${v.toLocaleString(undefined,{maximumFractionDigits:3})} ms`; const pct=v=>n(v)===null?'—':`${(v*100).toFixed(1)}%`; const count=v=>n(v)===null?'—':v.toLocaleString(); const esc=v=>String(v??'—').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const rows=(items,columns)=>items.length?`<table><thead><tr>${columns.map(c=>`<th class="${c.metric?'metric':''}">${c.label}</th>`).join('')}</tr></thead><tbody>${items.map(item=>`<tr>${columns.map(c=>`<td class="${c.metric?'metric':''} ${c.className?c.className(item):''}">${c.html?c.html(item):esc(item[c.key])}</td>`).join('')}</tr>`).join('')}</tbody></table>`:'<p class="empty">No aggregate metric was observed in this window.</p>';
 const failures=[...data.services.map(x=>({...x,label:x.service,kind:'Service'})),...data.transactions.map(x=>({...x,label:`${x.service} / ${x.transaction}`,kind:'Transaction'}))].filter(x=>x.failure_calls>0).sort((a,b)=>b.failure_calls-a.failure_calls||b.error_rate-a.error_rate).slice(0,20);

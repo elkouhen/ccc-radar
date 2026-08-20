@@ -23,6 +23,7 @@ from systemlens.apm_report import (
     _span_display_label,
     build_runtime_report,
     render_runtime_report_html,
+    runtime_report_json,
 )
 from systemlens.cli import app
 
@@ -963,6 +964,24 @@ def test_runtime_report_escapes_a_telemetry_value_before_embedding_json() -> Non
     assert "<\\/script><img src=x>" in document
 
 
+def test_runtime_report_can_load_a_json_sidecar() -> None:
+    report = {
+        "window": {"from": "2026-08-15T09:00:00Z", "to": "2026-08-15T10:00:00Z"},
+        "services": [],
+        "transactions": [],
+        "dependencies": [{"source": "</script><img src=x>", "target": "payments"}],
+        "coverage": {},
+    }
+
+    payload = runtime_report_json(report)
+    document = render_runtime_report_html(report, data_url="apm-data.json")
+
+    assert "</script><img src=x>" not in payload
+    assert '<script id="runtime-data" type="application/json"></script>' in document
+    assert "request.open('GET',\"apm-data.json\",false)" in document
+    assert "__RUNTIME_DATA_LOADER__" not in document
+
+
 def test_runtime_report_redacts_telemetry_controlled_operation_values() -> None:
     secret = "https://api.example.test/orders?token=secret-value"
     report = {
@@ -1016,6 +1035,29 @@ def test_apm_report_writes_html(
 
     assert result.exit_code == 0, result.output
     assert output.read_text(encoding="utf-8") == "<html>report</html>"
+
+
+def test_apm_report_writes_a_json_sidecar(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    report = {"services": [], "transactions": [], "dependencies": []}
+    monkeypatch.setattr("systemlens.cli.build_runtime_report", lambda *args, **kwargs: report)
+    output = tmp_path / "runtime.html"
+    data = tmp_path / "apm-data.json"
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "apm", "report", "--html", str(output), "--data", str(data),
+            "--endpoint", "https://elastic.example.test", "--api-key", "not-a-real-key",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(data.read_text(encoding="utf-8")) == report
+    document = output.read_text(encoding="utf-8")
+    assert '<script id="runtime-data" type="application/json"></script>' in document
+    assert "apm-data.json" in document
 
 
 def test_apm_doctor_json_is_safe_when_not_configured() -> None:
