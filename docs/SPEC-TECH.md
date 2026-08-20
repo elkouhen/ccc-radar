@@ -58,7 +58,10 @@ duration sum, success/outcome count from `event.success_count`, and the P95
 percentile of `transaction.duration.histogram`. Failure count is known outcomes
 minus successes; error rate is calculated only over known outcomes and the
 projection records and displays its outcome coverage. Redacted transaction
-labels are merged by service and transaction type; their exported P95 is
+labels are merged by service and transaction type. Transaction aggregates are
+not constrained to traces spanning multiple services; distributed-trace
+selection is used only for waterfall exemplars and the default Timeline
+projection. Their exported P95 is
 explicitly the maximum constituent-operation P95, never a synthetic aggregate
 percentile. Its dependency view reuses the bounded
 `service_destination` aggregate adapter and therefore intentionally reports

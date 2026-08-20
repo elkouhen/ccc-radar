@@ -281,7 +281,7 @@ projections by default (configurable with `--max-timeline-events`, capped at
 `apm-runtime-report-v2` observation embedded in the requested HTML file. It is not persisted in
 SQLite, merged into the static architecture snapshot, or exposed through MCP.
 After writing the file, the CLI prints a generation summary with the displayed
-service, distributed-transaction, dependency, execution-log-span, and
+service, aggregate-transaction, dependency, execution-log-span, and
 distributed-trace counts. The span and trace figures are bounded report
 projections, not exhaustive counts of the selected APM window.
 
@@ -408,10 +408,11 @@ transaction-field projection; trace IDs, request data, headers, bodies, log
 messages, credentials, unredacted exception values, and telemetry-controlled
 operation labels are excluded.
 
-The Transactions view contains only transaction workloads with at least one
-recent trace spanning more than one `service.name`. SystemLens uses trace IDs
-only transiently inside Elasticsearch to select those traces; it never exports,
-persists, or displays them.
+The Transactions view contains all observed aggregate transaction workloads in
+the selected window, including local operations. Distributed-trace waterfalls
+remain a separate, bounded view: SystemLens uses trace IDs only transiently to
+select those multi-service exemplars; it never exports, persists, or displays
+the identifiers.
 
 The APM HTTP client bounds each Elasticsearch request to 15 seconds. If the
 bounded Timeline query times out, `apm report` still writes the aggregate

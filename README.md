@@ -100,7 +100,8 @@ example in WSL: `python3 -m http.server 8000`) then open
 The report also
 records its snapshot window and whether any view was truncated, so it can be
 shared without mistaking incomplete rankings for absence. The Transactions tab
-also shows recent distributed-trace waterfalls, grouped by their HTTP source
+includes all observed aggregate transaction workloads, including local ones;
+it also shows recent distributed-trace waterfalls, grouped by their HTTP source
 service or a generic messaging source, with nested service and database spans.
 Each card shows the cross-service route and safe workload labels before the
 detailed waterfall, and can be filtered by origin. IDs and arbitrary operation

@@ -108,7 +108,6 @@ def build_runtime_report(
     )
     (
         timeline_spans,
-        distributed_transactions,
         timeline_truncated,
         timeline_truncation_reasons,
         timeline_unavailable_reason,
@@ -131,16 +130,6 @@ def build_runtime_report(
 
     services = _rank_latency_buckets(service_buckets, kind="service")
     transactions = _rank_latency_buckets(transaction_buckets, kind="transaction")
-    transactions = [
-        item
-        for item in transactions
-        if (
-            item.get("service"),
-            item.get("_transaction_identity"),
-            item.get("transaction_type"),
-        )
-        in distributed_transactions
-    ]
     for item in transactions:
         item.pop("_transaction_identity", None)
     linked_timeline_spans: list[dict[str, object]] = []
@@ -169,7 +158,7 @@ def build_runtime_report(
             "kind": "elastic_apm_and_otel_metric_aggregates",
             "raw_event_source_exported": False,
             "recorded_transaction_projection": True,
-            "transaction_view": "distributed_traces_only",
+            "transaction_view": "all_aggregate_transactions",
             "service_metricset": "service_transaction",
             "transaction_metricset": "transaction",
             "dependency_metricset": "service_destination",
@@ -472,7 +461,6 @@ def _read_timeline_spans(
     all_spans: bool = False,
 ) -> tuple[
     list[dict[str, object]],
-    set[tuple[str, str | None, str | None]],
     bool,
     list[str],
     str | None,
@@ -486,7 +474,7 @@ def _read_timeline_spans(
     """
     search_traces = getattr(client, "search_traces", None)
     if not callable(search_traces):
-        return [], set(), False, [], "unsupported_client"
+        return [], False, [], "unsupported_client"
     filters: list[dict[str, object]] = [
         {"range": {"@timestamp": {"gte": _iso8601(start), "lt": _iso8601(end)}}},
     ]
@@ -496,33 +484,14 @@ def _read_timeline_spans(
         trace_ids, candidates_truncated = _read_distributed_trace_ids(
             search_traces, filters, max_events
         )
-        transaction_response: dict[str, object] = {"hits": {"hits": []}}
-        if trace_ids:
-            transaction_filters = [
-                {"term": {"processor.event": "transaction"}},
-                *filters,
-                {"terms": {TRACE_ID_RUNTIME_FIELD: trace_ids}},
-            ]
-            transaction_response = search_traces({
-                "size": max_events,
-                "track_total_hits": False,
-                "_source": False,
-                "runtime_mappings": TRACE_ID_RUNTIME_MAPPINGS,
-                "sort": [{"@timestamp": {"order": "desc"}}],
-                "fields": [
-                    "@timestamp", TRACE_ID_RUNTIME_FIELD, "service.name", "transaction.name", "transaction.type",
-                    "transaction.duration.us", "event.outcome",
-                ],
-                "query": {"bool": {"filter": transaction_filters}},
-            })
-        elif not all_spans:
+        if not trace_ids and not all_spans:
             reasons = ["max_trace_candidates"] if candidates_truncated else []
-            return [], set(), candidates_truncated, reasons, None
+            return [], candidates_truncated, reasons, None
 
         if all_spans:
             search_all_traces = getattr(client, "search_all_traces", None)
             if not callable(search_all_traces):
-                return [], set(), False, [], "unsupported_client"
+                return [], False, [], "unsupported_client"
             raw_hits = search_all_traces({
                 "track_total_hits": False,
                 "_source": False,
@@ -556,30 +525,13 @@ def _read_timeline_spans(
                 "query": {"bool": {"filter": span_filters}},
             })
     except ApmTimeoutError:
-        return [], set(), False, [], "timeout"
-    transaction_hits = transaction_response.get("hits")
-    transaction_raw_hits = (
-        transaction_hits.get("hits") if isinstance(transaction_hits, dict) else None
-    )
-    distributed_transactions: set[tuple[str, str | None, str | None]] = set()
-    if isinstance(transaction_raw_hits, list):
-        for hit in transaction_raw_hits:
-            if not isinstance(hit, dict) or not isinstance(hit.get("fields"), dict):
-                continue
-            fields = hit["fields"]
-            service = _timeline_field_string(fields, "service.name")
-            if service:
-                distributed_transactions.add((
-                    service,
-                    _timeline_field_string(fields, "transaction.name"),
-                    _timeline_field_string(fields, "transaction.type"),
-                ))
+        return [], False, [], "timeout"
     hits = response.get("hits")
     if not isinstance(hits, dict):
-        return [], distributed_transactions, False, [], None
+        return [], False, [], None
     raw_hits = hits.get("hits")
     if not isinstance(raw_hits, list):
-        return [], distributed_transactions, False, [], None
+        return [], False, [], None
     spans: list[dict[str, object]] = []
     for hit in raw_hits:
         if not isinstance(hit, dict) or not isinstance(hit.get("fields"), dict):
@@ -608,7 +560,7 @@ def _read_timeline_spans(
     reasons = ["max_trace_candidates"] if candidates_truncated else []
     if len(raw_hits) >= max_events:
         reasons.append("max_timeline_events")
-    return spans, distributed_transactions, bool(reasons), reasons, None
+    return spans, bool(reasons), reasons, None
 
 
 def _read_distributed_trace_ids(

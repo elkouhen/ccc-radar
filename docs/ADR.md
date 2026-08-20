@@ -330,7 +330,7 @@ identity from forbidden raw trace identifiers.
 
 ## ADR-18 — Restrict transaction workloads to distributed trace exemplars
 
-**Status:** Accepted.
+**Status:** Superseded by ADR-22.
 
 **Context:** Aggregate transaction metrics include health checks and local
 operations. The runtime report's Transactions view must focus on workloads
@@ -408,3 +408,25 @@ embeds `error.message`, exception text, stack traces, or error identifiers.
 **Consequences:** The report distinguishes common failure modes without
 weakening its privacy boundary. Unknown error types degrade to the generic
 `Operation failed` message rather than exporting telemetry-controlled text.
+
+## ADR-22 — Show aggregate transaction workloads independently of distributed traces
+
+**Status:** Accepted.
+
+**Context:** Operators need the runtime report to surface aggregate transaction
+workloads even when no recent trace crosses a service boundary. Restricting the
+transaction ranking to distributed-trace exemplars makes valid local workloads
+invisible and can produce a zero transaction count while APM metric aggregates
+exist.
+
+**Decision:** SystemLens ranks all bounded `metricset.name=transaction`
+aggregates in the selected window, merging only into the existing safe
+service/type categories. Distributed-trace selection remains separate and is
+used only for bounded waterfall exemplars and the default Timeline projection.
+No transaction-to-dependency edge is inferred, and no trace identifier is
+exported or persisted.
+
+**Consequences:** The Transactions view and CLI generation summary include
+local and distributed aggregate workloads. A missing distributed waterfall no
+longer implies a missing transaction workload; the separate Distributed traces
+view continues to state when no multi-service exemplar is available.

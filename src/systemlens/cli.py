@@ -1384,7 +1384,7 @@ def apm_report_cmd(
     typer.echo(
         "Résumé de génération : "
         f"{len(services)} services, "
-        f"{len(transactions)} transactions distribuées, "
+        f"{len(transactions)} transactions agrégées, "
         f"{len(dependencies)} dépendances, "
         f"{len(timeline_spans)} spans affichés, "
         f"{len(distributed_traces)} traces distribuées."

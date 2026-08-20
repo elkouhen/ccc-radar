@@ -805,7 +805,7 @@ def test_runtime_report_groups_indistinguishable_redacted_transactions() -> None
     }]
 
 
-def test_runtime_report_excludes_transactions_without_distributed_trace() -> None:
+def test_runtime_report_keeps_local_aggregate_transactions() -> None:
     class DistributedOnlyClient:
         def search_metrics(self, body: dict[str, object]) -> dict[str, object]:
             metricset = body["query"]["bool"]["filter"][0]["term"]["metricset.name"]  # type: ignore[index]
@@ -838,7 +838,20 @@ def test_runtime_report_excludes_transactions_without_distributed_trace() -> Non
         now=datetime(2026, 8, 15, 10, tzinfo=UTC),
     )
 
-    assert [item["transaction"] for item in report["transactions"]] == ["HTTP transaction"]  # type: ignore[index]
+    assert report["transactions"] == [{
+        "service": "orders",
+        "transaction": "HTTP transaction",
+        "transaction_type": "request",
+        "calls": 11,
+        "failure_calls": 0,
+        "outcome_calls": 11,
+        "error_rate": 0.0,
+        "outcome_coverage": 1.0,
+        "average_ms": 10.0,
+        "p95_ms": 15.0,
+        "p95_scope": "max_operation_p95",
+        "operation_count": 2,
+    }]
 
 
 def test_runtime_report_keeps_distributed_transactions_with_all_spans() -> None:
@@ -1095,7 +1108,7 @@ def test_apm_report_writes_html(
 
     assert result.exit_code == 0, result.output
     assert output.read_text(encoding="utf-8") == "<html>report</html>"
-    assert "Résumé de génération : 0 services, 0 transactions distribuées, 0 dépendances, 0 spans affichés, 0 traces distribuées." in result.output
+    assert "Résumé de génération : 0 services, 0 transactions agrégées, 0 dépendances, 0 spans affichés, 0 traces distribuées." in result.output
 
 
 def test_apm_report_prints_generation_summary(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -1122,7 +1135,7 @@ def test_apm_report_prints_generation_summary(monkeypatch: pytest.MonkeyPatch, t
     )
 
     assert result.exit_code == 0, result.output
-    assert "Résumé de génération : 1 services, 2 transactions distribuées, 3 dépendances, 4 spans affichés, 5 traces distribuées." in result.output
+    assert "Résumé de génération : 1 services, 2 transactions agrégées, 3 dépendances, 4 spans affichés, 5 traces distribuées." in result.output
 
 
 def test_apm_report_writes_a_json_sidecar(
