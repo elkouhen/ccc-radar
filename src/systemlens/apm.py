@@ -162,7 +162,12 @@ class ElasticApmClient:
 
     def search_all_traces(self, body: dict[str, object]) -> list[dict[str, object]]:
         """Read every matching trace event with Elasticsearch's scroll API."""
-        request_body = {**body, "size": 1_000, "sort": ["_doc"]}
+        # Elasticsearch rejects track_total_hits in a scroll context. We page
+        # until the server returns no hit, so an exact total is not needed.
+        request_body = {
+            key: value for key, value in body.items() if key != "track_total_hits"
+        }
+        request_body.update({"size": 1_000, "sort": ["_doc"]})
         response = self._request_json(
             "POST", f"/{','.join(APM_TRACE_INDEX_PATTERNS)}/_search?scroll=1m", request_body
         )
