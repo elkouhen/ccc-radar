@@ -98,13 +98,13 @@ service or a generic messaging source, with nested service and database spans.
 Each card shows the cross-service route and safe workload labels before the
 detailed waterfall, and can be filtered by origin. IDs and arbitrary operation
 values are used only in memory to form the tree and are never embedded. A
-Timeline tab shows a bounded projection of recorded transaction events. It
+Span execution log tab shows a bounded projection of recorded spans. It
 never embeds `_source`, trace IDs, request data, headers, bodies, error
 messages, results, messaging targets, or arbitrary operation values. Dependency P95 is
 deliberately not estimated, and the one-shot report has no historical baseline.
-Timeline records are limited to 500 by default (2,000 maximum). If their
-bounded query times out, the aggregate report is still written and explicitly
-marks the Timeline as unavailable.
+Span execution log records are limited to 500 by default (2,000 maximum). If
+their bounded query times out, the aggregate report is still written and
+explicitly marks Span execution log as unavailable.
 
 ### Inspect the source aggregation
 

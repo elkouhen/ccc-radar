@@ -50,7 +50,7 @@ source data and is not merged with a snapshot.
 
 `apm_report.py` constructs an in-memory `apm-runtime-report-v2` observation
 from three explicit read-only aggregate queries over both Elastic APM and
-compatible OpenTelemetry metric streams, plus bounded transaction-event and
+compatible OpenTelemetry metric streams, plus bounded span-execution and
 distributed-trace exemplar queries over `traces-apm*` and
 `traces-generic.otel-*`. Its service
 and transaction views page composite buckets and aggregate transaction count,
@@ -67,17 +67,18 @@ only average latency, call count, and aggregate failure rate.
 The aggregate queries use `size: 0`. Before the bounded Timeline query,
 SystemLens uses a bounded trace-ID aggregation to retain only recent traces
 with spans from more than one service; IDs remain in memory and are never
-included in the report. The Timeline then explicitly sets `_source: false`, requesting timestamp,
-trace ID, service, transaction type/name, duration, and outcome. Trace IDs are
-held only in memory to join each Timeline event to its exact waterfall, then
-replaced by report-local opaque `waterfall-*` references before serialization.
-Instrumentation-controlled operation names are replaced by safe workload labels
-before export. The HTML labels Timeline events and waterfalls as bounded
-cross-service examples and displays their counts beside aggregate call volume;
-the view's service, workload, and failure-only filters are visible and local to
-that view. To produce
+included in the report. The Timeline first reads transaction identities only in
+memory to retain the distributed transaction aggregate view, then explicitly
+sets `_source: false` for spans, requesting timestamp, trace ID, service, span
+name/type, duration, and outcome. Trace IDs are held only in memory to join
+each Timeline span to its exact waterfall, then replaced by report-local opaque
+`waterfall-*` references before serialization. Instrumentation-controlled span
+names are replaced with a safe `Span` label and span types are allowlisted
+before export. The HTML labels Timeline spans and waterfalls as bounded
+cross-service examples. Its local service and span-type filters operate on the
+embedded projection only. To produce
 at most 20 waterfall exemplars, a second `_source: false` terms aggregation
-uses a `top_hits` limit per selected trace, temporarily reading span and parent
+uses a `top_hits` limit of 500 per selected trace, temporarily reading span and parent
 IDs plus timestamp, service, operation, duration and outcome. It
 reconstructs each span tree in memory and discards all IDs. The exported
 projection never contains those IDs, headers, bodies, stack traces, logs,
@@ -89,6 +90,29 @@ per-trace span truncation. The renderer surfaces this status globally and on
 each partial waterfall. `render_runtime_report_html` embeds
 only this versioned aggregate projection in an explicitly requested HTML file.
 It does not write to SQLite, snapshots, or MCP cache.
+The waterfall renderer uses the persisted tree depth to provide progressive
+disclosure: traces with more than 20 spans begin with expandable nested spans
+collapsed. Expanding a row changes only visibility of its descendants in the
+embedded report and does not load additional telemetry.
+Client-side error-impact filters operate only on the bounded projection. They
+retain `outcome=failure` observations, group spans by safe service/type/label
+and waterfalls by safe service/type/route, then retain up to ten highest-count
+groups with one duration-maximizing exemplar per group.
+Waterfall span-detail controls reuse the safe span projection and never embed
+raw error messages, exception data, trace IDs, span IDs, or parent IDs.
+The bounded trace query reads `error.type`, never `error.message`; a fixed
+allowlist maps its normalized value to a category and controlled message before
+the report HTML boundary.
+Each distributed-trace projection also carries its root transaction type. The
+Distributed transactions tab filters its waterfall examples by safe root type.
+Its optional impact ranking groups matching waterfalls by safe service/type/route
+category, ranks each group by cumulative recorded duration, and returns the
+up to ten distinct exemplars with their execution count and cumulative duration. These are
+client-side visibility filters only; they do not issue a new Elasticsearch
+request.
+The Timeline can further retain the ten longest selected spans by duration,
+then restore chronological display order. The Distributed transactions tab can retain the ten categories with the
+greatest recorded cumulative duration.
 The Timeline limit defaults to 500 and the CLI caps it at 2,000. Every APM
 HTTP request has the adapter's 15-second timeout. A Timeline timeout is caught
 at the report boundary and recorded as `coverage.timeline.available=false` with
@@ -107,15 +131,15 @@ already embedded aggregates: volume × error rate plus latency weighted by the
 logarithm of volume. This is a display-only ordering, explicitly labelled as
 triage rather than an SLO or health calculation, and it introduces no new APM
 query or persisted fact. Each tab owns only its relevant client-side controls:
-Services owns service filtering, Transactions owns its service/type graph
-filters, Dependencies owns map mode/service/workload and focused-flow filters,
-and Timeline owns its service selection. The
-Timeline renderer additionally derives three duration
+Services owns service filtering, Transaction workloads owns its service/type
+graph filters, Dependencies owns map mode/service/workload and focused-flow
+filters, and Span execution log owns its service selection. The Span execution
+log renderer additionally derives three duration
 bands from the already projected duration values; it does not request any new
 trace field. The report stores no prior report and therefore
 does not calculate regressions or invent a historical baseline.
-The renderer exposes separate Services, Transactions, Distributed transactions,
-Dependencies, and Timeline tabs. Every tab contains a synchronized
+The renderer exposes separate Services, Transaction workloads, Span execution
+log, Distributed traces, and Dependencies tabs. Every tab contains a synchronized
 observed-service filter; changing it also updates the view-specific service
 controls where that service is available.
 

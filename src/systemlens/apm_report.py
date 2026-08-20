@@ -29,7 +29,7 @@ DEFAULT_MAX_BUCKETS_PER_VIEW = 1_000
 DEFAULT_MAX_TIMELINE_EVENTS = 500
 MAX_DISTRIBUTED_TRACE_CANDIDATES = 10_000
 DEFAULT_MAX_DISTRIBUTED_TRACES = 20
-MAX_SPANS_PER_DISTRIBUTED_TRACE = 100
+MAX_SPANS_PER_DISTRIBUTED_TRACE = 500
 
 
 def build_runtime_report(
@@ -75,11 +75,12 @@ def build_runtime_report(
         _read_relation_buckets(client, start, end, environment, max_buckets)
     )
     (
-        timeline_events,
+        timeline_spans,
+        distributed_transactions,
         timeline_truncated,
         timeline_truncation_reasons,
         timeline_unavailable_reason,
-    ) = _read_timeline_events(
+    ) = _read_timeline_spans(
         client, start, end, environment, max_timeline_events
     )
     (
@@ -98,14 +99,6 @@ def build_runtime_report(
 
     services = _rank_latency_buckets(service_buckets, kind="service")
     transactions = _rank_latency_buckets(transaction_buckets, kind="transaction")
-    distributed_transactions = {
-        (
-            item["service"],
-            item["_transaction_identity"],
-            item["transaction_type"],
-        )
-        for item in timeline_events
-    }
     transactions = [
         item
         for item in transactions
@@ -118,8 +111,7 @@ def build_runtime_report(
     ]
     for item in transactions:
         item.pop("_transaction_identity", None)
-    for item in timeline_events:
-        item.pop("_transaction_identity", None)
+    for item in timeline_spans:
         trace_id = item.pop("_trace_id", None)
         if isinstance(trace_id, str) and trace_id in waterfall_refs_by_trace_id:
             item["waterfall_refs"] = waterfall_refs_by_trace_id[trace_id]
@@ -156,7 +148,7 @@ def build_runtime_report(
         "services": services[:max_services],
         "transactions": transactions[:max_transactions],
         "dependencies": dependencies[:max_dependencies],
-        "timeline_events": timeline_events,
+        "timeline_spans": timeline_spans,
         "distributed_traces": distributed_traces,
         "coverage": {
             "services": _view_coverage(
@@ -175,7 +167,7 @@ def build_runtime_report(
                 dependencies_query_truncated,
             ),
             "timeline": {
-                "items_exported": len(timeline_events),
+                "items_exported": len(timeline_spans),
                 "truncated": timeline_truncated,
                 "truncation_reasons": timeline_truncation_reasons,
                 "max_events": max_timeline_events,
@@ -244,7 +236,7 @@ def _read_distributed_traces(
                                     "span.name", "service.name", "processor.event",
                                     "transaction.name", "transaction.type",
                                     "transaction.duration.us", "span.duration.us",
-                                    "event.outcome",
+                                    "event.outcome", "error.type",
                                 ],
                             }
                         }
@@ -302,6 +294,9 @@ def _read_distributed_traces(
                 "transaction_type": _timeline_field_string(fields, "transaction.type"),
                 "duration_ms": round(duration_us / 1_000, 3) if duration_us is not None else None,
                 "outcome": _timeline_field_string(fields, "event.outcome"),
+                "error": _safe_error_details(
+                    _timeline_field_string(fields, "error.type")
+                ),
             })
     traces: list[dict[str, object]] = []
     for trace_id, raw_trace in by_trace.items():
@@ -359,7 +354,7 @@ def _project_distributed_trace(
     spans: list[dict[str, object]] = []
     for item in ordered:
         timestamp_ms = _iso_timestamp_milliseconds(str(item["timestamp"]))
-        spans.append({
+        span: dict[str, object] = {
             "service": item["service"],
             "name": _safe_operation_label(
                 str(item["name"]),
@@ -373,7 +368,10 @@ def _project_distributed_trace(
             "depth": depth(item),
             "offset_ms": round(max(0, timestamp_ms - start_ms), 3),
             "duration_ms": item["duration_ms"],
-        })
+        }
+        if item.get("error") is not None:
+            span["error"] = item["error"]
+        spans.append(span)
     duration = root.get("duration_ms")
     if not isinstance(duration, (int, float)):
         duration = max(
@@ -398,6 +396,7 @@ def _project_distributed_trace(
             else None,
         ),
         "duration_ms": duration,
+        "transaction_type": root["transaction_type"],
         "outcome": root["outcome"], "route": services,
         "distributed_operations": list(dict.fromkeys(operations)), "spans": spans,
     }
@@ -410,14 +409,20 @@ def _iso_timestamp_milliseconds(value: str) -> float:
         return 0.0
 
 
-def _read_timeline_events(
+def _read_timeline_spans(
     client: ElasticApmClient,
     start: datetime,
     end: datetime,
     environment: str | None,
     max_events: int,
-) -> tuple[list[dict[str, object]], bool, list[str], str | None]:
-    """Read a bounded, field-projected transaction timeline from traces.
+) -> tuple[
+    list[dict[str, object]],
+    set[tuple[str, str | None, str | None]],
+    bool,
+    list[str],
+    str | None,
+]:
+    """Read a bounded, field-projected span execution log from traces.
 
     Trace IDs are used only in memory to select traces spanning multiple
     services. The event query explicitly disables ``_source`` and never
@@ -426,7 +431,7 @@ def _read_timeline_events(
     """
     search_traces = getattr(client, "search_traces", None)
     if not callable(search_traces):
-        return [], False, [], "unsupported_client"
+        return [], set(), False, [], "unsupported_client"
     filters: list[dict[str, object]] = [
         {"range": {"@timestamp": {"gte": _iso8601(start), "lt": _iso8601(end)}}},
     ]
@@ -438,13 +443,13 @@ def _read_timeline_events(
         )
         if not trace_ids:
             reasons = ["max_trace_candidates"] if candidates_truncated else []
-            return [], candidates_truncated, reasons, None
+            return [], set(), candidates_truncated, reasons, None
         transaction_filters = [
             {"term": {"processor.event": "transaction"}},
             *filters,
             {"terms": {"trace.id": trace_ids}},
         ]
-        response = search_traces({
+        transaction_response = search_traces({
             "size": max_events,
             "track_total_hits": False,
             "_source": False,
@@ -455,46 +460,74 @@ def _read_timeline_events(
             ],
             "query": {"bool": {"filter": transaction_filters}},
         })
+        span_filters = [
+            {"term": {"processor.event": "span"}},
+            *filters,
+            {"terms": {"trace.id": trace_ids}},
+        ]
+        response = search_traces({
+            "size": max_events,
+            "track_total_hits": False,
+            "_source": False,
+            "sort": [{"@timestamp": {"order": "asc"}}],
+            "fields": [
+                "@timestamp", "trace.id", "service.name", "span.name", "span.type",
+                "span.duration.us", "event.outcome",
+            ],
+            "query": {"bool": {"filter": span_filters}},
+        })
     except ApmTimeoutError:
-        return [], False, [], "timeout"
+        return [], set(), False, [], "timeout"
+    transaction_hits = transaction_response.get("hits")
+    transaction_raw_hits = (
+        transaction_hits.get("hits") if isinstance(transaction_hits, dict) else None
+    )
+    distributed_transactions: set[tuple[str, str | None, str | None]] = set()
+    if isinstance(transaction_raw_hits, list):
+        for hit in transaction_raw_hits:
+            if not isinstance(hit, dict) or not isinstance(hit.get("fields"), dict):
+                continue
+            fields = hit["fields"]
+            service = _timeline_field_string(fields, "service.name")
+            if service:
+                distributed_transactions.add((
+                    service,
+                    _timeline_field_string(fields, "transaction.name"),
+                    _timeline_field_string(fields, "transaction.type"),
+                ))
     hits = response.get("hits")
     if not isinstance(hits, dict):
-        return [], False, [], None
+        return [], distributed_transactions, False, [], None
     raw_hits = hits.get("hits")
     if not isinstance(raw_hits, list):
-        return [], False, [], None
-    events: list[dict[str, object]] = []
+        return [], distributed_transactions, False, [], None
+    spans: list[dict[str, object]] = []
     for hit in raw_hits:
         if not isinstance(hit, dict) or not isinstance(hit.get("fields"), dict):
             continue
         fields = hit["fields"]
         timestamp = _timeline_field_string(fields, "@timestamp")
         service = _timeline_field_string(fields, "service.name")
-        transaction = _safe_operation_label(
-            _timeline_field_string(fields, "transaction.name"),
-            "transaction",
-            _timeline_field_string(fields, "transaction.type"),
+        span = _safe_operation_label(
+            _timeline_field_string(fields, "span.name"), "span", None
         )
-        if not timestamp or not service or transaction is None:
+        if not timestamp or not service or span is None:
             continue
-        duration = _timeline_field_number(fields, "transaction.duration.us")
-        event: dict[str, object] = {
+        duration = _timeline_field_number(fields, "span.duration.us")
+        span_event: dict[str, object] = {
             "timestamp": timestamp,
             "service": service,
-            "transaction": transaction,
-            "_transaction_identity": _timeline_field_string(
-                fields, "transaction.name"
-            ),
+            "span": span,
             "_trace_id": _timeline_field_string(fields, "trace.id"),
-            "transaction_type": _timeline_field_string(fields, "transaction.type"),
+            "span_type": _safe_span_type(_timeline_field_string(fields, "span.type")),
             "duration_ms": round(duration / 1_000, 3) if duration is not None else None,
             "outcome": _timeline_field_string(fields, "event.outcome"),
         }
-        events.append(event)
+        spans.append(span_event)
     reasons = ["max_trace_candidates"] if candidates_truncated else []
     if len(raw_hits) >= max_events:
         reasons.append("max_timeline_events")
-    return events, bool(reasons), reasons, None
+    return spans, distributed_transactions, bool(reasons), reasons, None
 
 
 def _read_distributed_trace_ids(
@@ -573,6 +606,36 @@ def _safe_operation_label(
     if str(transaction_type).lower() == "messaging":
         return "Messaging transaction"
     return "Transaction"
+
+
+def _safe_span_type(value: str | None) -> str:
+    """Keep only stable, non-telemetry-controlled span-type categories."""
+    normalized = str(value or "").lower()
+    if normalized in {"request", "http"}:
+        return "request"
+    if normalized == "messaging":
+        return "messaging"
+    if normalized in {"db", "external"}:
+        return normalized
+    return "other"
+
+
+def _safe_error_details(error_type: str | None) -> dict[str, str] | None:
+    """Map telemetry error types to a small, non-sensitive user-facing taxonomy."""
+    normalized = str(error_type or "").lower()
+    if "timeout" in normalized:
+        return {"category": "timeout", "message": "Dependency timed out"}
+    if "connect" in normalized or "connection" in normalized:
+        return {"category": "connection", "message": "Dependency connection failed"}
+    if "valid" in normalized:
+        return {"category": "validation", "message": "Request validation failed"}
+    if "authoriz" in normalized or "forbidden" in normalized:
+        return {"category": "authorization", "message": "Access was denied"}
+    if "throttl" in normalized or "rate" in normalized:
+        return {"category": "throttling", "message": "Dependency rate limit reached"}
+    if error_type:
+        return {"category": "failure", "message": "Operation failed"}
+    return None
 
 
 def _latency_query(
@@ -865,9 +928,22 @@ def _redact_report_operations(report: dict[str, object]) -> dict[str, object]:
                     if isinstance(item.get("transaction_type"), str)
                     else None,
                 )
-    timeline_events = projection.get("timeline_events")
-    if isinstance(timeline_events, list):
-        for event in timeline_events:
+    timeline_spans = projection.get("timeline_spans")
+    if isinstance(timeline_spans, list):
+        for span in timeline_spans:
+            if isinstance(span, dict):
+                span["span"] = _safe_operation_label(
+                    span.get("span") if isinstance(span.get("span"), str) else None,
+                    "span",
+                    None,
+                )
+                span["span_type"] = _safe_span_type(
+                    span.get("span_type") if isinstance(span.get("span_type"), str) else None
+                )
+                span.pop("_trace_id", None)
+    legacy_timeline_events = projection.get("timeline_events")
+    if isinstance(legacy_timeline_events, list):
+        for event in legacy_timeline_events:
             if isinstance(event, dict):
                 event["transaction"] = _safe_operation_label(
                     event.get("transaction")
@@ -908,6 +984,16 @@ def _redact_report_operations(report: dict[str, object]) -> dict[str, object]:
                             if isinstance(span.get("transaction_type"), str)
                             else None,
                         )
+                        error = span.get("error")
+                        safe_error = _safe_error_details(
+                            error.get("category") if isinstance(error, dict)
+                            and isinstance(error.get("category"), str)
+                            else None
+                        )
+                        if safe_error is None:
+                            span.pop("error", None)
+                        else:
+                            span["error"] = safe_error
     return projection
 
 
@@ -915,22 +1001,22 @@ _RUNTIME_REPORT_ENHANCEMENTS = """<style>
 .distributed-trace-group { margin:0 0 18px; } .distributed-trace-group h3 { margin:0 0 8px; font-size:13px; color:#243e99; }
 .distributed-trace { border:1px solid #dbe3ef; border-radius:10px; margin:8px 0; overflow:auto; } .distributed-trace header { min-width:760px; display:flex; justify-content:space-between; gap:14px; padding:10px 12px; border-bottom:1px solid #edf0f5; }
 .trace-identity { display:flex; flex-wrap:wrap; gap:6px; margin-top:5px; } .trace-identity span { border-radius:999px; background:#eef3ff; color:#243e99; padding:2px 7px; font-size:12px; }
-.trace-waterfall { min-width:760px; padding:8px 12px; } .trace-span { display:grid; grid-template-columns: minmax(260px,.8fr) minmax(280px,1.2fr) 80px; align-items:center; gap:10px; min-height:28px; } .timeline-item.is-waterfall-link { cursor:pointer; }
-.trace-span-name { padding-left:calc(var(--depth) * 14px); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; } .trace-track { position:relative; height:15px; border-left:1px solid #dce3ee; background:repeating-linear-gradient(90deg,#f7f9fc 0,#f7f9fc calc(25% - 1px),#e7edf6 calc(25% - 1px),#e7edf6 25%); }
-.trace-bar { position:absolute; top:2px; height:11px; min-width:2px; border-radius:3px; background:#7c92c9; } .trace-bar.is-transaction { background:#11b9b4; } .trace-span small { color:#5f6b82; font-variant-numeric:tabular-nums; text-align:right; }
+.trace-waterfall { min-width:760px; padding:8px 12px; } .trace-span { display:grid; grid-template-columns: minmax(260px,.8fr) minmax(280px,1.2fr) 80px; align-items:center; gap:10px; min-height:28px; } .trace-span.is-failure { border-left:3px solid #b42318; background:#fff6f5; } .timeline-item.is-waterfall-link { cursor:pointer; }
+.trace-span-name { display:flex; align-items:center; gap:6px; padding-left:calc(var(--depth) * 14px); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; } .trace-span-toggle { flex:0 0 22px; height:22px; border:1px solid #cbd7e8; border-radius:5px; background:#fff; color:#3156d3; font:inherit; font-weight:750; cursor:pointer; } .trace-span-toggle:hover { background:#eef3ff; } .trace-span-details { overflow:hidden; border:0; padding:0; background:transparent; color:inherit; font:inherit; text-align:left; text-overflow:ellipsis; white-space:nowrap; cursor:pointer; } .trace-span-details:hover,.trace-span-details:focus-visible { color:#243e99; text-decoration:underline; outline:0; } .trace-span-details.is-selected { color:#243e99; font-weight:750; } .trace-error-badge { flex:0 0 auto; border-radius:999px; padding:1px 6px; background:#fee4e2; color:#b42318; font-size:11px; font-weight:750; } .trace-track { position:relative; height:15px; border-left:1px solid #dce3ee; background:repeating-linear-gradient(90deg,#f7f9fc 0,#f7f9fc calc(25% - 1px),#e7edf6 calc(25% - 1px),#e7edf6 25%); }
+.trace-bar { position:absolute; top:2px; height:11px; min-width:2px; border-radius:3px; background:#7c92c9; } .trace-bar.is-transaction { background:#11b9b4; } .trace-bar.is-failure { background:#b42318; } .trace-span small { color:#5f6b82; font-variant-numeric:tabular-nums; text-align:right; } .trace-span-detail { margin:0 12px 12px; padding:10px; border:1px solid #dbe3ef; border-radius:8px; background:#f8faff; } .trace-span-detail dl { display:grid; grid-template-columns:max-content 1fr; gap:4px 12px; margin:0; } .trace-span-detail dt { color:#5f6b82; } .trace-span-detail dd { margin:0; } .trace-span-detail .is-failure { color:#b42318; font-weight:750; }
 </style><script>
 (() => {
   const data = JSON.parse(document.getElementById('runtime-data').textContent);
   const byId = id => document.getElementById(id);
   const sharedServiceFilters = [...document.querySelectorAll('.tab-service-filter')];
   const sharedService = () => byId('global-service-filter').value;
+  const rootTransactionType = value => {
+    const type = String(value || '').toLowerCase();
+    return type === 'request' || type === 'http' ? 'request' : type === 'messaging' ? 'messaging' : 'other';
+  };
   const number = value => typeof value === 'number' ? value : 0;
   const esc = value => String(value ?? '—').replace(/[&<>"']/g, character => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[character]));
   const formatMs = value => typeof value === 'number' ? `${value.toLocaleString(undefined,{maximumFractionDigits:3})} ms` : '—';
-  const workload = event => {
-    const type = String(event.transaction_type || '').toLowerCase();
-    return type === 'messaging' ? 'Messaging' : (type === 'request' || type === 'http' ? 'HTTP' : 'Other');
-  };
   const summary = document.createElement('div');
   summary.id = 'timeline-summary';
   summary.className = 'timeline-summary';
@@ -951,34 +1037,59 @@ _RUNTIME_REPORT_ENHANCEMENTS = """<style>
     ['overview', 'map', 'details', 'distributed', 'timeline'].forEach(name => byId(`${name}-tab`).classList.toggle('is-active', name === view));
   }
   ['overview', 'map', 'details', 'distributed', 'timeline'].forEach(name => byId(`${name}-tab`).addEventListener('click', () => selectView(name)));
+  selectView('overview');
+  function visibleTimelineSpans() {
+    const service = byId('timeline-service-filter').value;
+    const type = byId('timeline-span-type-filter').value;
+    let spans = (Array.isArray(data.timeline_spans) ? data.timeline_spans : []).filter(span =>
+      (!service || span.service === service) &&
+      (!type || span.span_type === type)
+    );
+    if (byId('timeline-top-ten-error-impact-filter').checked) {
+      const groups = new Map();
+      spans.filter(span => span.outcome === 'failure').forEach(span => {
+        const key = `${span.service}|${span.span_type}|${span.span}`;
+        const group = groups.get(key) || {errors: 0, exemplar: span};
+        group.errors += 1;
+        if (number(span.duration_ms) > number(group.exemplar.duration_ms)) group.exemplar = span;
+        groups.set(key, group);
+      });
+      spans = [...groups.values()].map(group => ({
+        ...group.exemplar, _errorImpact: {errors: group.errors},
+      })).sort((left, right) =>
+        number(right._errorImpact.errors) - number(left._errorImpact.errors) ||
+        number(right.duration_ms) - number(left.duration_ms)
+      ).slice(0, 10).sort((left, right) => Date.parse(left.timestamp) - Date.parse(right.timestamp));
+    } else if (byId('timeline-top-ten-longest-filter').checked) {
+      spans = spans.sort((left, right) => number(right.duration_ms) - number(left.duration_ms)).slice(0, 10).sort((left, right) => Date.parse(left.timestamp) - Date.parse(right.timestamp));
+    }
+    return spans;
+  }
   function renderTimelineTriage() {
     const timelineCoverage = (data.coverage && data.coverage.timeline) || {};
     if (timelineCoverage.available === false) {
       summary.innerHTML = '';
-      byId('timeline-events').innerHTML = '<p class="empty">Recorded transaction timeline is unavailable because its bounded query timed out. Aggregate views are still available.</p>';
+      byId('timeline-events').innerHTML = '<p class="empty">The bounded span execution log is unavailable because its query timed out. Aggregate views are still available.</p>';
       return;
     }
-    const service = byId('timeline-service-filter').value;
-    const kind = byId('timeline-workload-filter').value;
-    const failuresOnly = byId('timeline-failures-only-filter').checked;
-    const events = (Array.isArray(data.timeline_events) ? data.timeline_events : []).filter(event =>
-      (!service || event.service === service) &&
-      (!kind || workload(event) === kind) &&
-      (!failuresOnly || event.outcome === 'failure')
-    );
-    const buckets = [['Under 100 ms', 0], ['100–500 ms', 0], ['500 ms or more', 0]];
-    events.forEach(event => { const duration = number(event.duration_ms); buckets[duration < 100 ? 0 : duration < 500 ? 1 : 2][1] += 1; });
-    summary.innerHTML = buckets.map(([label, count]) => `<div class="timeline-bucket"><b>${count.toLocaleString()}</b>${label}</div>`).join('');
-    byId('timeline-events').innerHTML = events.length ? events.map(event => `<article class="timeline-item ${event.outcome === 'failure' ? 'is-failure' : ''}"><time>${esc(event.timestamp)}</time><div><div class="timeline-name">${esc(event.service)} · ${esc(event.transaction)}</div><div class="subtle">${esc(event.transaction_type || 'other')}${event.messaging_target ? ` · ${esc(event.messaging_target)}` : ''}${event.result ? ` · ${esc(event.result)}` : ''}</div></div><strong>${formatMs(event.duration_ms)}</strong></article>`).join('') : '<p class="empty">No recorded transaction event matches this selection.</p>';
-    const aggregateCalls = (Array.isArray(data.services) ? data.services : []).reduce((total, item) => total + number(item.calls), 0);
+    const spans = visibleTimelineSpans();
+    summary.innerHTML = `<div class="timeline-bucket"><b>${spans.length.toLocaleString()}</b>matching spans</div>`;
+    byId('timeline-events').innerHTML = spans.length ? spans.map(span => `<article class="timeline-item ${span.outcome === 'failure' ? 'is-failure' : ''}"><time>${esc(span.timestamp)}</time><div><div class="timeline-name">${esc(span.service)} · ${esc(span.span)}</div><div class="subtle">${esc(span.span_type)}${span.outcome ? ` · ${esc(span.outcome)}` : ''}${span._errorImpact ? ` · ${span._errorImpact.errors.toLocaleString()} observed failed executions` : ''}</div></div><strong>${formatMs(span.duration_ms)}</strong></article>`).join('') : '<p class="empty">No recorded span matches this selection.</p>';
     const waterfallCount = Array.isArray(data.distributed_traces) ? data.distributed_traces.length : 0;
-    byId('timeline-coverage').textContent = `Showing ${events.length.toLocaleString()} recorded cross-service event${events.length === 1 ? '' : 's'} from ${aggregateCalls.toLocaleString()} aggregate calls and ${waterfallCount.toLocaleString()} waterfall exemplar${waterfallCount === 1 ? '' : 's'}${timelineCoverage.truncated ? ' (Timeline result limit reached)' : ''}.`;
+    byId('timeline-coverage').textContent = `Showing ${spans.length.toLocaleString()} recorded span${spans.length === 1 ? '' : 's'} from ${waterfallCount.toLocaleString()} distributed waterfall exemplar${waterfallCount === 1 ? '' : 's'}${timelineCoverage.truncated ? ' (span result limit reached)' : ''}.`;
   }
-  byId('timeline-workload-filter').innerHTML = '<option value="">All workloads</option><option value="HTTP">HTTP</option><option value="Messaging">Messaging</option><option value="Other">Other</option>';
-  ['timeline-service-filter', 'timeline-workload-filter', 'timeline-failures-only-filter'].forEach(id => byId(id).addEventListener('change', renderTimelineTriage));
+  const timelineServices = [...new Set((data.timeline_spans || []).map(span => span.service).filter(Boolean))].sort();
+  byId('timeline-service-filter').innerHTML = `<option value="">All observed services</option>${timelineServices.map(service => `<option value="${esc(service)}">${esc(service)}</option>`).join('')}`;
+  const timelineSpanTypes = [...new Set((data.timeline_spans || []).map(span => span.span_type).filter(Boolean))].sort();
+  byId('timeline-span-type-filter').innerHTML = `<option value="">All span types</option>${timelineSpanTypes.map(type => `<option value="${esc(type)}">${esc(type)}</option>`).join('')}`;
+  ['timeline-service-filter', 'timeline-span-type-filter', 'timeline-top-ten-longest-filter', 'timeline-top-ten-error-impact-filter'].forEach(id => ['input', 'change'].forEach(event => byId(id).addEventListener(event, renderTimelineTriage)));
   renderTimelineTriage();
   const sourceLabel = trace => trace.source_kind === 'topic' ? `Kafka topic · ${trace.source}` : trace.source_kind === 'http_service' ? `HTTP service · ${trace.source}` : `Source service · ${trace.source}`;
   const distributedSourceFilter = byId('distributed-trace-source-filter');
+  const distributedRootTypeFilter = byId('distributed-root-type-filter');
+  const rootTypeLabels = {request: 'HTTP/request', messaging: 'Messaging', other: 'Other'};
+  const distributedRootTypes = [...new Set((data.distributed_traces || []).map(trace => rootTransactionType(trace.transaction_type)))].sort();
+  distributedRootTypeFilter.innerHTML = `<option value="">All root types</option>${distributedRootTypes.map(type => `<option value="${esc(type)}">${esc(rootTypeLabels[type])}</option>`).join('')}`;
   let timelineWaterfallRefs = new Set();
   const clearTimelineWaterfallFocus = document.createElement('button');
   clearTimelineWaterfallFocus.id = 'clear-timeline-waterfall-focus';
@@ -988,11 +1099,120 @@ _RUNTIME_REPORT_ENHANCEMENTS = """<style>
   distributedSourceFilter.closest('.panel-head').append(clearTimelineWaterfallFocus);
   function visibleDistributedTraces() {
     const allTraces = Array.isArray(data.distributed_traces) ? data.distributed_traces : [];
-    return allTraces.filter(trace =>
+    let traces = allTraces.filter(trace =>
       (!distributedSourceFilter.value || `${trace.source_kind}:${trace.source}` === distributedSourceFilter.value) &&
       (!sharedService() || trace.service === sharedService() || (trace.route || []).includes(sharedService())) &&
+      (!distributedRootTypeFilter.value || rootTransactionType(trace.transaction_type) === distributedRootTypeFilter.value) &&
       (!timelineWaterfallRefs.size || timelineWaterfallRefs.has(trace.waterfall_ref))
     );
+    if (byId('distributed-top-ten-error-impact-filter').checked) {
+      const groups = new Map();
+      traces.filter(trace => trace.outcome === 'failure').forEach(trace => {
+        const key = `${trace.service}|${trace.transaction_type}|${(trace.route || []).join('→')}`;
+        const group = groups.get(key) || {errors: 0, exemplar: trace};
+        group.errors += 1;
+        if (number(trace.duration_ms) > number(group.exemplar.duration_ms)) group.exemplar = trace;
+        groups.set(key, group);
+      });
+      traces = [...groups.values()].map(group => ({
+        ...group.exemplar, _errorImpact: {errors: group.errors},
+      })).sort((left, right) =>
+        number(right._errorImpact.errors) - number(left._errorImpact.errors) ||
+        number(right.duration_ms) - number(left.duration_ms)
+      ).slice(0, 10);
+    } else if (byId('distributed-top-ten-impact-filter').checked) {
+      const groups = new Map();
+      traces.forEach(trace => {
+        const key = `${trace.service}|${trace.transaction_type}|${(trace.route || []).join('→')}`;
+        const group = groups.get(key) || {traces: [], totalDuration: 0};
+        group.traces.push(trace);
+        group.totalDuration += number(trace.duration_ms);
+        groups.set(key, group);
+      });
+      traces = traces.map(trace => {
+        const key = `${trace.service}|${trace.transaction_type}|${(trace.route || []).join('→')}`;
+        const group = groups.get(key);
+        return {...trace, _impact: {executions: group.traces.length, totalDuration: group.totalDuration}};
+      }).sort((left, right) =>
+        number(right._impact.totalDuration) - number(left._impact.totalDuration) ||
+        number(right.duration_ms) - number(left.duration_ms)
+      ).slice(0, 10);
+    }
+    return traces;
+  }
+  function renderTraceSpanRows(trace) {
+    const spans = Array.isArray(trace.spans) ? trace.spans : [];
+    const total = Math.max(1, number(trace.duration_ms), ...spans.map(span => number(span.offset_ms) + number(span.duration_ms)));
+    const dense = spans.length > 20;
+    return spans.map((span, index) => {
+      const depth = number(span.depth);
+      let descendants = 0;
+      for (let child = index + 1; child < spans.length && number(spans[child].depth) > depth; child += 1) descendants += 1;
+      const expandable = descendants > 0;
+      const collapsed = dense && expandable;
+      const left = Math.min(100, 100 * number(span.offset_ms) / total);
+      const width = Math.max(1, Math.min(100 - left, 100 * Math.max(number(span.duration_ms), 1) / total));
+      const toggle = expandable ? `<button class="trace-span-toggle" type="button" aria-expanded="${collapsed ? 'false' : 'true'}" aria-label="${collapsed ? 'Expand' : 'Collapse'} ${descendants} subspans">${collapsed ? '+' : '−'}</button>` : '';
+      const failure = span.outcome === 'failure';
+      return `<div class="trace-span${collapsed ? ' is-collapsed' : ''}${failure ? ' is-failure' : ''}" data-depth="${depth}" style="--depth:${depth}"><span class="trace-span-name">${toggle}<button class="trace-span-details" type="button" data-span-index="${index}" aria-expanded="false" aria-label="Show details for ${esc(span.service)} ${esc(span.name)}">${esc(span.service)} · ${esc(span.name)}</button>${failure ? '<span class="trace-error-badge">Error</span>' : ''}</span><span class="trace-track"><i class="trace-bar ${span.kind === 'transaction' ? 'is-transaction' : ''}${failure ? ' is-failure' : ''}" style="left:${left}%;width:${width}%"></i></span><small>${formatMs(span.duration_ms)}</small></div>`;
+    }).join('');
+  }
+  function updateTraceSpanVisibility(card) {
+    const rows = [...card.querySelectorAll('.trace-span')];
+    rows.forEach((row, index) => {
+      let depth = Number(row.dataset.depth);
+      let hidden = false;
+      for (let ancestor = index - 1; ancestor >= 0; ancestor -= 1) {
+        const ancestorDepth = Number(rows[ancestor].dataset.depth);
+        if (ancestorDepth >= depth) continue;
+        if (rows[ancestor].classList.contains('is-collapsed')) {
+          hidden = true;
+          break;
+        }
+        depth = ancestorDepth;
+      }
+      row.hidden = hidden;
+    });
+  }
+  function renderTraceSpanDetail(span) {
+    const outcome = span.outcome || 'unknown';
+    const error = span.error || (outcome === 'failure' ? {category: 'failure', message: 'Operation failed'} : null);
+    const failureNote = error ? `<dt>Error category</dt><dd>${esc(error.category)}</dd><dt>Error message</dt><dd class="is-failure">${esc(error.message)}</dd>` : '';
+    const privacyNote = outcome === 'failure' ? '<p class="note">Error messages are sanitized categories; raw exception data is not included in this report.</p>' : '';
+    return `<dl><dt>Service</dt><dd>${esc(span.service)}</dd><dt>Operation</dt><dd>${esc(span.name)}</dd><dt>Kind</dt><dd>${esc(span.kind)}</dd><dt>Type</dt><dd>${esc(span.transaction_type || 'other')}</dd><dt>Outcome</dt><dd class="${outcome === 'failure' ? 'is-failure' : ''}">${esc(outcome)}</dd>${failureNote}<dt>Start offset</dt><dd>${formatMs(span.offset_ms)}</dd><dt>Duration</dt><dd>${formatMs(span.duration_ms)}</dd></dl>${privacyNote}`;
+  }
+  function bindTraceSpanTrees(container, traces) {
+    const tracesByRef = new Map(traces.map(trace => [trace.waterfall_ref, trace]));
+    container.querySelectorAll('.distributed-trace').forEach(card => {
+      updateTraceSpanVisibility(card);
+      const trace = tracesByRef.get(card.dataset.waterfallRef);
+      const detail = card.querySelector('.trace-span-detail');
+      card.querySelectorAll('.trace-span-details').forEach(button => button.addEventListener('click', () => {
+        if (!trace || !detail) return;
+        const index = Number(button.dataset.spanIndex);
+        const span = trace.spans[index];
+        if (!span) return;
+        const selected = button.classList.toggle('is-selected');
+        card.querySelectorAll('.trace-span-details').forEach(candidate => {
+          if (candidate !== button) {
+            candidate.classList.remove('is-selected');
+            candidate.setAttribute('aria-expanded', 'false');
+          }
+        });
+        button.setAttribute('aria-expanded', String(selected));
+        detail.hidden = !selected;
+        detail.innerHTML = selected ? renderTraceSpanDetail(span) : '';
+      }));
+      card.querySelectorAll('.trace-span-toggle').forEach(toggle => toggle.addEventListener('click', () => {
+        const row = toggle.closest('.trace-span');
+        if (!row) return;
+        const collapsed = row.classList.toggle('is-collapsed');
+        toggle.textContent = collapsed ? '+' : '−';
+        toggle.setAttribute('aria-expanded', String(!collapsed));
+        toggle.setAttribute('aria-label', `${collapsed ? 'Expand' : 'Collapse'} ${[...row.parentElement.querySelectorAll('.trace-span')].filter(candidate => Number(candidate.dataset.depth) > Number(row.dataset.depth)).length} subspans`);
+        updateTraceSpanVisibility(card);
+      }));
+    });
   }
   function renderDistributedTraces() {
     const container = byId('distributed-traces');
@@ -1002,9 +1222,13 @@ _RUNTIME_REPORT_ENHANCEMENTS = """<style>
     if (!traces.length) { container.innerHTML = '<p class="empty">No distributed trace was observed in this window.</p>'; return; }
     const groups = new Map();
     traces.forEach(trace => { const key = `${trace.source_kind}:${trace.source}`; if (!groups.has(key)) groups.set(key, []); groups.get(key).push(trace); });
-    container.innerHTML = [...groups.entries()].map(([,items]) => `<section class="distributed-trace-group"><h3>${esc(sourceLabel(items[0]))}</h3>${items.map(trace => { const total = Math.max(1, number(trace.duration_ms), ...trace.spans.map(span => number(span.offset_ms) + number(span.duration_ms))); const operations = (trace.distributed_operations || []).join(' → '); const route = (trace.route || []).join(' → '); return `<article class="distributed-trace"><header><div><b>${esc(trace.service)} · ${esc(trace.name)}</b><div class="trace-identity"><span>${esc(route)}</span><span>${esc(operations)}</span></div><div class="subtle">${esc(trace.timestamp)} · ${trace.spans.length} spans</div></div><strong>${formatMs(trace.duration_ms)}</strong></header><div class="trace-waterfall">${trace.spans.map(span => { const left = Math.min(100, 100 * number(span.offset_ms) / total); const width = Math.max(1, Math.min(100 - left, 100 * Math.max(number(span.duration_ms), 1) / total)); return `<div class="trace-span" style="--depth:${number(span.depth)}"><span class="trace-span-name">${esc(span.service)} · ${esc(span.name)}</span><span class="trace-track"><i class="trace-bar ${span.kind === 'transaction' ? 'is-transaction' : ''}" style="left:${left}%;width:${width}%"></i></span><small>${formatMs(span.duration_ms)}</small></div>`; }).join('')}</div></article>`; }).join('')}</section>`).join('');
+    container.innerHTML = [...groups.entries()].map(([,items]) => `<section class="distributed-trace-group"><h3>${esc(sourceLabel(items[0]))}</h3>${items.map(trace => { const operations = (trace.distributed_operations || []).join(' → '); const route = (trace.route || []).join(' → '); const impact = trace._impact ? ` · ${trace._impact.executions.toLocaleString()} executions · ${formatMs(trace._impact.totalDuration)} cumulative duration` : trace._errorImpact ? ` · ${trace._errorImpact.errors.toLocaleString()} observed failed executions` : ''; return `<article class="distributed-trace" data-waterfall-ref="${esc(trace.waterfall_ref)}"><header><div><b>${esc(trace.service)} · ${esc(trace.name)}</b><div class="trace-identity"><span>${esc(route)}</span><span>${esc(operations)}</span></div><div class="subtle">${esc(trace.timestamp)} · ${trace.spans.length} spans${impact}</div></div><strong>${formatMs(trace.duration_ms)}</strong></header><div class="trace-waterfall">${renderTraceSpanRows(trace)}</div><section class="trace-span-detail" hidden aria-live="polite"></section></article>`; }).join('')}</section>`).join('');
+    bindTraceSpanTrees(container, traces);
   }
-  distributedSourceFilter.addEventListener('change', renderDistributedTraces);
+  ['distributed-trace-source-filter', 'distributed-root-type-filter', 'distributed-top-ten-impact-filter', 'distributed-top-ten-error-impact-filter'].forEach(id => ['input', 'change'].forEach(event => byId(id).addEventListener(event, () => {
+    renderDistributedTraces();
+    renderTraceCoverage();
+  })));
   clearTimelineWaterfallFocus.addEventListener('click', () => {
     timelineWaterfallRefs = new Set();
     clearTimelineWaterfallFocus.hidden = true;
@@ -1063,16 +1287,9 @@ _RUNTIME_REPORT_ENHANCEMENTS = """<style>
     byId('details-distributed-traces').scrollIntoView({block:'start'});
   }
   function decorateTimelineEvents() {
-    const selectedService = byId('timeline-service-filter').value;
-    const selectedWorkload = byId('timeline-workload-filter').value;
-    const failuresOnly = byId('timeline-failures-only-filter').checked;
-    const visibleEvents = (Array.isArray(data.timeline_events) ? data.timeline_events : []).filter(event =>
-      (!selectedService || event.service === selectedService) &&
-      (!selectedWorkload || workload(event) === selectedWorkload) &&
-      (!failuresOnly || event.outcome === 'failure')
-    );
+    const visibleSpans = visibleTimelineSpans();
     byId('timeline-events').querySelectorAll('.timeline-item').forEach((event, index) => {
-      const refs = visibleEvents[index] && Array.isArray(visibleEvents[index].waterfall_refs) ? visibleEvents[index].waterfall_refs : [];
+      const refs = visibleSpans[index] && Array.isArray(visibleSpans[index].waterfall_refs) ? visibleSpans[index].waterfall_refs : [];
       if (!refs.length) return;
       event.classList.add('is-waterfall-link');
       event.tabIndex = 0;
@@ -1092,12 +1309,11 @@ _RUNTIME_REPORT_ENHANCEMENTS = """<style>
     event.preventDefault();
     openTimelineWaterfalls(target.dataset.waterfallRefs.split(','));
   });
-  ['timeline-service-filter', 'timeline-workload-filter', 'timeline-failures-only-filter'].forEach(id => byId(id).addEventListener('change', decorateTimelineEvents));
+  ['timeline-service-filter', 'timeline-span-type-filter', 'timeline-top-ten-longest-filter', 'timeline-top-ten-error-impact-filter'].forEach(id => ['input', 'change'].forEach(event => byId(id).addEventListener(event, decorateTimelineEvents)));
   decorateTimelineEvents();
   renderOutcomeSummary();
   renderTraceCoverage();
   labelTransactionP95();
-  distributedSourceFilter.addEventListener('change', renderTraceCoverage);
   ['transaction-service-filter', 'transaction-kind-filter'].forEach(id => byId(id).addEventListener('change', labelTransactionP95));
   sharedServiceFilters.forEach(filter => {
     filter.innerHTML = byId('global-service-filter').innerHTML;
@@ -1127,22 +1343,22 @@ main { max-width:1440px; margin:auto; padding:24px; } h1,h2 { margin:0; } h1 { f
 .service-map { min-height:410px; border:1px solid #e4eaf3; border-radius:11px; background:radial-gradient(circle at 50% 45%,#fff 0,#f6f8fc 70%); overflow:auto; } .service-map svg { display:block; min-width:700px; width:100%; height:410px; } .service-map .map-edge { stroke:#7890bd; fill:none; cursor:pointer; } .service-map .map-edge.is-risk { stroke:var(--red); } .service-map .map-edge-label { fill:var(--muted); font-size:11px; pointer-events:none; } .service-map .map-node { cursor:pointer; } .service-map .map-node circle { fill:#eef3ff; stroke:#7890bd; stroke-width:2; } .service-map .map-node.is-selected circle { fill:#3156d3; stroke:#1d3b9e; stroke-width:4; } .service-map .map-node.is-risk circle { stroke:#c13b31; } .service-map .map-node text { fill:#172554; font-size:12px; font-weight:700; pointer-events:none; } .service-map .map-node.is-selected text { fill:#fff; } .service-map-details { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:12px; } .service-map-details h3 { margin:0 0 7px; font-size:14px; } .service-map-details h4 { color:var(--muted); font-size:12px; margin:12px 0 6px; text-transform:uppercase; } .detail-card { border:1px solid #e4eaf3; border-radius:9px; padding:11px; background:#fff; } .detail-list { display:grid; gap:6px; } .detail-item { display:flex; justify-content:space-between; gap:10px; padding:6px 0; border-bottom:1px solid #eef2f7; } .detail-item:last-child { border-bottom:0; } @media (max-width:800px) { .service-map-details { grid-template-columns:1fr; } }
 .service-map .map-topic polygon { fill:#ecfdf3; stroke:#15945c; stroke-width:2; } .service-map .map-topic.is-selected polygon { fill:#087443; stroke:#065f46; stroke-width:4; } .service-map .map-topic text { fill:#065f46; } .service-map .map-topic.is-selected text { fill:#fff; } .map-legend { display:flex; gap:12px; margin:0 0 8px; color:var(--muted); font-size:12px; } .map-legend span::before { content:''; display:inline-block; width:10px; height:10px; margin-right:5px; vertical-align:-1px; background:#eef3ff; border:1px solid #7890bd; border-radius:50%; } .map-legend .legend-topic::before { background:#ecfdf3; border-color:#15945c; border-radius:1px; transform:rotate(45deg); }
 .runtime-tabs { display:flex; gap:6px; margin:0 0 12px; } .runtime-tab { border:1px solid #cbd5e1; border-radius:7px; padding:7px 11px; color:#334155; background:#fff; font:inherit; font-weight:700; cursor:pointer; } .runtime-tab.is-active { color:#fff; border-color:#3156d3; background:#3156d3; } .timeline { display:grid; gap:8px; } .timeline-item { display:grid; grid-template-columns:160px 1fr auto; gap:10px; align-items:center; padding:9px; border-left:4px solid #3156d3; border-radius:7px; background:#f8faff; } .timeline-item.is-failure { border-left-color:#b42318; background:#fff6f5; } .timeline-item .timeline-name { overflow-wrap:anywhere; font-weight:700; } @media (max-width:800px) { .timeline-item { grid-template-columns:1fr; gap:3px; } }
-.report-status { display:flex; flex-wrap:wrap; gap:8px; margin:0 0 14px; } .status { border-radius:7px; padding:6px 9px; font-size:12px; font-weight:700; } .status-ok { background:#eaf8f1; color:#087443; } .status-limited { background:#fff4e5; color:#a65100; } .triage-items { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; } .triage-item { border-left:4px solid var(--blue); border-radius:8px; background:#f8faff; padding:10px; } .triage-item.is-danger { border-left-color:var(--red); background:#fff6f5; } .triage-item b,.triage-item span { display:block; } .triage-item span { color:var(--muted); font-size:12px; } .filter-bar { display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin:12px 0; } .filter-bar label { display:flex; align-items:center; gap:6px; } .filter-bar button { border:1px solid var(--line); border-radius:7px; background:#fff; color:var(--ink); padding:6px 10px; font:inherit; cursor:pointer; } .timeline-summary { display:grid; grid-template-columns:repeat(auto-fit,minmax(110px,1fr)); gap:7px; margin:0 0 10px; } .timeline-bucket { border-radius:7px; background:#f1f4fa; padding:7px; color:var(--muted); font-size:12px; } .timeline-bucket b { color:var(--ink); display:block; font-size:15px; } @media (max-width:800px) { .triage-items { grid-template-columns:1fr; } }
+.report-status { display:flex; flex-wrap:wrap; gap:8px; margin:0 0 14px; } .status { border-radius:7px; padding:6px 9px; font-size:12px; font-weight:700; } .status-ok { background:#eaf8f1; color:#087443; } .status-limited { background:#fff4e5; color:#a65100; } .triage-items { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; } .triage-item { border-left:4px solid var(--blue); border-radius:8px; background:#f8faff; padding:10px; } .triage-item.is-danger { border-left-color:var(--red); background:#fff6f5; } .triage-item b,.triage-item span { display:block; } .triage-item span { color:var(--muted); font-size:12px; } .filter-bar { display:grid; grid-template-columns:repeat(auto-fit,minmax(155px,1fr)); align-items:end; gap:10px 12px; margin:12px 0; padding:12px; border-color:#d8e2f2; background:linear-gradient(135deg,#f8faff,#fff); } .filter-bar label { display:grid; gap:4px; color:#475569; font-size:11px; font-weight:750; letter-spacing:.02em; } .filter-bar select,.filter-bar input:not([type=checkbox]) { width:100%; min-width:0; max-width:none; min-height:34px; border-color:#cbd7e8; background:#fff; box-shadow:inset 0 1px 1px #18203308; color:var(--ink); font:inherit; font-size:13px; } .filter-bar label:has(input[type=checkbox]) { display:flex; min-height:34px; align-items:center; gap:8px; padding:0 10px; border:1px solid #cbd7e8; border-radius:7px; background:#fff; color:#334155; font-size:12px; letter-spacing:0; cursor:pointer; } .filter-bar input[type=checkbox] { width:15px; height:15px; margin:0; accent-color:var(--blue); } .filter-bar button { min-height:34px; border:1px solid #cbd7e8; border-radius:7px; background:#fff; color:#334155; padding:6px 10px; font:inherit; cursor:pointer; } .filter-bar select:focus,.filter-bar input:focus,.filter-bar button:focus { outline:3px solid #bfdbfe; outline-offset:1px; } .timeline-summary { display:grid; grid-template-columns:repeat(auto-fit,minmax(110px,1fr)); gap:7px; margin:0 0 10px; } .timeline-bucket { border-radius:7px; background:#f1f4fa; padding:7px; color:var(--muted); font-size:12px; } .timeline-bucket b { color:var(--ink); display:block; font-size:15px; } @media (max-width:800px) { .triage-items { grid-template-columns:1fr; } .filter-bar { grid-template-columns:1fr 1fr; } } @media (max-width:460px) { .filter-bar { grid-template-columns:1fr; } }
 #overview-layout { display:grid; gap:12px; } .overview-sidebar { display:grid; gap:12px; } .overview-sidebar .panel { margin-top:0; } .map-panel { display:grid; grid-template-columns:minmax(0,1fr) minmax(250px,.42fr); gap:12px; align-items:start; overflow:visible; } .map-panel .panel-head { grid-column:1/-1; } .map-panel .service-map { grid-column:1; } .map-panel .service-map-details { grid-column:2; grid-row:2; grid-template-columns:1fr; margin-top:0; max-height:410px; overflow:auto; } @media (max-width:800px) { .map-panel { grid-template-columns:1fr; } .map-panel .service-map,.map-panel .service-map-details { grid-column:1; grid-row:auto; } .map-panel .service-map-details { max-height:none; } }
 #map-panel[hidden] { display:grid !important; position:absolute; left:-100000px; width:calc(100vw - 48px); visibility:hidden; }
 </style></head><body><main>
-<header><h1>APM runtime overview</h1><p class="subtle">Bounded aggregates plus a minimal recorded-transaction projection. No event source, IDs, headers, bodies, traces, or error messages are included.</p><div id="context" class="context"></div><div id="report-status" class="report-status"></div></header>
-<nav class="runtime-tabs" aria-label="Runtime report views"><button id="overview-tab" class="runtime-tab is-active" type="button">Services</button><button id="details-tab" class="runtime-tab" type="button">Transactions</button><button id="distributed-tab" class="runtime-tab" type="button">Distributed transactions</button><button id="map-tab" class="runtime-tab" type="button">Dependencies</button><button id="timeline-tab" class="runtime-tab" type="button">Timeline</button></nav>
+<header><h1>APM runtime overview</h1><p class="subtle">Bounded aggregates plus a minimal recorded-transaction projection. No event source, IDs, headers, bodies, traces, or raw error messages are included.</p><div id="context" class="context"></div><div id="report-status" class="report-status"></div></header>
+<nav class="runtime-tabs" aria-label="Runtime report views"><button id="overview-tab" class="runtime-tab is-active" type="button">Services</button><button id="details-tab" class="runtime-tab" type="button">Transaction workloads</button><button id="timeline-tab" class="runtime-tab" type="button">Span execution log</button><button id="distributed-tab" class="runtime-tab" type="button">Distributed traces</button><button id="map-tab" class="runtime-tab" type="button">Dependencies</button></nav>
 <section id="services-panel"><section id="cards" class="cards" aria-label="Runtime summary"></section><div id="overview-layout"><aside class="overview-sidebar">
 <section id="triage" class="panel triage"><div class="panel-head"><div><h2>Investigation priorities</h2><p class="subtle">Impact combines observed volume, error rate, and tail latency; it is a triage aid, not an SLO verdict.</p></div></div><div id="triage-items" class="triage-items"></div></section>
 <section class="panel filter-bar"><label>Observed service <select id="global-service-filter" class="tab-service-filter" aria-label="Filter Services by observed service"></select></label><select id="global-workload-filter" hidden></select><input id="failures-only-filter" type="checkbox" hidden><button id="clear-filters" type="button" hidden>Clear filters</button></section>
 </aside></div></section><section id="map-panel" class="panel map-panel dependency-panel" hidden><div class="panel-head"><div><h2>Runtime service map</h2><p class="subtle">Directed edges are observed dependencies. Select a service to inspect aggregate workload details; this does not assert a transaction-to-dependency call.</p></div><div><label>View <select id="map-mode" aria-label="Filter service map"></select></label> <label>Service <select id="map-service-filter" aria-label="Focus service map"></select></label> <label>Workload <select id="map-workload-filter" aria-label="Filter workload details"></select></label></div></div><div id="service-map" class="service-map"></div><div id="service-map-details" class="service-map-details"></div></section>
 <section id="details-hotspots" class="panel service-panel" hidden><div class="panel-head"><h2>Service hotspots</h2><span class="subtle">Ranked by P95, then error rate and volume</span></div><div id="services"></div></section>
-<section id="timeline-panel" class="panel" hidden><div class="filter-bar"><label>Observed service <select id="timeline-observed-service-filter" class="tab-service-filter" aria-label="Filter Timeline by observed service"></select></label></div><div class="panel-head"><div><h2>Recorded transaction timeline</h2><p class="subtle">Bounded examples of cross-service transactions; aggregate call counts remain in Services and Transactions.</p></div><div><label>Service <select id="timeline-service-filter" aria-label="Filter timeline by service"></select></label> <label>Workload <select id="timeline-workload-filter" aria-label="Filter timeline by workload"></select></label> <label><input id="timeline-failures-only-filter" type="checkbox"> Failures only</label></div></div><div id="timeline-events" class="timeline"></div><p id="timeline-coverage" class="note"></p></section>
+<section id="timeline-panel" class="panel" hidden><div class="filter-bar"><label>Observed service <select id="timeline-observed-service-filter" class="tab-service-filter" aria-label="Filter Timeline by observed service"></select></label></div><div class="panel-head"><div><h2>Span execution log</h2><p class="subtle">Bounded cross-service spans. Filters apply only to the spans embedded in this report.</p></div></div><div class="filter-bar"><label>Service <select id="timeline-service-filter" aria-label="Filter span log by service"></select></label><label>Type <select id="timeline-span-type-filter" aria-label="Filter span log by type"></select></label><label><input id="timeline-top-ten-longest-filter" type="checkbox"> 10 longest spans</label><label><input id="timeline-top-ten-error-impact-filter" type="checkbox"> 10 spans with most errors</label></div><div id="timeline-events" class="timeline"></div><p id="timeline-coverage" class="note"></p></section>
 <section class="panel filter-bar transaction-panel detail-panel" hidden><label>Observed service <select id="transactions-observed-service-filter" class="tab-service-filter" aria-label="Filter Transactions by observed service"></select></label></section>
-<section id="details-slow-transactions" class="panel transaction-panel detail-panel" hidden><div class="panel-head"><h2>Slow transactions</h2><span class="subtle">P95 is an approximate percentile from APM histogram metrics</span></div><div id="transactions"></div></section>
+<section id="details-slow-transactions" class="panel service-panel" hidden><div class="panel-head"><h2>Slow transactions</h2><span class="subtle">P95 is an approximate percentile from APM histogram metrics</span></div><div id="transactions"></div></section>
 <section id="details-transactions" class="panel transaction-panel detail-panel" hidden><div class="panel-head"><div><h2>Transaction graph</h2><p class="subtle">Transactions remain owned by their service; no transaction-to-dependency call is asserted.</p></div><div><label>Service <select id="transaction-service-filter" aria-label="Filter transaction graph by service"></select></label> <label>Type <select id="transaction-kind-filter" aria-label="Filter transaction graph by type"></select></label></div></div><div id="transaction-graph" class="transaction-graph"></div></section>
-<section class="panel filter-bar distributed-panel" hidden><label>Observed service <select id="distributed-observed-service-filter" class="tab-service-filter" aria-label="Filter Distributed transactions by observed service"></select></label></section>
+<section class="panel filter-bar distributed-panel" hidden><label>Observed service <select id="distributed-observed-service-filter" class="tab-service-filter" aria-label="Filter Distributed transactions by observed service"></select></label><label>Root type <select id="distributed-root-type-filter" aria-label="Filter distributed transactions by root span type"></select></label><label><input id="distributed-top-ten-impact-filter" type="checkbox"> 10 highest-impact transactions</label><label><input id="distributed-top-ten-error-impact-filter" type="checkbox"> 10 transactions with most errors</label></section>
 <section id="details-distributed-traces" class="panel distributed-panel" hidden><div class="panel-head"><div><h2>Distributed transactions</h2><p class="subtle">Recent multi-service traces, grouped by HTTP source service or inferred Kafka source topic. Identifiers are not included in this export.</p></div><label>Origin <select id="distributed-trace-source-filter" aria-label="Filter distributed traces by origin"></select></label></div><div id="distributed-traces"></div></section>
 <section class="panel filter-bar dependency-panel" hidden><label>Observed service <select id="dependencies-observed-service-filter" class="tab-service-filter" aria-label="Filter Dependencies by observed service"></select></label></section>
 <section id="details-flows" class="panel dependency-panel" hidden><div class="panel-head"><h2>Focused dependency flow</h2><label>Service <select id="service-filter" aria-label="Filter dependency flow by service"></select></label></div><div id="flows" class="flow"></div></section>

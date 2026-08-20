@@ -425,6 +425,23 @@ def test_runtime_report_uses_histogram_p95_for_services_and_transactions() -> No
                         }
                     }
                 }
+            filters = body["query"]["bool"]["filter"]  # type: ignore[index]
+            if {"term": {"processor.event": "span"}} in filters:
+                return {
+                    "hits": {
+                        "hits": [{
+                            "fields": {
+                                "@timestamp": ["2026-08-15T09:30:00.000Z"],
+                                "trace.id": ["distributed-trace"],
+                                "service.name": ["orders"],
+                                "span.name": ["checkout database query"],
+                                "span.type": ["db"],
+                                "span.duration.us": [180_000],
+                                "event.outcome": ["success"],
+                            }
+                        }]
+                    }
+                }
             return {
                 "hits": {
                     "hits": [{
@@ -490,12 +507,12 @@ def test_runtime_report_uses_histogram_p95_for_services_and_transactions() -> No
     ]
     assert report["schema_version"] == "apm-runtime-report-v2"
     assert report["generated_at"] == "2026-08-15T10:00:00Z"
-    assert report["timeline_events"] == [{
+    assert report["timeline_spans"] == [{
         "timestamp": "2026-08-15T09:30:00.000Z",
         "service": "orders",
-        "transaction": "HTTP transaction",
-        "transaction_type": "request",
-        "duration_ms": 400.0,
+        "span": "Span",
+        "span_type": "db",
+        "duration_ms": 180.0,
         "outcome": "success",
         "waterfall_refs": ["waterfall-1"],
     }]
@@ -517,11 +534,13 @@ def test_runtime_report_uses_histogram_p95_for_services_and_transactions() -> No
         "percentiles": {"field": "transaction.duration.histogram", "percents": [95]}
     }
     assert {"term": {"service.environment": "production"}} in service_query["query"]["bool"]["filter"]  # type: ignore[index]
-    timeline_query = next(query for query in client.queries if "transaction.name" in query.get("fields", []))
+    timeline_query = next(query for query in client.queries if "span.name" in query.get("fields", []))
     assert timeline_query["_source"] is False
     assert "trace.id" in timeline_query["fields"]
     assert {"terms": {"trace.id": ["distributed-trace"]}} in timeline_query["query"]["bool"]["filter"]  # type: ignore[index]
-    assert "transaction.duration.us" in timeline_query["fields"]
+    assert {"term": {"processor.event": "span"}} in timeline_query["query"]["bool"]["filter"]  # type: ignore[index]
+    assert "span.duration.us" in timeline_query["fields"]
+    assert "span.type" in timeline_query["fields"]
     assert report["coverage"]["timeline"] == {  # type: ignore[index]
         "items_exported": 1,
         "truncated": False,
@@ -537,6 +556,7 @@ def test_runtime_report_uses_histogram_p95_for_services_and_transactions() -> No
         "service": "orders",
         "name": "HTTP transaction",
         "duration_ms": 400.0,
+        "transaction_type": "request",
         "outcome": "success",
         "route": ["orders"],
         "distributed_operations": ["orders · HTTP transaction"],
@@ -551,7 +571,7 @@ def test_runtime_report_uses_histogram_p95_for_services_and_transactions() -> No
     assert report["coverage"]["distributed_traces"] == {  # type: ignore[index]
         "items_exported": 1,
         "max_traces": 20,
-        "max_spans_per_trace": 100,
+        "max_spans_per_trace": 500,
         "truncated": False,
         "truncation_reasons": [],
         "available": True,
@@ -563,7 +583,7 @@ def test_runtime_report_uses_histogram_p95_for_services_and_transactions() -> No
         if "spans" in query.get("aggs", {}).get("traces", {}).get("aggs", {})  # type: ignore[union-attr]
     )
     assert waterfall_query["size"] == 0
-    assert waterfall_query["aggs"]["traces"]["aggs"]["spans"]["top_hits"]["size"] == 100  # type: ignore[index]
+    assert waterfall_query["aggs"]["traces"]["aggs"]["spans"]["top_hits"]["size"] == 500  # type: ignore[index]
     exported = json.dumps(report)
     assert '"trace.id"' not in exported
     assert '"span.id"' not in exported
@@ -610,7 +630,7 @@ def test_runtime_report_marks_truncated_distributed_trace_spans() -> None:
             if isinstance(trace_aggs, dict) and "spans" in trace_aggs.get("aggs", {}):
                 return {"aggregations": {"traces": {"buckets": [{
                     "key": "trace",
-                    "spans": {"hits": {"total": {"value": 101, "relation": "eq"}, "hits": []}},
+                    "spans": {"hits": {"total": {"value": 501, "relation": "eq"}, "hits": []}},
                 }]}}}
             if "aggs" in body:
                 return {"aggregations": {"traces": {"buckets": [{
@@ -747,7 +767,7 @@ def test_runtime_report_keeps_aggregates_when_timeline_times_out() -> None:
     )
 
     assert report["services"] == []
-    assert report["timeline_events"] == []
+    assert report["timeline_spans"] == []
     assert report["coverage"]["timeline"] == {  # type: ignore[index]
         "items_exported": 0,
         "truncated": False,
@@ -798,7 +818,7 @@ def test_runtime_report_html_is_self_contained_and_does_not_embed_raw_errors() -
     assert "Runtime service map" in document
     assert 'id="timeline-tab"' in document
     assert 'id="timeline-panel"' in document
-    assert "Recorded transaction timeline" in document
+    assert "Span execution log" in document
     assert "Directed edges are observed dependencies" in document
     assert 'id="map-mode"' in document
     assert 'id="map-service-filter"' in document
@@ -811,8 +831,35 @@ def test_runtime_report_html_is_self_contained_and_does_not_embed_raw_errors() -
     assert "new Sigma(network" in document
     assert "transaction-to-dependency call" in document
     assert "dependency P95 is a separate future pass" in document
-    assert "error.message" not in document
+    assert '"error.message"' not in document
     assert "_source" not in document
+
+
+def test_runtime_report_exports_only_sanitized_span_error_messages() -> None:
+    report = {
+        "window": {"from": "2026-08-15T09:00:00Z", "to": "2026-08-15T10:00:00Z"},
+        "services": [], "transactions": [], "dependencies": [], "timeline_spans": [],
+        "distributed_traces": [{
+            "source_kind": "http_service", "source": "orders",
+            "service": "orders", "name": "POST /checkout", "transaction_type": "request",
+            "timestamp": "2026-08-15T09:00:00Z", "duration_ms": 10.0, "outcome": "failure",
+            "route": ["orders"], "distributed_operations": [], "truncated": False,
+            "waterfall_ref": "waterfall-1",
+            "spans": [{
+                "service": "orders", "name": "POST /checkout", "kind": "span",
+                "transaction_type": None, "outcome": "failure",
+                "error": {"category": "TimeoutException: customer@example.com"},
+                "depth": 0, "offset_ms": 0.0, "duration_ms": 10.0,
+            }],
+        }],
+        "coverage": {},
+    }
+
+    document = render_runtime_report_html(report)
+
+    assert "Dependency timed out" in document
+    assert "customer@example.com" not in document
+    assert "TimeoutException" not in document
 
 
 def test_runtime_report_escapes_a_telemetry_value_before_embedding_json() -> None:

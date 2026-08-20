@@ -358,7 +358,9 @@ Operators need a compact view comparable to an APM waterfall, sorted by the
 HTTP source service or the Kafka source topic.
 
 **Decision:** After selecting multi-service trace candidates, SystemLens reads
-at most 20 recent traces with `_source: false` and a bounded span count. It may
+at most 20 recent traces with `_source: false` and at most 500 spans per trace.
+For traces with more than 20 spans, the report initially collapses nested spans
+and expands descendants on demand. It may
 read `trace.id`, `span.id`, and `parent.id` only in memory to rebuild tree depth
 and relative timings. The HTML projection excludes those identifiers and keeps
 only safe operational fields. It groups first by an HTTP root service, then by
@@ -366,6 +368,43 @@ a Kafka topic inferred only from a producer span named `<topic> publish`; any
 other trace is grouped by its root service.
 
 **Consequences:** The report gains useful, bounded trace exemplars without
-becoming a raw-trace export or a persistent store. A topic label is explicitly
+becoming a raw-trace export or a persistent store. Dense traces remain
+navigable while span-limit truncation stays explicit. A topic label is explicitly
 an instrumentation-based inference, so deployments with different producer
 span naming fall back to the root service instead of guessing a destination.
+
+## ADR-20 — Timeline is a bounded span execution log
+
+**Status:** Accepted.
+
+**Context:** Transaction examples do not expose enough execution detail to
+diagnose a complex distributed flow. Exporting raw APM documents, however,
+would violate the report's bounded and privacy-preserving contract.
+
+**Decision:** The Timeline projection exports only bounded span events from
+selected cross-service traces. It keeps timestamp, service, a safe `Span`
+label, allowlisted span type, duration, outcome, and an opaque local waterfall
+reference. Its service, type, time-window, and duration filters run in the
+browser against the embedded projection.
+
+**Consequences:** The Timeline acts as a filterable execution log without new
+interactive Elasticsearch reads. It remains limited to the report window and
+result cap, does not export instrumentation-controlled span names or trace
+identifiers, and cannot be interpreted as a full observability archive.
+
+## ADR-21 — Expose only classified span-error messages
+
+**Status:** Accepted.
+
+**Context:** Waterfall investigation needs an actionable explanation for failed
+spans, while raw APM error messages and exception data can contain credentials,
+identifiers, or request content.
+
+**Decision:** SystemLens reads only `error.type` for bounded waterfall spans.
+It maps that value to a fixed category and controlled message, such as
+`Dependency timed out` or `Request validation failed`. It never reads or
+embeds `error.message`, exception text, stack traces, or error identifiers.
+
+**Consequences:** The report distinguishes common failure modes without
+weakening its privacy boundary. Unknown error types degrade to the generic
+`Operation failed` message rather than exporting telemetry-controlled text.

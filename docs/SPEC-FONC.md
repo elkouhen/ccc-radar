@@ -318,15 +318,42 @@ and on each partial waterfall. Its card
 starts with the cross-service route and distributed transaction operations, and
 the tab offers an origin filter so database spans can be read as details of the
 selected flow.
+For traces with more than 20 spans, nested spans are collapsed by default.
+Expanding a span reveals only its descendants, so dense traces remain
+navigable. The report retrieves at most 500 spans per waterfall and continues
+to mark any truncated waterfall as partial.
 
-The report separates its investigation modes into Services, Transactions,
-Distributed transactions, Dependencies, and Timeline tabs. Each tab starts with
+The report separates its investigation modes into Services, Transaction
+workloads, Span execution log, Distributed traces, and Dependencies tabs. Each
+tab starts with
 the same observed-service filter. Selecting a service in any tab synchronizes
 the selection across all tabs and their view-specific controls. Services contains
 the context, priority ranking, service hotspot table, and recurring failures.
-Transactions starts with the slow-transaction ranking, then provides the
-ownership graph with its service/type filters. Distributed transactions provides
-the waterfall exemplars and their origin filter.
+Services contains the slow-transaction ranking. Transaction workloads provides
+the ownership graph. Distributed traces provides the waterfall exemplars and
+their origin filter. Its observed-service and root type (`HTTP/request`,
+`messaging`, or other) filters narrow the bounded waterfall examples locally;
+they do not issue a new Elasticsearch request. The optional `10
+highest-impact transactions` filter groups matching waterfalls by their safe
+service/type/route category, ranks categories by observed cumulative duration
+(duration across all recorded executions), then displays up to ten distinct
+exemplars with their execution count and cumulative duration.
+The `10 transactions with most errors` filter instead retains failed waterfalls,
+groups them by the same safe category, and ranks up to ten exemplars by their
+observed error count. The count shown on each card is limited to the embedded
+waterfall data and is not an exhaustive error total; it represents failed
+executions of the grouped operation, not errors on one individual span.
+Span execution log offers equivalent `10 spans with most errors` filtering:
+it groups failed spans by safe service/type/label, ranks those groups by
+observed error count, and shows one exemplar and count per group.
+Selecting a span in a distributed waterfall reveals its safe execution details:
+service, operation, kind, type, observed outcome, relative start offset, and
+duration. For failures, the report explicitly states that raw error messages
+and exception data are excluded. It displays a sanitized error category and
+controlled message when the telemetry error type can be classified (for
+example, `Dependency timed out`); it never displays the raw telemetry error
+message. Failed spans are also visually distinct in
+the waterfall through a red row, red timing bar, and an `Error` badge.
 Dependencies contains the directed map, its map mode,
 service, and workload selectors, the selected node's aggregate workloads and
 observed directions, the dependency table, and focused flows. The shared
@@ -350,26 +377,29 @@ the covered window; it does not prove a static HTTP, Kafka, MongoDB, or S3
 dependency is absent. Service P95 values are approximate histogram percentiles;
 merged transaction rows explicitly show the highest constituent-operation P95.
 
-The Timeline tab is a chronological, bounded view of recorded cross-service
-transaction examples. Its visible service, workload, and failure-only filters
-apply to both the event list and its three-band duration distribution. The view
-states its displayed example count alongside aggregate call volume and
-waterfall-exemplar count, so it cannot be mistaken for an exhaustive call list.
-Its
-Elasticsearch query sets `_source: false` and retrieves only
-`@timestamp`, service name, transaction name/type, duration, and outcome.
-Transaction names are replaced with safe workload labels before export. It
-requests trace IDs only transiently for exact waterfall linking; it never
-exports them, nor request or response data, headers, bodies, stack traces, logs,
-error values, result values, or messaging queue/topic names.
-Selecting a Timeline event opens the Transactions view and filters waterfalls
-to the exact associated distributed trace. SystemLens receives trace IDs only
-in memory to create report-local opaque waterfall references, then removes the
+The Span execution log tab is a chronological, bounded view for selected
+cross-service traces. It displays safe span labels, service, span type,
+outcome, timestamp, and duration. Its filters narrow the embedded span set by
+service and type (including `request` and `messaging` when observed); they do
+not query Elasticsearch again and therefore cannot extend the report window. The view
+states its displayed span count and waterfall-exemplar count, so it cannot be
+mistaken for an exhaustive execution archive. Its Elasticsearch query sets
+`_source: false` and retrieves only `@timestamp`, service name, span name/type,
+duration, outcome, and a transient trace ID. Span names are replaced with the
+safe `Span` label and types are allowlisted before export. It never exports
+request or response data, headers, bodies, stack traces, logs, error values,
+result values, or messaging queue/topic names.
+The optional `10 longest spans` filter retains the ten longest spans after all
+other Timeline filters and keeps their chronological display order.
+Selecting a Span execution log entry opens the Distributed traces view and filters
+waterfalls to the exact associated trace. SystemLens receives trace IDs only in
+memory to create report-local opaque waterfall references, then removes the
 original IDs before serializing the report. The report exposes a clear action
-to remove this exact-waterfall filter; it never displays a route name or trace ID.
+to remove this exact-waterfall filter; it never displays a route name or trace
+ID.
 
 The report does not correlate observed names with static identities in this
-release. Its aggregate views remain separate from the Timeline's bounded
+release. Its aggregate views remain separate from the Span execution log's bounded
 transaction-field projection; trace IDs, request data, headers, bodies, log
 messages, credentials, unredacted exception values, and telemetry-controlled
 operation labels are excluded.
