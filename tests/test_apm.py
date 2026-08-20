@@ -17,6 +17,7 @@ from systemlens.apm import (
     parse_since,
 )
 from systemlens.apm_report import (
+    TRACE_ID_RUNTIME_MAPPINGS,
     _project_distributed_trace,
     _safe_operation_label,
     _safe_structured_span_label,
@@ -45,6 +46,14 @@ class FakeApmClient:
                 }
             }
         }
+
+
+def test_trace_id_runtime_mapping_supports_indexed_otel_trace_id() -> None:
+    script = TRACE_ID_RUNTIME_MAPPINGS["systemlens.trace_id"]["script"]["source"]  # type: ignore[index]
+
+    assert "doc.containsKey('trace_id')" in script
+    assert "doc['trace_id'].value" in script
+    assert "params._source['trace']" in script
 
 
 def _bucket(

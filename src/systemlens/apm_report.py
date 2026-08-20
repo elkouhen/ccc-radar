@@ -34,14 +34,18 @@ DEFAULT_MAX_DISTRIBUTED_TRACES = 20
 # et ne doit pas modifier les réglages d'index de production.
 MAX_SPANS_PER_DISTRIBUTED_TRACE = 100
 # Some legacy APM streams map ``trace.id`` as text, unlike OTel streams which
-# use a keyword. This per-request field avoids enabling fielddata or changing
-# index mappings while keeping the aggregate query compatible with both.
+# use a keyword. Newer OTel streams may expose the ECS alias ``trace.id`` only
+# through the indexed ``trace_id`` field, with no matching value in ``_source``.
+# This per-request field avoids enabling fielddata or changing mappings while
+# keeping aggregate queries compatible with both representations.
 TRACE_ID_RUNTIME_FIELD = "systemlens.trace_id"
 TRACE_ID_RUNTIME_MAPPINGS: dict[str, object] = {
     TRACE_ID_RUNTIME_FIELD: {
         "type": "keyword",
         "script": {
             "source": (
+                "if (doc.containsKey('trace_id') && doc['trace_id'].size() != 0) "
+                "{ emit(doc['trace_id'].value); return; } "
                 "def trace = params._source['trace']; "
                 "if (trace != null && trace['id'] != null) emit(trace['id']);"
             )
