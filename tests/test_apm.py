@@ -464,7 +464,14 @@ def test_runtime_report_uses_histogram_p95_for_services_and_transactions() -> No
                     }
                 }
             filters = body["query"]["bool"]["filter"]  # type: ignore[index]
-            if {"term": {"processor.event": "span"}} in filters:
+            if any(
+                item.get("bool", {}).get("should") == [
+                    {"term": {"processor.event": "span"}},
+                    {"exists": {"field": "span.name"}},
+                ]
+                for item in filters
+                if isinstance(item, dict)
+            ):
                 return {
                     "hits": {
                         "hits": [{
@@ -578,7 +585,15 @@ def test_runtime_report_uses_histogram_p95_for_services_and_transactions() -> No
     assert "systemlens.trace_id" in timeline_query["fields"]
     assert timeline_query["runtime_mappings"]["systemlens.trace_id"]["type"] == "keyword"  # type: ignore[index]
     assert {"terms": {"trace.id": ["distributed-trace"]}} in timeline_query["query"]["bool"]["filter"]  # type: ignore[index]
-    assert {"term": {"processor.event": "span"}} in timeline_query["query"]["bool"]["filter"]  # type: ignore[index]
+    assert {
+        "bool": {
+            "should": [
+                {"term": {"processor.event": "span"}},
+                {"exists": {"field": "span.name"}},
+            ],
+            "minimum_should_match": 1,
+        }
+    } in timeline_query["query"]["bool"]["filter"]  # type: ignore[index]
     assert timeline_query["sort"] == [{"@timestamp": {"order": "desc"}}]
     assert "span.duration.us" in timeline_query["fields"]
     assert "span.type" in timeline_query["fields"]

@@ -48,6 +48,15 @@ TRACE_ID_RUNTIME_MAPPINGS: dict[str, object] = {
         },
     }
 }
+SPAN_EVENT_FILTER: dict[str, object] = {
+    "bool": {
+        "should": [
+            {"term": {"processor.event": "span"}},
+            {"exists": {"field": "span.name"}},
+        ],
+        "minimum_should_match": 1,
+    }
+}
 
 
 def build_runtime_report(
@@ -486,7 +495,7 @@ def _read_timeline_spans(
                     "span.duration.us", "event.outcome", "http.request.method", "http.route",
                     "url.path", "messaging.destination.name", "messaging.kafka.destination", "messaging.system",
                 ],
-                "query": {"bool": {"filter": [{"term": {"processor.event": "span"}}, *filters]}},
+                "query": {"bool": {"filter": [SPAN_EVENT_FILTER, *filters]}},
             })
             response = {"hits": {"hits": raw_hits}}
             transaction_response = {"hits": {"hits": []}}
@@ -516,7 +525,7 @@ def _read_timeline_spans(
             "query": {"bool": {"filter": transaction_filters}},
         })
             span_filters = [
-            {"term": {"processor.event": "span"}},
+            SPAN_EVENT_FILTER,
             *filters,
             {"terms": {"trace.id": trace_ids}},
         ]
