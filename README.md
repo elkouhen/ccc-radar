@@ -102,7 +102,10 @@ Span execution log tab shows a bounded projection of recorded spans. It
 never embeds `_source`, trace IDs, request data, headers, bodies, error
 messages, results, messaging targets, or arbitrary operation values. Dependency P95 is
 deliberately not estimated, and the one-shot report has no historical baseline.
-Span execution log records are limited to 500 by default (2,000 maximum). If
+Span execution log records are limited to 500 by default (2,000 maximum). HTTP
+spans show their method and route; Kafka spans show their topic. Each
+distributed trace waterfall is limited to 100 spans to respect Elasticsearch's
+default `index.max_inner_result_window`. If
 their bounded query times out, the aggregate report is still written and
 explicitly marks Span execution log as unavailable.
 

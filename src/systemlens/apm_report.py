@@ -29,7 +29,10 @@ DEFAULT_MAX_BUCKETS_PER_VIEW = 1_000
 DEFAULT_MAX_TIMELINE_EVENTS = 500
 MAX_DISTRIBUTED_TRACE_CANDIDATES = 10_000
 DEFAULT_MAX_DISTRIBUTED_TRACES = 20
-MAX_SPANS_PER_DISTRIBUTED_TRACE = 500
+# Les data streams APM et OTel du POC limitent ``top_hits`` à 100 résultats
+# par bucket (`index.max_inner_result_window`). Cette projection reste bornée
+# et ne doit pas modifier les réglages d'index de production.
+MAX_SPANS_PER_DISTRIBUTED_TRACE = 100
 
 
 def build_runtime_report(
@@ -111,10 +114,15 @@ def build_runtime_report(
     ]
     for item in transactions:
         item.pop("_transaction_identity", None)
+    linked_timeline_spans: list[dict[str, object]] = []
     for item in timeline_spans:
         trace_id = item.pop("_trace_id", None)
         if isinstance(trace_id, str) and trace_id in waterfall_refs_by_trace_id:
             item["waterfall_refs"] = waterfall_refs_by_trace_id[trace_id]
+            linked_timeline_spans.append(item)
+    # Every displayed execution-log span opens one of the embedded waterfalls.
+    # Retaining unrelated candidates would render non-interactive timeline rows.
+    timeline_spans = linked_timeline_spans
     transactions = _group_redacted_transactions(transactions)
     dependencies = _aggregate_relations(dependency_buckets)
     dependencies.sort(
@@ -228,15 +236,16 @@ def _read_distributed_traces(
                         "spans": {
                             "top_hits": {
                                 "size": MAX_SPANS_PER_DISTRIBUTED_TRACE,
-                                "track_total_hits": True,
                                 "_source": False,
                                 "sort": [{"@timestamp": {"order": "asc"}}],
                                 "fields": [
                                     "@timestamp", "span.id", "parent.id",
-                                    "span.name", "service.name", "processor.event",
+                                    "span.name", "span.type", "span.subtype", "service.name", "processor.event",
                                     "transaction.name", "transaction.type",
                                     "transaction.duration.us", "span.duration.us",
-                                    "event.outcome", "error.type",
+                                    "event.outcome", "error.type", "http.request.method",
+                                    "http.route", "url.path", "messaging.destination.name",
+                                    "messaging.kafka.destination", "messaging.system",
                                 ],
                             }
                         }
@@ -275,10 +284,9 @@ def _read_distributed_traces(
             span_id = _timeline_field_string(fields, "span.id")
             timestamp = _timeline_field_string(fields, "@timestamp")
             service = _timeline_field_string(fields, "service.name")
-            name = (
-                _timeline_field_string(fields, "transaction.name")
-                or _timeline_field_string(fields, "span.name")
-            )
+            transaction_name = _timeline_field_string(fields, "transaction.name")
+            span_label = _span_display_label(fields)
+            name = transaction_name or span_label or _timeline_field_string(fields, "span.name")
             if not span_id or not timestamp or not service or name is None:
                 continue
             duration_us = _timeline_field_number(fields, "transaction.duration.us")
@@ -290,8 +298,10 @@ def _read_distributed_traces(
                 "timestamp": timestamp,
                 "service": service,
                 "name": name,
+                "structured_span_label": span_label is not None and transaction_name is None,
                 "kind": "transaction" if _timeline_field_string(fields, "processor.event") == "transaction" else "span",
                 "transaction_type": _timeline_field_string(fields, "transaction.type"),
+                "origin": _span_origin(fields),
                 "duration_ms": round(duration_us / 1_000, 3) if duration_us is not None else None,
                 "outcome": _timeline_field_string(fields, "event.outcome"),
                 "error": _safe_error_details(
@@ -364,11 +374,15 @@ def _project_distributed_trace(
                 else None,
             ),
             "kind": item["kind"],
-            "transaction_type": item["transaction_type"], "outcome": item["outcome"],
+            "transaction_type": item["transaction_type"],
+            "origin": _safe_span_origin(item.get("origin")),
+            "outcome": item["outcome"],
             "depth": depth(item),
             "offset_ms": round(max(0, timestamp_ms - start_ms), 3),
             "duration_ms": item["duration_ms"],
         }
+        if item.get("structured_span_label") is True:
+            span["structured_span_label"] = True
         if item.get("error") is not None:
             span["error"] = item["error"]
         spans.append(span)
@@ -453,7 +467,7 @@ def _read_timeline_spans(
             "size": max_events,
             "track_total_hits": False,
             "_source": False,
-            "sort": [{"@timestamp": {"order": "asc"}}],
+            "sort": [{"@timestamp": {"order": "desc"}}],
             "fields": [
                 "@timestamp", "trace.id", "service.name", "transaction.name", "transaction.type",
                 "transaction.duration.us", "event.outcome",
@@ -469,10 +483,12 @@ def _read_timeline_spans(
             "size": max_events,
             "track_total_hits": False,
             "_source": False,
-            "sort": [{"@timestamp": {"order": "asc"}}],
+            "sort": [{"@timestamp": {"order": "desc"}}],
             "fields": [
-                "@timestamp", "trace.id", "service.name", "span.name", "span.type",
-                "span.duration.us", "event.outcome",
+                "@timestamp", "trace.id", "service.name", "span.name", "span.type", "span.subtype",
+                "span.duration.us", "event.outcome", "http.request.method", "http.route",
+                "url.path", "messaging.destination.name", "messaging.kafka.destination",
+                "messaging.system",
             ],
             "query": {"bool": {"filter": span_filters}},
         })
@@ -508,7 +524,7 @@ def _read_timeline_spans(
         fields = hit["fields"]
         timestamp = _timeline_field_string(fields, "@timestamp")
         service = _timeline_field_string(fields, "service.name")
-        span = _safe_operation_label(
+        span = _span_display_label(fields) or _safe_operation_label(
             _timeline_field_string(fields, "span.name"), "span", None
         )
         if not timestamp or not service or span is None:
@@ -520,6 +536,7 @@ def _read_timeline_spans(
             "span": span,
             "_trace_id": _timeline_field_string(fields, "trace.id"),
             "span_type": _safe_span_type(_timeline_field_string(fields, "span.type")),
+            "origin": _span_origin(fields),
             "duration_ms": round(duration / 1_000, 3) if duration is not None else None,
             "outcome": _timeline_field_string(fields, "event.outcome"),
         }
@@ -593,6 +610,65 @@ def _timeline_field_number(fields: dict[str, object], name: str) -> float | None
     return float(value) if isinstance(value, (int, float)) else None
 
 
+def _span_display_label(fields: dict[str, object]) -> str | None:
+    """Return the two safe, structured labels exposed for span execution."""
+    span_type = _timeline_field_string(fields, "span.type")
+    span_subtype = _timeline_field_string(fields, "span.subtype")
+    method = _timeline_field_string(fields, "http.request.method")
+    resource = (
+        _timeline_field_string(fields, "http.route")
+        or _timeline_field_string(fields, "url.path")
+    )
+    if method and resource:
+        normalized_method = method.upper()
+        if normalized_method in {"DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"}:
+            normalized_resource = resource.split("?", 1)[0].split("#", 1)[0]
+            if re.fullmatch(r"/[A-Za-z0-9._~!$&'()*+,;=:@%{}\-/]{1,200}", normalized_resource):
+                return f"{normalized_method} {normalized_resource}"
+    messaging_system = _timeline_field_string(fields, "messaging.system")
+    if (
+        str(messaging_system).lower() == "kafka"
+        or str(span_subtype).lower() == "kafka"
+        or str(span_type).lower() == "messaging"
+    ):
+        topic = (
+            _timeline_field_string(fields, "messaging.destination.name")
+            or _timeline_field_string(fields, "messaging.kafka.destination")
+        )
+        if topic and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,248}", topic):
+            return topic
+    return None
+
+
+def _span_origin(fields: dict[str, object]) -> str:
+    """Classify a span using stable HTTP, Kafka and span-type attributes."""
+    if _timeline_field_string(fields, "http.request.method"):
+        return "HTTP"
+    transaction_type = str(_timeline_field_string(fields, "transaction.type") or "").lower()
+    if transaction_type in {"request", "http"}:
+        return "HTTP"
+    if transaction_type == "messaging":
+        return "Messaging"
+    if (
+        str(_timeline_field_string(fields, "messaging.system")).lower() == "kafka"
+        or str(_timeline_field_string(fields, "span.subtype")).lower() == "kafka"
+    ):
+        return "Kafka"
+    span_type = str(_timeline_field_string(fields, "span.type") or "").lower()
+    if span_type == "messaging":
+        return "Messaging"
+    if span_type == "db":
+        return "Database"
+    if span_type == "external":
+        return "External"
+    return "Application"
+
+
+def _safe_span_origin(value: object) -> str:
+    allowed = {"HTTP", "Kafka", "Messaging", "Database", "External", "Application"}
+    return value if value in allowed else "Application"
+
+
 def _safe_operation_label(
     value: str | None, processor_event: str | None, transaction_type: str | None
 ) -> str | None:
@@ -606,6 +682,18 @@ def _safe_operation_label(
     if str(transaction_type).lower() == "messaging":
         return "Messaging transaction"
     return "Transaction"
+
+
+def _safe_structured_span_label(value: str | None) -> str | None:
+    """Validate a label produced from approved HTTP or Kafka fields only."""
+    if value is None:
+        return None
+    if re.fullmatch(
+        r"(?:DELETE|GET|HEAD|OPTIONS|PATCH|POST|PUT) /[A-Za-z0-9._~!$&'()*+,;=:@%{}\-/]{1,200}",
+        value,
+    ) or re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,248}", value):
+        return value
+    return None
 
 
 def _safe_span_type(value: str | None) -> str:
@@ -940,6 +1028,7 @@ def _redact_report_operations(report: dict[str, object]) -> dict[str, object]:
                 span["span_type"] = _safe_span_type(
                     span.get("span_type") if isinstance(span.get("span_type"), str) else None
                 )
+                span["origin"] = _safe_span_origin(span.get("origin"))
                 span.pop("_trace_id", None)
     legacy_timeline_events = projection.get("timeline_events")
     if isinstance(legacy_timeline_events, list):
@@ -983,7 +1072,12 @@ def _redact_report_operations(report: dict[str, object]) -> dict[str, object]:
                             span.get("transaction_type")
                             if isinstance(span.get("transaction_type"), str)
                             else None,
+                        ) if span.pop("structured_span_label", False) is not True else (
+                            _safe_structured_span_label(
+                                span.get("name") if isinstance(span.get("name"), str) else None
+                            ) or "Span"
                         )
+                        span["origin"] = _safe_span_origin(span.get("origin"))
                         error = span.get("error")
                         safe_error = _safe_error_details(
                             error.get("category") if isinstance(error, dict)
@@ -1000,7 +1094,7 @@ def _redact_report_operations(report: dict[str, object]) -> dict[str, object]:
 _RUNTIME_REPORT_ENHANCEMENTS = """<style>
 .distributed-trace-group { margin:0 0 18px; } .distributed-trace-group h3 { margin:0 0 8px; font-size:13px; color:#243e99; }
 .distributed-trace { border:1px solid #dbe3ef; border-radius:10px; margin:8px 0; overflow:auto; } .distributed-trace header { min-width:760px; display:flex; justify-content:space-between; gap:14px; padding:10px 12px; border-bottom:1px solid #edf0f5; }
-.trace-identity { display:flex; flex-wrap:wrap; gap:6px; margin-top:5px; } .trace-identity span { border-radius:999px; background:#eef3ff; color:#243e99; padding:2px 7px; font-size:12px; }
+.trace-identity { display:flex; flex-wrap:wrap; gap:6px; margin-top:5px; } .trace-identity span,.trace-origin { border-radius:999px; background:#eef3ff; color:#243e99; padding:2px 7px; font-size:12px; } .trace-origin { flex:0 0 auto; font-weight:650; }
 .trace-waterfall { min-width:760px; padding:8px 12px; } .trace-span { display:grid; grid-template-columns: minmax(260px,.8fr) minmax(280px,1.2fr) 80px; align-items:center; gap:10px; min-height:28px; } .trace-span.is-failure { border-left:3px solid #b42318; background:#fff6f5; } .timeline-item.is-waterfall-link { cursor:pointer; }
 .trace-span-name { display:flex; align-items:center; gap:6px; padding-left:calc(var(--depth) * 14px); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; } .trace-span-toggle { flex:0 0 22px; height:22px; border:1px solid #cbd7e8; border-radius:5px; background:#fff; color:#3156d3; font:inherit; font-weight:750; cursor:pointer; } .trace-span-toggle:hover { background:#eef3ff; } .trace-span-details { overflow:hidden; border:0; padding:0; background:transparent; color:inherit; font:inherit; text-align:left; text-overflow:ellipsis; white-space:nowrap; cursor:pointer; } .trace-span-details:hover,.trace-span-details:focus-visible { color:#243e99; text-decoration:underline; outline:0; } .trace-span-details.is-selected { color:#243e99; font-weight:750; } .trace-error-badge { flex:0 0 auto; border-radius:999px; padding:1px 6px; background:#fee4e2; color:#b42318; font-size:11px; font-weight:750; } .trace-track { position:relative; height:15px; border-left:1px solid #dce3ee; background:repeating-linear-gradient(90deg,#f7f9fc 0,#f7f9fc calc(25% - 1px),#e7edf6 calc(25% - 1px),#e7edf6 25%); }
 .trace-bar { position:absolute; top:2px; height:11px; min-width:2px; border-radius:3px; background:#7c92c9; } .trace-bar.is-transaction { background:#11b9b4; } .trace-bar.is-failure { background:#b42318; } .trace-span small { color:#5f6b82; font-variant-numeric:tabular-nums; text-align:right; } .trace-span-detail { margin:0 12px 12px; padding:10px; border:1px solid #dbe3ef; border-radius:8px; background:#f8faff; } .trace-span-detail dl { display:grid; grid-template-columns:max-content 1fr; gap:4px 12px; margin:0; } .trace-span-detail dt { color:#5f6b82; } .trace-span-detail dd { margin:0; } .trace-span-detail .is-failure { color:#b42318; font-weight:750; }
@@ -1074,7 +1168,7 @@ _RUNTIME_REPORT_ENHANCEMENTS = """<style>
     }
     const spans = visibleTimelineSpans();
     summary.innerHTML = `<div class="timeline-bucket"><b>${spans.length.toLocaleString()}</b>matching spans</div>`;
-    byId('timeline-events').innerHTML = spans.length ? spans.map(span => `<article class="timeline-item ${span.outcome === 'failure' ? 'is-failure' : ''}"><time>${esc(span.timestamp)}</time><div><div class="timeline-name">${esc(span.service)} · ${esc(span.span)}</div><div class="subtle">${esc(span.span_type)}${span.outcome ? ` · ${esc(span.outcome)}` : ''}${span._errorImpact ? ` · ${span._errorImpact.errors.toLocaleString()} observed failed executions` : ''}</div></div><strong>${formatMs(span.duration_ms)}</strong></article>`).join('') : '<p class="empty">No recorded span matches this selection.</p>';
+    byId('timeline-events').innerHTML = spans.length ? spans.map(span => `<article class="timeline-item ${span.outcome === 'failure' ? 'is-failure' : ''}"><time>${esc(span.timestamp)}</time><div><div class="timeline-name">${esc(span.service)} · ${esc(span.span)}</div><div class="subtle">${esc(span.origin)} · ${esc(span.span_type)}${span.outcome ? ` · ${esc(span.outcome)}` : ''}${span._errorImpact ? ` · ${span._errorImpact.errors.toLocaleString()} observed failed executions` : ''}</div></div><strong>${formatMs(span.duration_ms)}</strong></article>`).join('') : '<p class="empty">No recorded span matches this selection.</p>';
     const waterfallCount = Array.isArray(data.distributed_traces) ? data.distributed_traces.length : 0;
     byId('timeline-coverage').textContent = `Showing ${spans.length.toLocaleString()} recorded span${spans.length === 1 ? '' : 's'} from ${waterfallCount.toLocaleString()} distributed waterfall exemplar${waterfallCount === 1 ? '' : 's'}${timelineCoverage.truncated ? ' (span result limit reached)' : ''}.`;
   }
@@ -1154,7 +1248,7 @@ _RUNTIME_REPORT_ENHANCEMENTS = """<style>
       const width = Math.max(1, Math.min(100 - left, 100 * Math.max(number(span.duration_ms), 1) / total));
       const toggle = expandable ? `<button class="trace-span-toggle" type="button" aria-expanded="${collapsed ? 'false' : 'true'}" aria-label="${collapsed ? 'Expand' : 'Collapse'} ${descendants} subspans">${collapsed ? '+' : '−'}</button>` : '';
       const failure = span.outcome === 'failure';
-      return `<div class="trace-span${collapsed ? ' is-collapsed' : ''}${failure ? ' is-failure' : ''}" data-depth="${depth}" style="--depth:${depth}"><span class="trace-span-name">${toggle}<button class="trace-span-details" type="button" data-span-index="${index}" aria-expanded="false" aria-label="Show details for ${esc(span.service)} ${esc(span.name)}">${esc(span.service)} · ${esc(span.name)}</button>${failure ? '<span class="trace-error-badge">Error</span>' : ''}</span><span class="trace-track"><i class="trace-bar ${span.kind === 'transaction' ? 'is-transaction' : ''}${failure ? ' is-failure' : ''}" style="left:${left}%;width:${width}%"></i></span><small>${formatMs(span.duration_ms)}</small></div>`;
+      return `<div class="trace-span${collapsed ? ' is-collapsed' : ''}${failure ? ' is-failure' : ''}" data-depth="${depth}" style="--depth:${depth}"><span class="trace-span-name">${toggle}<button class="trace-span-details" type="button" data-span-index="${index}" aria-expanded="false" aria-label="Show details for ${esc(span.service)} ${esc(span.name)}">${esc(span.service)} · ${esc(span.name)}</button><span class="trace-origin">${esc(span.origin)}</span>${failure ? '<span class="trace-error-badge">Error</span>' : ''}</span><span class="trace-track"><i class="trace-bar ${span.kind === 'transaction' ? 'is-transaction' : ''}${failure ? ' is-failure' : ''}" style="left:${left}%;width:${width}%"></i></span><small>${formatMs(span.duration_ms)}</small></div>`;
     }).join('');
   }
   function updateTraceSpanVisibility(card) {
@@ -1179,7 +1273,7 @@ _RUNTIME_REPORT_ENHANCEMENTS = """<style>
     const error = span.error || (outcome === 'failure' ? {category: 'failure', message: 'Operation failed'} : null);
     const failureNote = error ? `<dt>Error category</dt><dd>${esc(error.category)}</dd><dt>Error message</dt><dd class="is-failure">${esc(error.message)}</dd>` : '';
     const privacyNote = outcome === 'failure' ? '<p class="note">Error messages are sanitized categories; raw exception data is not included in this report.</p>' : '';
-    return `<dl><dt>Service</dt><dd>${esc(span.service)}</dd><dt>Operation</dt><dd>${esc(span.name)}</dd><dt>Kind</dt><dd>${esc(span.kind)}</dd><dt>Type</dt><dd>${esc(span.transaction_type || 'other')}</dd><dt>Outcome</dt><dd class="${outcome === 'failure' ? 'is-failure' : ''}">${esc(outcome)}</dd>${failureNote}<dt>Start offset</dt><dd>${formatMs(span.offset_ms)}</dd><dt>Duration</dt><dd>${formatMs(span.duration_ms)}</dd></dl>${privacyNote}`;
+    return `<dl><dt>Service</dt><dd>${esc(span.service)}</dd><dt>Operation</dt><dd>${esc(span.name)}</dd><dt>Origin</dt><dd>${esc(span.origin)}</dd><dt>Kind</dt><dd>${esc(span.kind)}</dd><dt>Type</dt><dd>${esc(span.transaction_type || 'other')}</dd><dt>Outcome</dt><dd class="${outcome === 'failure' ? 'is-failure' : ''}">${esc(outcome)}</dd>${failureNote}<dt>Start offset</dt><dd>${formatMs(span.offset_ms)}</dd><dt>Duration</dt><dd>${formatMs(span.duration_ms)}</dd></dl>${privacyNote}`;
   }
   function bindTraceSpanTrees(container, traces) {
     const tracesByRef = new Map(traces.map(trace => [trace.waterfall_ref, trace]));

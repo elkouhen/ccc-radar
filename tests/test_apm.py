@@ -16,7 +16,14 @@ from systemlens.apm import (
     load_settings,
     parse_since,
 )
-from systemlens.apm_report import _project_distributed_trace, build_runtime_report, render_runtime_report_html
+from systemlens.apm_report import (
+    _project_distributed_trace,
+    _safe_operation_label,
+    _safe_structured_span_label,
+    _span_display_label,
+    build_runtime_report,
+    render_runtime_report_html,
+)
 from systemlens.cli import app
 
 
@@ -510,9 +517,10 @@ def test_runtime_report_uses_histogram_p95_for_services_and_transactions() -> No
     assert report["timeline_spans"] == [{
         "timestamp": "2026-08-15T09:30:00.000Z",
         "service": "orders",
-        "span": "Span",
-        "span_type": "db",
-        "duration_ms": 180.0,
+            "span": "Span",
+            "span_type": "db",
+            "origin": "Database",
+            "duration_ms": 180.0,
         "outcome": "success",
         "waterfall_refs": ["waterfall-1"],
     }]
@@ -539,6 +547,7 @@ def test_runtime_report_uses_histogram_p95_for_services_and_transactions() -> No
     assert "trace.id" in timeline_query["fields"]
     assert {"terms": {"trace.id": ["distributed-trace"]}} in timeline_query["query"]["bool"]["filter"]  # type: ignore[index]
     assert {"term": {"processor.event": "span"}} in timeline_query["query"]["bool"]["filter"]  # type: ignore[index]
+    assert timeline_query["sort"] == [{"@timestamp": {"order": "desc"}}]
     assert "span.duration.us" in timeline_query["fields"]
     assert "span.type" in timeline_query["fields"]
     assert report["coverage"]["timeline"] == {  # type: ignore[index]
@@ -562,16 +571,16 @@ def test_runtime_report_uses_histogram_p95_for_services_and_transactions() -> No
         "distributed_operations": ["orders · HTTP transaction"],
         "waterfall_ref": "waterfall-1",
         "truncated": False,
-        "spans": [{
-            "service": "orders", "name": "HTTP transaction", "kind": "transaction",
-            "transaction_type": "request", "outcome": "success", "depth": 0,
+            "spans": [{
+                "service": "orders", "name": "HTTP transaction", "kind": "transaction",
+                "transaction_type": "request", "origin": "HTTP", "outcome": "success", "depth": 0,
             "offset_ms": 0, "duration_ms": 400.0,
         }],
     }]
     assert report["coverage"]["distributed_traces"] == {  # type: ignore[index]
         "items_exported": 1,
         "max_traces": 20,
-        "max_spans_per_trace": 500,
+        "max_spans_per_trace": 100,
         "truncated": False,
         "truncation_reasons": [],
         "available": True,
@@ -583,7 +592,7 @@ def test_runtime_report_uses_histogram_p95_for_services_and_transactions() -> No
         if "spans" in query.get("aggs", {}).get("traces", {}).get("aggs", {})  # type: ignore[union-attr]
     )
     assert waterfall_query["size"] == 0
-    assert waterfall_query["aggs"]["traces"]["aggs"]["spans"]["top_hits"]["size"] == 500  # type: ignore[index]
+    assert waterfall_query["aggs"]["traces"]["aggs"]["spans"]["top_hits"]["size"] == 100  # type: ignore[index]
     exported = json.dumps(report)
     assert '"trace.id"' not in exported
     assert '"span.id"' not in exported
@@ -616,6 +625,24 @@ def test_distributed_trace_uses_producer_span_as_kafka_topic_source() -> None:
     assert [span["depth"] for span in trace["spans"]] == [0, 1, 2]  # type: ignore[index]
     assert "producer" not in json.dumps(trace)
     assert "consumer" not in json.dumps(trace)
+
+
+def test_span_display_labels_use_http_route_and_kafka_topic() -> None:
+    http = _span_display_label({
+        "span.type": ["http"],
+        "http.request.method": ["post"],
+        "http.route": ["/orders/{orderId}"],
+    })
+    kafka = _span_display_label({
+        "span.type": ["messaging"],
+        "messaging.destination.name": ["orders.created"],
+    })
+
+    assert http == "POST /orders/{orderId}"
+    assert kafka == "orders.created"
+    assert _safe_operation_label(http, "span", None) == "Span"
+    assert _safe_structured_span_label(http) == http
+    assert _safe_structured_span_label(kafka) == kafka
 
 
 def test_runtime_report_marks_truncated_distributed_trace_spans() -> None:
