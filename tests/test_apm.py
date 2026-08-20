@@ -581,6 +581,12 @@ def test_runtime_report_uses_histogram_p95_for_services_and_transactions() -> No
     assert timeline_query["sort"] == [{"@timestamp": {"order": "desc"}}]
     assert "span.duration.us" in timeline_query["fields"]
     assert "span.type" in timeline_query["fields"]
+    trace_id_query = next(
+        query for query in client.queries
+        if query.get("aggs", {}).get("traces", {}).get("aggs", {}).get("latest")
+    )
+    assert trace_id_query["runtime_mappings"]["systemlens.trace_id"]["type"] == "keyword"  # type: ignore[index]
+    assert trace_id_query["aggs"]["traces"]["terms"]["field"] == "systemlens.trace_id"  # type: ignore[index]
     assert report["coverage"]["timeline"] == {  # type: ignore[index]
         "items_exported": 1,
         "truncated": False,

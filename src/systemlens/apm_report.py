@@ -33,6 +33,21 @@ DEFAULT_MAX_DISTRIBUTED_TRACES = 20
 # par bucket (`index.max_inner_result_window`). Cette projection reste bornée
 # et ne doit pas modifier les réglages d'index de production.
 MAX_SPANS_PER_DISTRIBUTED_TRACE = 100
+# Some legacy APM streams map ``trace.id`` as text, unlike OTel streams which
+# use a keyword. This per-request field avoids enabling fielddata or changing
+# index mappings while keeping the aggregate query compatible with both.
+TRACE_ID_RUNTIME_FIELD = "systemlens.trace_id"
+TRACE_ID_RUNTIME_MAPPINGS: dict[str, object] = {
+    TRACE_ID_RUNTIME_FIELD: {
+        "type": "keyword",
+        "script": {
+            "source": (
+                "def trace = params._source['trace']; "
+                "if (trace != null && trace['id'] != null) emit(trace['id']);"
+            )
+        },
+    }
+}
 
 
 def build_runtime_report(
@@ -228,10 +243,11 @@ def _read_distributed_traces(
             "size": 0,
             "track_total_hits": False,
             "_source": False,
+            "runtime_mappings": TRACE_ID_RUNTIME_MAPPINGS,
             "query": {"bool": {"filter": [*filters, {"terms": {"trace.id": trace_ids}}]}},
             "aggs": {
                 "traces": {
-                    "terms": {"field": "trace.id", "size": len(trace_ids)},
+                    "terms": {"field": TRACE_ID_RUNTIME_FIELD, "size": len(trace_ids)},
                     "aggs": {
                         "spans": {
                             "top_hits": {
@@ -557,11 +573,12 @@ def _read_distributed_trace_ids(
     response = search_traces({
         "size": 0,
         "track_total_hits": False,
+        "runtime_mappings": TRACE_ID_RUNTIME_MAPPINGS,
         "query": {"bool": {"filter": filters}},
         "aggs": {
             "traces": {
                 "terms": {
-                    "field": "trace.id",
+                    "field": TRACE_ID_RUNTIME_FIELD,
                     "size": candidate_limit,
                     "order": {"latest": "desc"},
                 },
