@@ -1324,6 +1324,11 @@ def apm_report_cmd(
         max=2_000,
         help="Échantillons de transaction maximum dans Timeline (500 par défaut, 2 000 maximum).",
     ),
+    all_spans: bool = typer.Option(
+        False,
+        "--all-spans",
+        help="Parcourt tous les spans de la fenêtre (rapport potentiellement volumineux).",
+    ),
 ) -> None:
     """Produit une vue HTML APM interactive à partir d'agrégats bornés.
 
@@ -1344,6 +1349,7 @@ def apm_report_cmd(
             max_dependencies=max_dependencies,
             max_buckets=max_buckets,
             max_timeline_events=max_timeline_events,
+            all_spans=all_spans,
         )
         document = render_runtime_report_html(report)
         html.write_text(document, encoding="utf-8")

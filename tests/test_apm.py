@@ -591,9 +591,10 @@ def test_runtime_report_uses_histogram_p95_for_services_and_transactions() -> No
     assert report["coverage"]["timeline"] == {  # type: ignore[index]
         "items_exported": 1,
         "truncated": False,
-        "truncation_reasons": [],
-        "max_events": 500,
-        "available": True,
+            "truncation_reasons": [],
+            "max_events": 500,
+            "all_spans": False,
+            "available": True,
         "unavailable_reason": None,
     }
     assert report["distributed_traces"] == [{
@@ -836,9 +837,10 @@ def test_runtime_report_keeps_aggregates_when_timeline_times_out() -> None:
     assert report["coverage"]["timeline"] == {  # type: ignore[index]
         "items_exported": 0,
         "truncated": False,
-        "truncation_reasons": [],
-        "max_events": 500,
-        "available": False,
+            "truncation_reasons": [],
+            "max_events": 500,
+            "all_spans": False,
+            "available": False,
         "unavailable_reason": "timeout",
     }
 

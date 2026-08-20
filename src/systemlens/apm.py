@@ -160,6 +160,37 @@ class ElasticApmClient:
             "POST", f"/{','.join(APM_TRACE_INDEX_PATTERNS)}/_search", body
         )
 
+    def search_all_traces(self, body: dict[str, object]) -> list[dict[str, object]]:
+        """Read every matching trace event with Elasticsearch's scroll API."""
+        request_body = {**body, "size": 1_000, "sort": ["_doc"]}
+        response = self._request_json(
+            "POST", f"/{','.join(APM_TRACE_INDEX_PATTERNS)}/_search?scroll=1m", request_body
+        )
+        scroll_id = response.get("_scroll_id")
+        events: list[dict[str, object]] = []
+        try:
+            while True:
+                hits = response.get("hits")
+                page = hits.get("hits") if isinstance(hits, dict) else None
+                if not isinstance(page, list) or not page:
+                    break
+                events.extend(hit for hit in page if isinstance(hit, dict))
+                if not isinstance(scroll_id, str):
+                    break
+                response = self._request_json(
+                    "POST", "/_search/scroll", {"scroll": "1m", "scroll_id": scroll_id}
+                )
+                next_scroll_id = response.get("_scroll_id")
+                if isinstance(next_scroll_id, str):
+                    scroll_id = next_scroll_id
+        finally:
+            if isinstance(scroll_id, str):
+                try:
+                    self._request_json("DELETE", "/_search/scroll", {"scroll_id": [scroll_id]})
+                except ApmError:
+                    pass
+        return events
+
     def check_metrics_access(self) -> int | None:
         """Validate index-read access without requiring Elasticsearch monitor rights."""
         response = self.search_metrics(

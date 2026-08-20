@@ -60,6 +60,7 @@ def build_runtime_report(
     max_dependencies: int = DEFAULT_MAX_DEPENDENCIES,
     max_buckets: int = DEFAULT_MAX_BUCKETS_PER_VIEW,
     max_timeline_events: int = DEFAULT_MAX_TIMELINE_EVENTS,
+    all_spans: bool = False,
     now: datetime | None = None,
 ) -> dict[str, object]:
     """Read three aggregate metric projections for the runtime HTML report.
@@ -99,7 +100,7 @@ def build_runtime_report(
         timeline_truncation_reasons,
         timeline_unavailable_reason,
     ) = _read_timeline_spans(
-        client, start, end, environment, max_timeline_events
+        client, start, end, environment, max_timeline_events, all_spans=all_spans
     )
     (
         distributed_traces,
@@ -137,7 +138,8 @@ def build_runtime_report(
             linked_timeline_spans.append(item)
     # Every displayed execution-log span opens one of the embedded waterfalls.
     # Retaining unrelated candidates would render non-interactive timeline rows.
-    timeline_spans = linked_timeline_spans
+    if not all_spans:
+        timeline_spans = linked_timeline_spans
     transactions = _group_redacted_transactions(transactions)
     dependencies = _aggregate_relations(dependency_buckets)
     dependencies.sort(
@@ -194,6 +196,7 @@ def build_runtime_report(
                 "truncated": timeline_truncated,
                 "truncation_reasons": timeline_truncation_reasons,
                 "max_events": max_timeline_events,
+                "all_spans": all_spans,
                 "available": timeline_unavailable_reason is None,
                 "unavailable_reason": timeline_unavailable_reason,
             },
@@ -445,6 +448,8 @@ def _read_timeline_spans(
     end: datetime,
     environment: str | None,
     max_events: int,
+    *,
+    all_spans: bool = False,
 ) -> tuple[
     list[dict[str, object]],
     set[tuple[str, str | None, str | None]],
@@ -468,18 +473,37 @@ def _read_timeline_spans(
     if environment:
         filters.append({"term": {"service.environment": environment}})
     try:
-        trace_ids, candidates_truncated = _read_distributed_trace_ids(
-            search_traces, filters, max_events
-        )
-        if not trace_ids:
-            reasons = ["max_trace_candidates"] if candidates_truncated else []
-            return [], set(), candidates_truncated, reasons, None
-        transaction_filters = [
-            {"term": {"processor.event": "transaction"}},
-            *filters,
-            {"terms": {"trace.id": trace_ids}},
-        ]
-        transaction_response = search_traces({
+        if all_spans:
+            search_all_traces = getattr(client, "search_all_traces", None)
+            if not callable(search_all_traces):
+                return [], set(), False, [], "unsupported_client"
+            raw_hits = search_all_traces({
+                "track_total_hits": False,
+                "_source": False,
+                "runtime_mappings": TRACE_ID_RUNTIME_MAPPINGS,
+                "fields": [
+                    "@timestamp", TRACE_ID_RUNTIME_FIELD, "service.name", "span.name", "span.type", "span.subtype",
+                    "span.duration.us", "event.outcome", "http.request.method", "http.route",
+                    "url.path", "messaging.destination.name", "messaging.kafka.destination", "messaging.system",
+                ],
+                "query": {"bool": {"filter": [{"term": {"processor.event": "span"}}, *filters]}},
+            })
+            response = {"hits": {"hits": raw_hits}}
+            transaction_response = {"hits": {"hits": []}}
+            candidates_truncated = False
+        else:
+            trace_ids, candidates_truncated = _read_distributed_trace_ids(
+                search_traces, filters, max_events
+            )
+            if not trace_ids:
+                reasons = ["max_trace_candidates"] if candidates_truncated else []
+                return [], set(), candidates_truncated, reasons, None
+            transaction_filters = [
+                {"term": {"processor.event": "transaction"}},
+                *filters,
+                {"terms": {"trace.id": trace_ids}},
+            ]
+            transaction_response = search_traces({
             "size": max_events,
             "track_total_hits": False,
             "_source": False,
@@ -491,12 +515,12 @@ def _read_timeline_spans(
             ],
             "query": {"bool": {"filter": transaction_filters}},
         })
-        span_filters = [
+            span_filters = [
             {"term": {"processor.event": "span"}},
             *filters,
             {"terms": {"trace.id": trace_ids}},
         ]
-        response = search_traces({
+            response = search_traces({
             "size": max_events,
             "track_total_hits": False,
             "_source": False,
