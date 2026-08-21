@@ -432,9 +432,11 @@ select those multi-service exemplars; it never exports, persists, or displays
 the identifiers.
 
 The APM HTTP client bounds each Elasticsearch request to 15 seconds. Trace and
-span reads are split into one-hour windows, newest first. If any Elasticsearch
-request times out, `apm report` fails with its safe timeout error and does not
-write a partial report.
+span reads are split into one-hour windows, newest first, and stop once their
+explicit result budget is reached. A server-side Elasticsearch `timed_out`
+response is treated as a timeout even when it uses HTTP 200. If any
+Elasticsearch request times out, `apm report` fails with its safe timeout error
+and does not write a partial report.
 
 An `apm report` file is a one-shot snapshot and does not persist or infer a
 historical baseline. It must not present a regression comparison unless a future

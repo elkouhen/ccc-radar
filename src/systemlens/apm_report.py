@@ -526,12 +526,12 @@ def _read_timeline_spans(
             search_all_traces = getattr(client, "search_all_traces", None)
             if not callable(search_all_traces):
                 return [], False, [], "unsupported_client"
-            raw_hits: list[dict[str, object]] = []
+            all_span_hits: list[dict[str, object]] = []
             for window_start, window_end in _trace_query_windows(start, end):
-                remaining = max_events - len(raw_hits)
+                remaining = max_events - len(all_span_hits)
                 if remaining < 1:
                     break
-                raw_hits.extend(search_all_traces({
+                all_span_hits.extend(search_all_traces({
                     "size": remaining,
                     "track_total_hits": False,
                     "_source": False,
@@ -543,7 +543,7 @@ def _read_timeline_spans(
                     ],
                     "query": {"bool": {"filter": [SPAN_EVENT_FILTER, *_trace_window_filters(filters, window_start, window_end)]}},
                 }))
-            response = {"hits": {"hits": raw_hits}}
+            response = {"hits": {"hits": all_span_hits}}
             candidates_truncated = False
         else:
             trace_ids, candidates_truncated = _read_distributed_trace_ids(
@@ -552,25 +552,40 @@ def _read_timeline_spans(
             if not trace_ids:
                 reasons = ["max_trace_candidates"] if candidates_truncated else []
                 return [], candidates_truncated, reasons, None
-            span_filters = [
+            span_filters: list[dict[str, object]] = [
                 SPAN_EVENT_FILTER,
                 *filters,
                 {"terms": {TRACE_ID_RUNTIME_FIELD: trace_ids}},
             ]
-            response = search_traces({
-                "size": max_events,
-                "track_total_hits": False,
-                "_source": False,
-                "runtime_mappings": TRACE_ID_RUNTIME_MAPPINGS,
-                "sort": [{"@timestamp": {"order": "desc"}}],
-                "fields": [
-                    "@timestamp", TRACE_ID_RUNTIME_FIELD, "span.id", "span_id", "service.name", "span.name", "name", "span.type", "span.subtype", "kind",
-                    "span.duration.us", "duration", "event.outcome", "http.request.method", "http.route",
-                    "url.path", "messaging.destination.name", "messaging.kafka.destination",
-                    "messaging.system",
-                ],
-                "query": {"bool": {"filter": span_filters}},
-            })
+            # The trace IDs are selected in hourly windows; keep the span read
+            # on those same bounded windows. Previously a long --since value
+            # still caused one shard-wide hit query over the complete range.
+            selected_trace_hits: list[dict[str, object]] = []
+            for window_start, window_end in _trace_query_windows(start, end):
+                remaining = max_events - len(selected_trace_hits)
+                if remaining < 1:
+                    break
+                response = search_traces({
+                    "size": remaining,
+                    "track_total_hits": False,
+                    "_source": False,
+                    "runtime_mappings": TRACE_ID_RUNTIME_MAPPINGS,
+                    "sort": [{"@timestamp": {"order": "desc"}}],
+                    "fields": [
+                        "@timestamp", TRACE_ID_RUNTIME_FIELD, "span.id", "span_id", "service.name", "span.name", "name", "span.type", "span.subtype", "kind",
+                        "span.duration.us", "duration", "event.outcome", "http.request.method", "http.route",
+                        "url.path", "messaging.destination.name", "messaging.kafka.destination",
+                        "messaging.system",
+                    ],
+                    "query": {"bool": {"filter": _trace_window_filters(span_filters, window_start, window_end)}},
+                })
+                hits = response.get("hits")
+                page = hits.get("hits") if isinstance(hits, dict) else None
+                if isinstance(page, list):
+                    selected_trace_hits.extend(
+                        hit for hit in page if isinstance(hit, dict)
+                    )
+            response = {"hits": {"hits": selected_trace_hits}}
     except ApmTimeoutError:
         raise
     hits = response.get("hits")
@@ -622,7 +637,9 @@ def _read_distributed_trace_ids(
     end: datetime,
 ) -> tuple[list[str], bool]:
     """Select recent trace IDs that contain spans from multiple services."""
-    candidate_limit = min(MAX_DISTRIBUTED_TRACE_CANDIDATES, max_events * 10)
+    # A candidate needs at least one displayed event. Reading ten times the
+    # report budget made long windows expensive without adding Timeline rows.
+    candidate_limit = min(MAX_DISTRIBUTED_TRACE_CANDIDATES, max_events)
     trace_ids: list[str] = []
     truncated = False
     for window_start, window_end in _trace_query_windows(start, end):
@@ -674,6 +691,8 @@ def _read_distributed_trace_ids(
                 and trace_id not in trace_ids
             ):
                 trace_ids.append(trace_id)
+                if len(trace_ids) >= candidate_limit:
+                    return trace_ids, True
     return trace_ids, truncated
 
 

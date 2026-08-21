@@ -380,6 +380,28 @@ def test_apm_report_prints_the_failed_request_curl(monkeypatch: pytest.MonkeyPat
     assert "not-a-real-key" not in result.output
 
 
+def test_elasticsearch_server_timeout_is_reported_as_a_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class Response:
+        def __enter__(self) -> "Response":
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            return None
+
+        def read(self) -> bytes:
+            return b'{"timed_out": true, "hits": {"hits": []}}'
+
+    monkeypatch.setattr("systemlens.apm.urlopen", lambda *args, **kwargs: Response())
+    client = ElasticApmClient(
+        load_settings(endpoint="https://elastic.example.test", api_key="not-a-real-key")
+    )
+
+    with pytest.raises(ApmTimeoutError):
+        client.search_traces({"size": 0})
+
+
 def test_export_digest_rejects_a_budget_smaller_than_required_metadata() -> None:
     with pytest.raises(ApmError, match="métadonnées obligatoires"):
         export_digest(  # type: ignore[arg-type]

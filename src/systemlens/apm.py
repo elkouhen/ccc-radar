@@ -282,6 +282,10 @@ class ElasticApmClient:
             ) from exc
         if not isinstance(decoded, dict):
             raise ApmError("La réponse Elasticsearch doit être un objet JSON.")
+        # Elasticsearch can report its own expired search deadline in a 200
+        # response. A partial page must not make a report look complete.
+        if decoded.get("timed_out") is True:
+            raise ApmTimeoutError()
         return decoded
 
 

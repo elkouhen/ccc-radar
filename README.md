@@ -115,9 +115,9 @@ deliberately not estimated, and the one-shot report has no historical baseline.
 Span records are limited to 500 by default (2,000 maximum). HTTP
 spans show their method and route; Kafka spans show their topic. Each
 distributed trace waterfall is limited to 100 spans to respect Elasticsearch's
-default `index.max_inner_result_window`. If
-their bounded query times out, the aggregate report is still written and
-explicitly marks Spans as unavailable. The Traces tab lists the bounded
+default `index.max_inner_result_window`. If a bounded Elasticsearch query
+times out (including a server-side `timed_out` response), report generation
+fails without writing a partial file. The Traces tab lists the bounded
 distributed-trace waterfalls: selecting a Span entry filters to its matching
 trace, and a span selected in a trace can open its matching Spans entry while
 its trace detail remains visible.

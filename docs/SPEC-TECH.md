@@ -124,9 +124,11 @@ then restore chronological display order. The Distributed transactions tab can r
 greatest recorded cumulative duration.
 The Timeline limit defaults to 500 and the CLI caps it at 2,000. Trace and
 span reads are partitioned into one-hour windows, newest first, and stop once
-the configured Timeline limit is reached. Every APM HTTP request has the
-adapter's 15-second timeout. A timeout propagates to the CLI as an error, so no
-partial report is written.
+the configured Timeline limit is reached; candidate trace selection is capped
+at that same limit. Every APM HTTP request has the adapter's 15-second timeout.
+An Elasticsearch response with `timed_out: true` is also raised as an adapter
+timeout even when it has HTTP 200 status. A timeout propagates to the CLI as an
+error, so no partial report is written.
 Service names are inserted through JSON data and rendered with HTML escaping
 before insertion. Transaction, span, result, and messaging-target values are
 not exported, so telemetry cannot disclose arbitrary operation content.
