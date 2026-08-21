@@ -310,6 +310,9 @@ When `--interval-data` is used, the CLI writes a progress line to stderr before
 each interval, including its ordinal, total, and UTC window; this progress does
 not alter the generated JSON or HTML. After each completed interval it also
 reports the number of spans projected into that interval's JSON file.
+Each completed interval JSON and the updated manifest are written immediately
+to `--interval-data`; if a later interval fails, those earlier interval files
+remain available while the HTML file is not written.
 
 The report starts with a bounded investigation-priority ranking. It combines
 observed volume, aggregate error rate, and service/transaction P95 or dependency

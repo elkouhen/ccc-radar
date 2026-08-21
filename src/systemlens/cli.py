@@ -1361,6 +1361,20 @@ def apm_report_cmd(
         settings = load_apm_settings(endpoint, api_key, insecure_tls=insecure)
         client = ElasticApmClient(settings)
         if interval_data is not None:
+            interval_data.mkdir(parents=True, exist_ok=True)
+            manifest_intervals: list[dict[str, str]] = []
+            manifest_path = interval_data / "index.json"
+
+            def write_interval_manifest() -> None:
+                manifest = {
+                    "schema_version": "apm-runtime-report-interval-manifest-v1",
+                    "interval": interval,
+                    "intervals": manifest_intervals,
+                }
+                manifest_path.write_text(
+                    json.dumps(manifest, ensure_ascii=False), encoding="utf-8"
+                )
+
             def report_interval_progress(
                 index: int, total: int, window_start: datetime, window_end: datetime
             ) -> None:
@@ -1375,6 +1389,17 @@ def apm_report_cmd(
             ) -> None:
                 spans = interval_report.get("timeline_spans")
                 span_count = len(spans) if isinstance(spans, list) else 0
+                filename = f"interval-{index:04}.json"
+                (interval_data / filename).write_text(
+                    runtime_report_json(interval_report), encoding="utf-8"
+                )
+                window = cast(dict[str, object], interval_report["window"])
+                manifest_intervals.append({
+                    "id": str(index),
+                    "data": filename,
+                    "label": f"{window['from']} – {window['to']}",
+                })
+                write_interval_manifest()
                 typer.echo(
                     f"APM : intervalle {index}/{total} terminé — {span_count} spans importés.",
                     err=True,
@@ -1387,16 +1412,6 @@ def apm_report_cmd(
                 max_timeline_events=max_timeline_events, all_spans=all_spans,
                 progress=report_interval_progress, completed=report_interval_completed,
             )
-            interval_data.mkdir(parents=True, exist_ok=True)
-            manifest_intervals: list[dict[str, str]] = []
-            for index, interval_report in enumerate(reports, start=1):
-                filename = f"interval-{index:04}.json"
-                (interval_data / filename).write_text(runtime_report_json(interval_report), encoding="utf-8")
-                window = cast(dict[str, object], interval_report["window"])
-                manifest_intervals.append({"id": str(index), "data": filename, "label": f"{window['from']} – {window['to']}"})
-            manifest = {"schema_version": "apm-runtime-report-interval-manifest-v1", "interval": interval, "intervals": manifest_intervals}
-            manifest_path = interval_data / "index.json"
-            manifest_path.write_text(json.dumps(manifest, ensure_ascii=False), encoding="utf-8")
             report = reports[0]
             manifest_url = os.path.relpath(manifest_path, html.parent)
             document = render_runtime_report_html(report, interval_manifest_url=manifest_url)

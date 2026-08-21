@@ -1348,6 +1348,7 @@ def test_apm_report_writes_one_json_per_interval(
         completed = kwargs["completed"]
         assert callable(completed)
         completed(1, 2, reports[0])
+        completed(2, 2, reports[1])
         return reports
 
     monkeypatch.setattr("systemlens.cli.build_runtime_reports_by_interval", build_intervals)
