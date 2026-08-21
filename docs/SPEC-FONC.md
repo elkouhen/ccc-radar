@@ -316,6 +316,9 @@ remain available while the HTML file is not written.
 When externally loaded JSON omits an expected report attribute, the HTML emits
 a browser-console warning listing only the missing attribute names; it never
 logs telemetry values or credentials.
+The HTML also includes a Data quality panel that checks the expected safe report
+attributes, validates projected-list shapes, and reports only attribute names
+and record counts; it never displays telemetry values in its analysis.
 
 The report starts with a bounded investigation-priority ranking. It combines
 observed volume, aggregate error rate, and service/transaction P95 or dependency

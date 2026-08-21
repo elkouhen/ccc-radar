@@ -1303,8 +1303,19 @@ def render_runtime_report_html(
         "__RUNTIME_DATA__", data
     )
     return document.replace("__RUNTIME_DATA_LOADER__", loader).replace(
-        "</body>", _RUNTIME_REPORT_ENHANCEMENTS + "</body>"
+        "</body>", _runtime_data_quality_script() + _RUNTIME_REPORT_ENHANCEMENTS + "</body>"
     )
+
+
+def _runtime_data_quality_script() -> str:
+    """Return a client-side schema check that never renders telemetry values."""
+    return """<script>(function(){
+const report=document.createElement('section');report.id='data-quality-report';report.className='panel';
+const expected=['window','services','transactions','dependencies','timeline_spans','distributed_traces','coverage'];
+const arrays=['services','transactions','dependencies','timeline_spans','distributed_traces'];
+function check(){const data=JSON.parse(document.getElementById('runtime-data').textContent);const missing=expected.filter(name=>!(name in data));const invalid=arrays.filter(name=>name in data&&!Array.isArray(data[name]));const findings=[...missing.map(name=>`Missing attribute: ${name}`),...invalid.map(name=>`Expected array: ${name}`)];report.innerHTML=`<div class="panel-head"><div><p class="eyebrow">Data quality</p><h2>Loaded report check</h2><p class="note">Checks the safe report schema only; telemetry values are never displayed here.</p></div><button type="button" id="run-data-quality-check">Check data</button></div>${findings.length?`<ul>${findings.map(item=>`<li class="danger">${item}</li>`).join('')}</ul>`:`<p class="status status-ok">Expected report attributes are present.</p>`}<p class="note">${arrays.map(name=>`${name}: ${Array.isArray(data[name])?data[name].length:'—'} records`).join(' · ')}</p>`;document.getElementById('run-data-quality-check').addEventListener('click',check);}
+document.querySelector('main').prepend(report);check();
+})();</script>"""
 
 
 def _redact_report_operations(report: dict[str, object]) -> dict[str, object]:

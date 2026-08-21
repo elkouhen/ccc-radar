@@ -1374,6 +1374,7 @@ def test_apm_report_writes_one_json_per_interval(
     assert "new URL(\"intervals/index.json\",location.href)" in output.read_text(encoding="utf-8")
     assert "data.coverage=Object.assign" in output.read_text(encoding="utf-8")
     assert "Missing report attributes:" in output.read_text(encoding="utf-8")
+    assert "Loaded report check" in output.read_text(encoding="utf-8")
     assert "APM : intervalle 1/2" in result.output
     assert "0 spans importés" in result.output
 
