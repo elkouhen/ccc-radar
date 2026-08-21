@@ -1282,20 +1282,21 @@ def render_runtime_report_html(
         loader = (
             "<script>(function(){const get=url=>{const request=new XMLHttpRequest();"
             "request.open('GET',url,false);request.send(null);if(request.status!==200)throw new Error('Unable to load APM report data');return request.responseText;};"
+            "const validate=raw=>{const data=JSON.parse(raw);const missing=['window','services','transactions','dependencies','timeline_spans','distributed_traces','coverage'].filter(name=>!(name in data));if(missing.length)console.warn('[SystemLens APM] Missing report attributes:',missing);return raw;};"
             f"const manifestUrl=new URL({json.dumps(interval_manifest_url)},location.href).toString();const manifest=JSON.parse(get(manifestUrl));"
             "const selected=new URLSearchParams(location.search).get('interval');const item=(manifest.intervals||[]).find(value=>value.id===selected)||(manifest.intervals||[])[0];"
-            "if(!item)throw new Error('No APM interval data');document.getElementById('runtime-data').textContent=get(new URL(item.data,manifestUrl).toString());"
+            "if(!item)throw new Error('No APM interval data');document.getElementById('runtime-data').textContent=validate(get(new URL(item.data,manifestUrl).toString()));"
             "const picker=document.createElement('label');picker.className='note';picker.textContent='Analysis interval: ';const select=document.createElement('select');"
             "(manifest.intervals||[]).forEach(value=>{const option=document.createElement('option');option.value=value.id;option.textContent=value.label;option.selected=value.id===item.id;select.append(option);});"
             "select.addEventListener('change',()=>{const url=new URL(location.href);url.searchParams.set('interval',select.value);location.assign(url);});picker.append(select);document.querySelector('main').prepend(picker);"
-            "})().catch(()=>{document.body.innerHTML='<main><h1>APM data unavailable</h1><p>Serve this directory over HTTP and verify the interval JSON files.</p></main>';throw new Error('Unable to load APM interval data');});</script>"
+            "})().catch(error=>{console.error('[SystemLens APM] Interval data loading failed:',error.message);document.body.innerHTML='<main><h1>APM data unavailable</h1><p>Serve this directory over HTTP and verify the interval JSON files.</p></main>';throw error;});</script>"
         )
     elif data_url is not None:
         loader = (
             "<script>(function(){const request=new XMLHttpRequest();"
             f"request.open('GET',{json.dumps(data_url)},false);request.send(null);"
             "if(request.status !== 200){document.body.innerHTML='<main><h1>Données APM indisponibles</h1><p>Servez ce répertoire via HTTP et vérifiez la présence du fichier JSON associé.</p></main>';throw new Error('Unable to load APM report data');}"
-            "document.getElementById('runtime-data').textContent=request.responseText;})();</script>"
+            "const data=JSON.parse(request.responseText);const missing=['window','services','transactions','dependencies','timeline_spans','distributed_traces','coverage'].filter(name=>!(name in data));if(missing.length)console.warn('[SystemLens APM] Missing report attributes:',missing);document.getElementById('runtime-data').textContent=request.responseText;})();</script>"
         )
     title = escape("SystemLens · APM runtime overview")
     document = _RUNTIME_REPORT_HTML.replace("__TITLE__", title).replace(

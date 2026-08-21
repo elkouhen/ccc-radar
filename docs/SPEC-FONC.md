@@ -313,6 +313,9 @@ reports the number of spans projected into that interval's JSON file.
 Each completed interval JSON and the updated manifest are written immediately
 to `--interval-data`; if a later interval fails, those earlier interval files
 remain available while the HTML file is not written.
+When externally loaded JSON omits an expected report attribute, the HTML emits
+a browser-console warning listing only the missing attribute names; it never
+logs telemetry values or credentials.
 
 The report starts with a bounded investigation-priority ranking. It combines
 observed volume, aggregate error rate, and service/transaction P95 or dependency
