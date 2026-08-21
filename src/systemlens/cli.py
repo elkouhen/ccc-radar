@@ -1336,7 +1336,7 @@ def apm_report_cmd(
     all_spans: bool = typer.Option(
         False,
         "--all-spans",
-        help="Parcourt tous les spans de la fenêtre (rapport potentiellement volumineux).",
+        help="Inclut les spans de toute la fenêtre, bornés par --max-timeline-events.",
     ),
 ) -> None:
     """Produit une vue HTML APM interactive à partir d'agrégats bornés.

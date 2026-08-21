@@ -280,6 +280,9 @@ projections by default (configurable with `--max-timeline-events`, capped at
 2,000), then emits a versioned
 `apm-runtime-report-v2` observation embedded in the requested HTML file. It is not persisted in
 SQLite, merged into the static architecture snapshot, or exposed through MCP.
+With `--all-spans`, the same `--max-timeline-events` limit is a strict read
+limit: SystemLens stops the Elasticsearch scroll once that many span documents
+have been read, rather than traversing the complete selected window.
 After writing the file, the CLI prints a generation summary with the displayed
 service, aggregate-transaction, dependency, execution-log-span, and
 distributed-trace counts. The span and trace figures are bounded report

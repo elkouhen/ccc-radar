@@ -83,7 +83,9 @@ each Timeline span to its exact waterfall, then replaced by report-local opaque
 names are replaced with a safe `Span` label and span types are allowlisted
 before export. The HTML labels Timeline spans and waterfalls as bounded
 cross-service examples. Its local service and span-type filters operate on the
-embedded projection only. To produce
+embedded projection only. With `--all-spans`, the scroll uses
+`max_timeline_events` as a strict total cap and stops before requesting another
+page once reached. To produce
 at most 20 waterfall exemplars, a second `_source: false` terms aggregation
 uses a `top_hits` limit of 500 per selected trace, temporarily reading span and parent
 IDs plus timestamp, service, operation, duration and outcome. It

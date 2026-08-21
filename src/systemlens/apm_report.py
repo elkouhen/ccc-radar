@@ -531,6 +531,7 @@ def _read_timeline_spans(
             if not callable(search_all_traces):
                 return [], False, [], "unsupported_client"
             raw_hits = search_all_traces({
+                "size": max_events,
                 "track_total_hits": False,
                 "_source": False,
                 "runtime_mappings": TRACE_ID_RUNTIME_MAPPINGS,

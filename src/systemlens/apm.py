@@ -164,13 +164,17 @@ class ElasticApmClient:
         )
 
     def search_all_traces(self, body: dict[str, object]) -> list[dict[str, object]]:
-        """Read every matching trace event with Elasticsearch's scroll API."""
-        # Elasticsearch rejects track_total_hits in a scroll context. We page
-        # until the server returns no hit, so an exact total is not needed.
+        """Read at most the caller's bounded number of trace events by scroll."""
+        # Elasticsearch rejects track_total_hits in a scroll context. ``size``
+        # is a total cap supplied by the report, not an invitation to walk the
+        # entire time window: a long ``--since`` range must remain bounded.
+        requested_limit = body.get("size")
+        max_events = requested_limit if isinstance(requested_limit, int) else 1_000
+        max_events = max(1, max_events)
         request_body = {
             key: value for key, value in body.items() if key != "track_total_hits"
         }
-        request_body.update({"size": 1_000, "sort": ["_doc"]})
+        request_body.update({"size": min(1_000, max_events), "sort": ["_doc"]})
         response = self._request_json(
             "POST", f"/{','.join(APM_TRACE_INDEX_PATTERNS)}/_search?scroll=1m", request_body
         )
@@ -182,7 +186,10 @@ class ElasticApmClient:
                 page = hits.get("hits") if isinstance(hits, dict) else None
                 if not isinstance(page, list) or not page:
                     break
-                events.extend(hit for hit in page if isinstance(hit, dict))
+                remaining = max_events - len(events)
+                events.extend(hit for hit in page[:remaining] if isinstance(hit, dict))
+                if len(events) >= max_events:
+                    break
                 if not isinstance(scroll_id, str):
                     break
                 response = self._request_json(

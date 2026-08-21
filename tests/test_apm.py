@@ -318,6 +318,42 @@ def test_client_encodes_a_raw_elasticsearch_api_key_and_queries_both_sources(
     assert "id:secret" not in curl
 
 
+def test_client_stops_all_spans_scroll_at_requested_limit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    requests = []
+
+    class Response:
+        def __enter__(self) -> "Response":
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            return None
+
+        def read(self) -> bytes:
+            return json.dumps({
+                "_scroll_id": "opaque-scroll-id",
+                "hits": {"hits": [{"fields": {"name": [str(index)]}} for index in range(3)]},
+            }).encode()
+
+    def fake_urlopen(request: object, **kwargs: object) -> Response:
+        requests.append(request)
+        return Response()
+
+    monkeypatch.setattr("systemlens.apm.urlopen", fake_urlopen)
+    client = ElasticApmClient(
+        load_settings(endpoint="https://elastic.example.test", api_key="not-a-real-key")
+    )
+
+    events = client.search_all_traces({"size": 2, "track_total_hits": False})
+
+    assert len(events) == 2
+    assert len(requests) == 2  # Initial page, then scroll context cleanup.
+    initial_body = json.loads(requests[0].data)  # type: ignore[union-attr]
+    assert initial_body["size"] == 2
+    assert requests[1].get_method() == "DELETE"  # type: ignore[union-attr]
+
+
 def test_apm_report_prints_the_failed_request_curl(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     def reject_report(*args: object, **kwargs: object) -> dict[str, object]:
         raise ApmHttpError(400)
