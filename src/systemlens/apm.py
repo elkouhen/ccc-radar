@@ -25,7 +25,10 @@ APM_METRIC_INDEX_PATTERNS = (
     "metrics-service_transaction.1m.otel-*",
     "metrics-transaction.1m.otel-*",
 )
-APM_TRACE_INDEX_PATTERNS = ("traces-apm*", "traces-generic.otel-*")
+# Elastic APM stores application events in ``traces-apm*``. Elastic Agent / EDOT
+# uses the OTel-native ``traces-<dataset>.otel-<namespace>`` convention; the
+# dataset is configurable, so it is not necessarily ``generic``.
+APM_TRACE_INDEX_PATTERNS = ("traces-apm*", "traces-*.otel-*")
 
 
 class ApmError(RuntimeError):

@@ -275,7 +275,7 @@ an architecture HTML export.
 It accepts the same bounded UTC `--since` duration and optional exact
 environment filter as `apm export`. It queries the same APM and OpenTelemetry
 metric streams with `size: 0` for aggregate views and both `traces-apm*` and
-`traces-generic.otel-*` for at most 500 recorded transaction
+`traces-*.otel-*` for at most 500 recorded transaction
 projections by default (configurable with `--max-timeline-events`, capped at
 2,000), then emits a versioned
 `apm-runtime-report-v2` observation embedded in the requested HTML file. It is not persisted in

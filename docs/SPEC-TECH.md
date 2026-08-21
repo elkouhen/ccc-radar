@@ -52,7 +52,7 @@ source data and is not merged with a snapshot.
 from three explicit read-only aggregate queries over both Elastic APM and
 compatible OpenTelemetry metric streams, plus bounded span-execution and
 distributed-trace exemplar queries over `traces-apm*` and
-`traces-generic.otel-*`. Its service
+`traces-*.otel-*` (the Elastic Agent/EDOT dataset is configurable). Its service
 and transaction views page composite buckets and aggregate transaction count,
 duration sum, success/outcome count from `event.success_count`, and the P95
 percentile of `transaction.duration.histogram`. Failure count is known outcomes

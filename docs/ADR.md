@@ -315,7 +315,7 @@ report for an OpenTelemetry-only deployment.
 
 **Decision:** The read-only SystemLens APM adapter queries only non-overlapping
 one-minute APM metric patterns together with the narrowly targeted OpenTelemetry service-destination,
-service-transaction, transaction, and generic-trace patterns. It keeps the
+service-transaction, transaction, and configurable-dataset trace patterns (`traces-*.otel-*`). It keeps the
 same bounded aggregate and field-projection contracts; it neither writes data
 nor reads raw trace identifiers. API keys supplied as raw Elasticsearch
 `id:secret` values are encoded to the `Authorization: ApiKey` header form, while
