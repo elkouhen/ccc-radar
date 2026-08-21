@@ -272,15 +272,17 @@ def build_runtime_reports_by_interval(
     max_timeline_events: int = DEFAULT_MAX_TIMELINE_EVENTS,
     all_spans: bool = False,
     now: datetime | None = None,
+    progress: Callable[[int, int, datetime, datetime], None] | None = None,
 ) -> list[dict[str, object]]:
     """Build one safe report projection for each bounded analysis interval."""
     start, end = parse_since(since, now=now)
     interval_start, _ = parse_since(interval, now=end)
     interval_size = end - interval_start
+    windows = _trace_query_windows(start, end, window_size=interval_size)
     reports: list[dict[str, object]] = []
-    window_end = end
-    while window_end > start:
-        window_start = max(start, window_end - interval_size)
+    for index, (window_start, window_end) in enumerate(windows, start=1):
+        if progress is not None:
+            progress(index, len(windows), window_start, window_end)
         reports.append(build_runtime_report(
             client,
             since=interval,
@@ -293,7 +295,6 @@ def build_runtime_reports_by_interval(
             all_spans=all_spans,
             window=(window_start, window_end),
         ))
-        window_end = window_start
     return reports
 
 
@@ -742,12 +743,17 @@ def _read_distributed_trace_ids(
     return trace_ids, truncated
 
 
-def _trace_query_windows(start: datetime, end: datetime) -> list[tuple[datetime, datetime]]:
-    """Return at-most-hourly windows from newest to oldest."""
+def _trace_query_windows(
+    start: datetime,
+    end: datetime,
+    *,
+    window_size: timedelta = TRACE_QUERY_WINDOW,
+) -> list[tuple[datetime, datetime]]:
+    """Return bounded windows from newest to oldest."""
     windows: list[tuple[datetime, datetime]] = []
     window_end = end
     while window_end > start:
-        window_start = max(start, window_end - TRACE_QUERY_WINDOW)
+        window_start = max(start, window_end - window_size)
         windows.append((window_start, window_end))
         window_end = window_start
     return windows
@@ -1272,7 +1278,7 @@ def render_runtime_report_html(
         loader = (
             "<script>(function(){const get=url=>{const request=new XMLHttpRequest();"
             "request.open('GET',url,false);request.send(null);if(request.status!==200)throw new Error('Unable to load APM report data');return request.responseText;};"
-            f"const manifestUrl={json.dumps(interval_manifest_url)};const manifest=JSON.parse(get(manifestUrl));"
+            f"const manifestUrl=new URL({json.dumps(interval_manifest_url)},location.href).toString();const manifest=JSON.parse(get(manifestUrl));"
             "const selected=new URLSearchParams(location.search).get('interval');const item=(manifest.intervals||[]).find(value=>value.id===selected)||(manifest.intervals||[])[0];"
             "if(!item)throw new Error('No APM interval data');document.getElementById('runtime-data').textContent=get(new URL(item.data,manifestUrl).toString());"
             "const picker=document.createElement('label');picker.className='note';picker.textContent='Analysis interval: ';const select=document.createElement('select');"

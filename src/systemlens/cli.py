@@ -1361,11 +1361,21 @@ def apm_report_cmd(
         settings = load_apm_settings(endpoint, api_key, insecure_tls=insecure)
         client = ElasticApmClient(settings)
         if interval_data is not None:
+            def report_interval_progress(
+                index: int, total: int, window_start: datetime, window_end: datetime
+            ) -> None:
+                typer.echo(
+                    "APM : intervalle "
+                    f"{index}/{total} ({window_start.isoformat()} → {window_end.isoformat()})…",
+                    err=True,
+                )
+
             reports = build_runtime_reports_by_interval(
                 client, since=since, interval=interval, environment=environment,
                 max_services=max_services, max_transactions=max_transactions,
                 max_dependencies=max_dependencies, max_buckets=max_buckets,
                 max_timeline_events=max_timeline_events, all_spans=all_spans,
+                progress=report_interval_progress,
             )
             interval_data.mkdir(parents=True, exist_ok=True)
             manifest_intervals: list[dict[str, str]] = []

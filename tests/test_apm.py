@@ -1341,10 +1341,13 @@ def test_apm_report_writes_one_json_per_interval(
         {"window": {"from": "2026-08-15T09:00:00Z", "to": "2026-08-15T10:00:00Z"}, "services": [], "transactions": [], "dependencies": [], "timeline_spans": [], "distributed_traces": []},
         {"window": {"from": "2026-08-15T08:00:00Z", "to": "2026-08-15T09:00:00Z"}, "services": [], "transactions": [], "dependencies": [], "timeline_spans": [], "distributed_traces": []},
     ]
-    monkeypatch.setattr(
-        "systemlens.cli.build_runtime_reports_by_interval",
-        lambda *args, **kwargs: reports,
-    )
+    def build_intervals(*args: object, **kwargs: object) -> list[dict[str, object]]:
+        progress = kwargs["progress"]
+        assert callable(progress)
+        progress(1, 2, datetime(2026, 8, 15, 9, tzinfo=UTC), datetime(2026, 8, 15, 10, tzinfo=UTC))
+        return reports
+
+    monkeypatch.setattr("systemlens.cli.build_runtime_reports_by_interval", build_intervals)
     output = tmp_path / "runtime.html"
     interval_data = tmp_path / "intervals"
 
@@ -1364,6 +1367,8 @@ def test_apm_report_writes_one_json_per_interval(
     ]
     assert (interval_data / "interval-0001.json").exists()
     assert "Analysis interval:" in output.read_text(encoding="utf-8")
+    assert "new URL(\"intervals/index.json\",location.href)" in output.read_text(encoding="utf-8")
+    assert "APM : intervalle 1/2" in result.output
 
 
 def test_apm_doctor_json_is_safe_when_not_configured() -> None:
