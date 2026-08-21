@@ -122,11 +122,38 @@ def build_runtime_report(
     ) = _read_distributed_traces(client, start, end, environment)
     waterfall_refs_by_trace_id: dict[str, list[str]] = {}
     for index, trace in enumerate(distributed_traces, start=1):
-        trace_id = trace.pop("_trace_id", None)
+        trace_id = trace.get("_trace_id")
         waterfall_ref = f"waterfall-{index}"
         trace["waterfall_ref"] = waterfall_ref
         if isinstance(trace_id, str):
             waterfall_refs_by_trace_id.setdefault(trace_id, []).append(waterfall_ref)
+
+    # Replace transient APM span IDs with report-local opaque references. This
+    # lets a waterfall row open its exact bounded Span entry without exporting
+    # an identifier from the APM source.
+    timeline_span_keys = {
+        (item.get("_trace_id"), item.get("_span_id"))
+        for item in timeline_spans
+        if isinstance(item.get("_trace_id"), str) and isinstance(item.get("_span_id"), str)
+    }
+    timeline_span_refs: dict[tuple[str, str], str] = {}
+    for trace in distributed_traces:
+        trace_id = trace.get("_trace_id")
+        spans = trace.get("spans")
+        if not isinstance(trace_id, str) or not isinstance(spans, list):
+            continue
+        for span_index, span in enumerate(spans, start=1):
+            if not isinstance(span, dict):
+                continue
+            span_id = span.pop("_span_id", None)
+            if not isinstance(span_id, str):
+                continue
+            if (trace_id, span_id) not in timeline_span_keys:
+                continue
+            reference = f"timeline-span-{trace['waterfall_ref']}-{span_index}"
+            span["timeline_span_ref"] = reference
+            timeline_span_refs[(trace_id, span_id)] = reference
+        trace.pop("_trace_id", None)
 
     services = _rank_latency_buckets(service_buckets, kind="service")
     transactions = _rank_latency_buckets(transaction_buckets, kind="transaction")
@@ -135,8 +162,16 @@ def build_runtime_report(
     linked_timeline_spans: list[dict[str, object]] = []
     for item in timeline_spans:
         trace_id = item.pop("_trace_id", None)
+        span_id = item.pop("_span_id", None)
         if isinstance(trace_id, str) and trace_id in waterfall_refs_by_trace_id:
             item["waterfall_refs"] = waterfall_refs_by_trace_id[trace_id]
+            timeline_reference = (
+                timeline_span_refs.get((trace_id, span_id))
+                if isinstance(span_id, str)
+                else None
+            )
+            if timeline_reference is not None:
+                item["timeline_span_ref"] = timeline_reference
             linked_timeline_spans.append(item)
     # Every displayed execution-log span opens one of the embedded waterfalls.
     # Retaining unrelated candidates would render non-interactive timeline rows.
@@ -393,6 +428,7 @@ def _project_distributed_trace(
     for item in ordered:
         timestamp_ms = _iso_timestamp_milliseconds(str(item["timestamp"]))
         span: dict[str, object] = {
+            "_span_id": item["id"],
             "service": item["service"],
             "name": _safe_operation_label(
                 str(item["name"]),
@@ -497,7 +533,7 @@ def _read_timeline_spans(
                 "_source": False,
                 "runtime_mappings": TRACE_ID_RUNTIME_MAPPINGS,
                 "fields": [
-                    "@timestamp", TRACE_ID_RUNTIME_FIELD, "service.name", "span.name", "span.type", "span.subtype",
+                    "@timestamp", TRACE_ID_RUNTIME_FIELD, "span.id", "service.name", "span.name", "span.type", "span.subtype",
                     "span.duration.us", "event.outcome", "http.request.method", "http.route",
                     "url.path", "messaging.destination.name", "messaging.kafka.destination", "messaging.system",
                 ],
@@ -517,7 +553,7 @@ def _read_timeline_spans(
                 "runtime_mappings": TRACE_ID_RUNTIME_MAPPINGS,
                 "sort": [{"@timestamp": {"order": "desc"}}],
                 "fields": [
-                    "@timestamp", TRACE_ID_RUNTIME_FIELD, "service.name", "span.name", "span.type", "span.subtype",
+                    "@timestamp", TRACE_ID_RUNTIME_FIELD, "span.id", "service.name", "span.name", "span.type", "span.subtype",
                     "span.duration.us", "event.outcome", "http.request.method", "http.route",
                     "url.path", "messaging.destination.name", "messaging.kafka.destination",
                     "messaging.system",
@@ -549,6 +585,7 @@ def _read_timeline_spans(
             "timestamp": timestamp,
             "service": service,
             "span": span,
+            "_span_id": _timeline_field_string(fields, "span.id"),
             "_trace_id": _timeline_field_string(fields, TRACE_ID_RUNTIME_FIELD)
             or _timeline_field_string(fields, "trace.id"),
             "span_type": _safe_span_type(_timeline_field_string(fields, "span.type")),
@@ -1062,6 +1099,7 @@ def _redact_report_operations(report: dict[str, object]) -> dict[str, object]:
                 )
                 span["origin"] = _safe_span_origin(span.get("origin"))
                 span.pop("_trace_id", None)
+                span.pop("_span_id", None)
     legacy_timeline_events = projection.get("timeline_events")
     if isinstance(legacy_timeline_events, list):
         for event in legacy_timeline_events:
@@ -1110,6 +1148,7 @@ def _redact_report_operations(report: dict[str, object]) -> dict[str, object]:
                             ) or "Span"
                         )
                         span["origin"] = _safe_span_origin(span.get("origin"))
+                        span.pop("_span_id", None)
                         error = span.get("error")
                         safe_error = _safe_error_details(
                             error.get("category") if isinstance(error, dict)
@@ -1130,6 +1169,7 @@ _RUNTIME_REPORT_ENHANCEMENTS = """<style>
 .trace-waterfall { min-width:760px; padding:8px 12px; } .trace-span { display:grid; grid-template-columns: minmax(260px,.8fr) minmax(280px,1.2fr) 80px; align-items:center; gap:10px; min-height:28px; } .trace-span.is-failure { border-left:3px solid #b42318; background:#fff6f5; } .timeline-item.is-waterfall-link { cursor:pointer; }
 .trace-span-name { display:flex; align-items:center; gap:6px; padding-left:calc(var(--depth) * 14px); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; } .trace-span-toggle { flex:0 0 22px; height:22px; border:1px solid #cbd7e8; border-radius:5px; background:#fff; color:#3156d3; font:inherit; font-weight:750; cursor:pointer; } .trace-span-toggle:hover { background:#eef3ff; } .trace-span-details { overflow:hidden; border:0; padding:0; background:transparent; color:inherit; font:inherit; text-align:left; text-overflow:ellipsis; white-space:nowrap; cursor:pointer; } .trace-span-details:hover,.trace-span-details:focus-visible { color:#243e99; text-decoration:underline; outline:0; } .trace-span-details.is-selected { color:#243e99; font-weight:750; } .trace-error-badge { flex:0 0 auto; border-radius:999px; padding:1px 6px; background:#fee4e2; color:#b42318; font-size:11px; font-weight:750; } .trace-track { position:relative; height:15px; border-left:1px solid #dce3ee; background:repeating-linear-gradient(90deg,#f7f9fc 0,#f7f9fc calc(25% - 1px),#e7edf6 calc(25% - 1px),#e7edf6 25%); }
 .trace-bar { position:absolute; top:2px; height:11px; min-width:2px; border-radius:3px; background:#7c92c9; } .trace-bar.is-transaction { background:#11b9b4; } .trace-bar.is-failure { background:#b42318; } .trace-span small { color:#5f6b82; font-variant-numeric:tabular-nums; text-align:right; } .trace-span-detail { margin:0 12px 12px; padding:10px; border:1px solid #dbe3ef; border-radius:8px; background:#f8faff; } .trace-span-detail dl { display:grid; grid-template-columns:max-content 1fr; gap:4px 12px; margin:0; } .trace-span-detail dt { color:#5f6b82; } .trace-span-detail dd { margin:0; } .trace-span-detail .is-failure { color:#b42318; font-weight:750; }
+.anomaly-grid,.trace-signatures { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:9px; } .anomaly-card,.trace-signature { border:1px solid #dbe3ef; border-left:4px solid #d48a22; border-radius:8px; background:#fffaf1; padding:10px; text-align:left; font:inherit; color:inherit; cursor:pointer; } .anomaly-card.is-danger,.trace-signature { border-left-color:#b42318; background:#fff6f5; } .anomaly-card b,.anomaly-card span,.trace-signature b,.trace-signature span { display:block; } .anomaly-card span,.trace-signature span { color:#5f6b82; font-size:12px; margin-top:3px; } .trace-insights { display:flex; flex-wrap:wrap; gap:6px; margin:8px 0; } .trace-insight,.anomaly-badge { border-radius:999px; padding:3px 7px; background:#eef3ff; color:#243e99; font-size:11px; font-weight:700; } .anomaly-badge { background:#fee4e2; color:#b42318; } .trace-sample-note { margin:0 0 12px; color:#5f6b82; font-size:12px; } .failure-matrix { width:100%; min-width:480px; white-space:normal; } .failure-matrix td { text-align:center; } .failure-matrix .has-failures { background:#fff1f0; color:#b42318; font-weight:750; } .back-to-trace { margin-left:8px; }
 </style><script>
 (() => {
   const data = JSON.parse(document.getElementById('runtime-data').textContent);
@@ -1143,10 +1183,28 @@ _RUNTIME_REPORT_ENHANCEMENTS = """<style>
   const number = value => typeof value === 'number' ? value : 0;
   const esc = value => String(value ?? '—').replace(/[&<>"']/g, character => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[character]));
   const formatMs = value => typeof value === 'number' ? `${value.toLocaleString(undefined,{maximumFractionDigits:3})} ms` : '—';
+  const percentile = (values, ratio) => { const sorted = values.filter(value => typeof value === 'number').sort((left,right) => left-right); return sorted.length ? sorted[Math.min(sorted.length - 1, Math.floor((sorted.length - 1) * ratio))] : null; };
+  const traceDurationP95 = percentile((data.distributed_traces || []).map(trace => trace.duration_ms), .95);
+  const spanDurationP95 = new Map();
+  (data.distributed_traces || []).forEach(trace => (trace.spans || []).forEach(span => {
+    const key = `${span.service}|${span.origin}`;
+    const values = spanDurationP95.get(key) || [];
+    values.push(span.duration_ms);
+    spanDurationP95.set(key, values);
+  }));
+  spanDurationP95.forEach((values, key) => spanDurationP95.set(key, percentile(values, .95)));
   const summary = document.createElement('div');
   summary.id = 'timeline-summary';
   summary.className = 'timeline-summary';
   byId('timeline-events').before(summary);
+  let returnToTraceRef = null;
+  const backToTrace = document.createElement('button');
+  backToTrace.id = 'back-to-trace';
+  backToTrace.type = 'button';
+  backToTrace.className = 'back-to-trace';
+  backToTrace.hidden = true;
+  backToTrace.textContent = 'Return to Trace';
+  byId('timeline-panel').querySelector('.panel-head').append(backToTrace);
   function selectView(view) {
     const services = view === 'overview';
     const transactions = view === 'details';
@@ -1200,7 +1258,7 @@ _RUNTIME_REPORT_ENHANCEMENTS = """<style>
     }
     const spans = visibleTimelineSpans();
     summary.innerHTML = `<div class="timeline-bucket"><b>${spans.length.toLocaleString()}</b>matching spans</div>`;
-    byId('timeline-events').innerHTML = spans.length ? spans.map(span => `<article class="timeline-item ${span.outcome === 'failure' ? 'is-failure' : ''}"><time>${esc(span.timestamp)}</time><div><div class="timeline-name">${esc(span.service)} · ${esc(span.span)}</div><div class="subtle">${esc(span.origin)} · ${esc(span.span_type)}${span.outcome ? ` · ${esc(span.outcome)}` : ''}${span._errorImpact ? ` · ${span._errorImpact.errors.toLocaleString()} observed failed executions` : ''}</div></div><strong>${formatMs(span.duration_ms)}</strong></article>`).join('') : '<p class="empty">No recorded span matches this selection.</p>';
+    byId('timeline-events').innerHTML = spans.length ? spans.map(span => `<article class="timeline-item ${span.outcome === 'failure' ? 'is-failure' : ''}"${span.timeline_span_ref ? ` data-timeline-span-ref="${esc(span.timeline_span_ref)}"` : ''}><time>${esc(span.timestamp)}</time><div><div class="timeline-name">${esc(span.service)} · ${esc(span.span)}</div><div class="subtle">${esc(span.origin)} · ${esc(span.span_type)}${span.outcome ? ` · ${esc(span.outcome)}` : ''}${span._errorImpact ? ` · ${span._errorImpact.errors.toLocaleString()} observed failed executions` : ''}</div></div><strong>${formatMs(span.duration_ms)}</strong></article>`).join('') : '<p class="empty">No recorded span matches this selection.</p>';
     const waterfallCount = Array.isArray(data.distributed_traces) ? data.distributed_traces.length : 0;
     byId('timeline-coverage').textContent = `Showing ${spans.length.toLocaleString()} recorded span${spans.length === 1 ? '' : 's'} from ${waterfallCount.toLocaleString()} distributed waterfall exemplar${waterfallCount === 1 ? '' : 's'}${timelineCoverage.truncated ? ' (span result limit reached)' : ''}.`;
   }
@@ -1217,6 +1275,7 @@ _RUNTIME_REPORT_ENHANCEMENTS = """<style>
   const distributedRootTypes = [...new Set((data.distributed_traces || []).map(trace => rootTransactionType(trace.transaction_type)))].sort();
   distributedRootTypeFilter.innerHTML = `<option value="">All root types</option>${distributedRootTypes.map(type => `<option value="${esc(type)}">${esc(rootTypeLabels[type])}</option>`).join('')}`;
   let timelineWaterfallRefs = new Set();
+  let selectedTraceSignature = '';
   const clearTimelineWaterfallFocus = document.createElement('button');
   clearTimelineWaterfallFocus.id = 'clear-timeline-waterfall-focus';
   clearTimelineWaterfallFocus.type = 'button';
@@ -1229,7 +1288,8 @@ _RUNTIME_REPORT_ENHANCEMENTS = """<style>
       (!distributedSourceFilter.value || `${trace.source_kind}:${trace.source}` === distributedSourceFilter.value) &&
       (!sharedService() || trace.service === sharedService() || (trace.route || []).includes(sharedService())) &&
       (!distributedRootTypeFilter.value || rootTransactionType(trace.transaction_type) === distributedRootTypeFilter.value) &&
-      (!timelineWaterfallRefs.size || timelineWaterfallRefs.has(trace.waterfall_ref))
+      (!timelineWaterfallRefs.size || timelineWaterfallRefs.has(trace.waterfall_ref)) &&
+      (!selectedTraceSignature || (trace.spans || []).some((span, index) => traceSignature(span, index) === selectedTraceSignature))
     );
     if (byId('distributed-top-ten-error-impact-filter').checked) {
       const groups = new Map();
@@ -1266,6 +1326,34 @@ _RUNTIME_REPORT_ENHANCEMENTS = """<style>
     }
     return traces;
   }
+  function traceSignature(span, index) {
+    if (span.outcome !== 'failure') return '';
+    const category = span.error && span.error.category ? span.error.category : 'failure';
+    return `${span.service}|${span.origin}|${category}|${index + 1}`;
+  }
+  function renderTraceSignals() {
+    const traces = visibleDistributedTraces();
+    const coverage = (data.coverage && data.coverage.distributed_traces) || {};
+    const timelineCoverage = (data.coverage && data.coverage.timeline) || {};
+    byId('trace-sample-note').textContent = `Showing ${traces.length.toLocaleString()} trace exemplar${traces.length === 1 ? '' : 's'} from ${number(coverage.items_exported).toLocaleString()} embedded trace${number(coverage.items_exported) === 1 ? '' : 's'}; ${number(timelineCoverage.items_exported).toLocaleString()} span record${number(timelineCoverage.items_exported) === 1 ? '' : 's'} are embedded${timelineCoverage.all_spans ? ' from the all-spans export' : ''}${coverage.truncated || timelineCoverage.truncated ? ' (coverage is limited)' : ''}. Examples do not establish an exhaustive incident rate.`;
+    const signatures = new Map();
+    traces.forEach(trace => (trace.spans || []).forEach((span, index) => {
+      const key = traceSignature(span, index);
+      if (!key) return;
+      const group = signatures.get(key) || {span, index, count: 0};
+      group.count += 1;
+      signatures.set(key, group);
+    }));
+    const entries = [...signatures.entries()].sort((left, right) => right[1].count - left[1].count || number(right[1].span.duration_ms) - number(left[1].span.duration_ms));
+    byId('trace-signatures').innerHTML = entries.length ? `${selectedTraceSignature ? '<button id="clear-trace-signature" type="button">Clear failure signature</button>' : ''}<div class="trace-signatures">${entries.slice(0, 8).map(([key, group]) => `<button class="trace-signature" type="button" data-trace-signature="${esc(key)}"><b>${esc(group.span.service)} · ${esc(group.span.origin)} · ${esc((group.span.error && group.span.error.category) || 'failure')}</b><span>Step ${group.index + 1} · ${group.count.toLocaleString()} embedded failure${group.count === 1 ? '' : 's'}</span></button>`).join('')}</div>` : '<p class="empty">No failure signature matches the current trace selection.</p>';
+    byId('trace-signatures').querySelectorAll('[data-trace-signature]').forEach(button => button.addEventListener('click', () => { selectedTraceSignature = button.dataset.traceSignature; renderDistributedTraces(); }));
+    byId('clear-trace-signature')?.addEventListener('click', () => { selectedTraceSignature = ''; renderDistributedTraces(); });
+    const rows = [...new Set(traces.flatMap(trace => (trace.spans || []).map(span => span.service)))].sort();
+    const stages = Math.max(0, ...traces.map(trace => (trace.spans || []).length));
+    const counts = new Map();
+    traces.forEach(trace => (trace.spans || []).forEach((span, index) => { if (span.outcome === 'failure') { const key = `${span.service}|${index + 1}`; counts.set(key, (counts.get(key) || 0) + 1); } }));
+    byId('trace-failure-matrix').innerHTML = rows.length && stages ? `<table class="failure-matrix"><thead><tr><th>Service</th>${Array.from({length: stages}, (_, index) => `<th>Step ${index + 1}</th>`).join('')}</tr></thead><tbody>${rows.map(service => `<tr><th>${esc(service)}</th>${Array.from({length: stages}, (_, index) => { const count = counts.get(`${service}|${index + 1}`) || 0; return `<td class="${count ? 'has-failures' : ''}">${count || '—'}</td>`; }).join('')}</tr>`).join('')}</tbody></table><p class="note">Failure counts are limited to the currently displayed embedded trace examples.</p>` : '<p class="empty">No trace stages match this selection.</p>';
+  }
   function renderTraceSpanRows(trace) {
     const spans = Array.isArray(trace.spans) ? trace.spans : [];
     const total = Math.max(1, number(trace.duration_ms), ...spans.map(span => number(span.offset_ms) + number(span.duration_ms)));
@@ -1280,7 +1368,9 @@ _RUNTIME_REPORT_ENHANCEMENTS = """<style>
       const width = Math.max(1, Math.min(100 - left, 100 * Math.max(number(span.duration_ms), 1) / total));
       const toggle = expandable ? `<button class="trace-span-toggle" type="button" aria-expanded="${collapsed ? 'false' : 'true'}" aria-label="${collapsed ? 'Expand' : 'Collapse'} ${descendants} subspans">${collapsed ? '+' : '−'}</button>` : '';
       const failure = span.outcome === 'failure';
-      return `<div class="trace-span${collapsed ? ' is-collapsed' : ''}${failure ? ' is-failure' : ''}" data-depth="${depth}" style="--depth:${depth}"><span class="trace-span-name">${toggle}<button class="trace-span-details" type="button" data-span-index="${index}" aria-expanded="false" aria-label="Show details for ${esc(span.service)} ${esc(span.name)}">${esc(span.service)} · ${esc(span.name)}</button><span class="trace-origin">${esc(span.origin)}</span>${failure ? '<span class="trace-error-badge">Error</span>' : ''}</span><span class="trace-track"><i class="trace-bar ${span.kind === 'transaction' ? 'is-transaction' : ''}${failure ? ' is-failure' : ''}" style="left:${left}%;width:${width}%"></i></span><small>${formatMs(span.duration_ms)}</small></div>`;
+      const slow = spanDurationP95.get(`${span.service}|${span.origin}`);
+      const slowBadge = slow !== null && slow !== undefined && number(span.duration_ms) >= slow ? '<span class="anomaly-badge">Slow span</span>' : '';
+      return `<div class="trace-span${collapsed ? ' is-collapsed' : ''}${failure ? ' is-failure' : ''}" data-depth="${depth}" style="--depth:${depth}"><span class="trace-span-name">${toggle}<button class="trace-span-details" type="button" data-span-index="${index}" aria-expanded="false" aria-label="Show details for ${esc(span.service)} ${esc(span.name)}">${esc(span.service)} · ${esc(span.name)}</button><span class="trace-origin">${esc(span.origin)}</span>${failure ? '<span class="trace-error-badge">Error</span>' : ''}${slowBadge}</span><span class="trace-track"><i class="trace-bar ${span.kind === 'transaction' ? 'is-transaction' : ''}${failure ? ' is-failure' : ''}" style="left:${left}%;width:${width}%"></i></span><small>${formatMs(span.duration_ms)}</small></div>`;
     }).join('');
   }
   function updateTraceSpanVisibility(card) {
@@ -1300,12 +1390,19 @@ _RUNTIME_REPORT_ENHANCEMENTS = """<style>
       row.hidden = hidden;
     });
   }
-  function renderTraceSpanDetail(span) {
+  function renderTraceSpanDetail(span, trace) {
     const outcome = span.outcome || 'unknown';
     const error = span.error || (outcome === 'failure' ? {category: 'failure', message: 'Operation failed'} : null);
     const failureNote = error ? `<dt>Error category</dt><dd>${esc(error.category)}</dd><dt>Error message</dt><dd class="is-failure">${esc(error.message)}</dd>` : '';
     const privacyNote = outcome === 'failure' ? '<p class="note">Error messages are sanitized categories; raw exception data is not included in this report.</p>' : '';
-    return `<dl><dt>Service</dt><dd>${esc(span.service)}</dd><dt>Operation</dt><dd>${esc(span.name)}</dd><dt>Origin</dt><dd>${esc(span.origin)}</dd><dt>Kind</dt><dd>${esc(span.kind)}</dd><dt>Type</dt><dd>${esc(span.transaction_type || 'other')}</dd><dt>Outcome</dt><dd class="${outcome === 'failure' ? 'is-failure' : ''}">${esc(outcome)}</dd>${failureNote}<dt>Start offset</dt><dd>${formatMs(span.offset_ms)}</dd><dt>Duration</dt><dd>${formatMs(span.duration_ms)}</dd></dl>${privacyNote}`;
+    const spanViewLink = span.timeline_span_ref ? `<p><button class="open-span-view" type="button" data-timeline-span-ref="${esc(span.timeline_span_ref)}">Open in Spans</button></p>` : '';
+    const spans = Array.isArray(trace.spans) ? trace.spans : [];
+    const largest = spans.reduce((best, candidate) => number(candidate.duration_ms) > number(best.duration_ms) ? candidate : best, spans[0] || {});
+    const byService = new Map(); spans.forEach(candidate => byService.set(candidate.service, number(byService.get(candidate.service)) + number(candidate.duration_ms)));
+    const contributions = [...byService.entries()].sort((left,right) => right[1] - left[1]).map(([service, duration]) => `${esc(service)} ${formatMs(duration)}`).join(' · ');
+    const traceBadge = traceDurationP95 !== null && number(trace.duration_ms) >= traceDurationP95 ? '<span class="anomaly-badge">Slow trace</span>' : '';
+    const timingExplanation = `<div class="trace-insights">${traceBadge}<span class="trace-insight">Trace duration ${formatMs(trace.duration_ms)}</span><span class="trace-insight">Longest recorded span: ${esc(largest.service)} · ${formatMs(largest.duration_ms)}</span></div><p class="note">Recorded span duration by service: ${contributions || '—'}. Nested spans can overlap, so this is an investigation aid rather than an exclusive critical-path calculation.</p>`;
+    return `${timingExplanation}<dl><dt>Service</dt><dd>${esc(span.service)}</dd><dt>Operation</dt><dd>${esc(span.name)}</dd><dt>Origin</dt><dd>${esc(span.origin)}</dd><dt>Kind</dt><dd>${esc(span.kind)}</dd><dt>Type</dt><dd>${esc(span.transaction_type || 'other')}</dd><dt>Outcome</dt><dd class="${outcome === 'failure' ? 'is-failure' : ''}">${esc(outcome)}</dd>${failureNote}<dt>Start offset</dt><dd>${formatMs(span.offset_ms)}</dd><dt>Duration</dt><dd>${formatMs(span.duration_ms)}</dd></dl>${spanViewLink}${privacyNote}`;
   }
   function bindTraceSpanTrees(container, traces) {
     const tracesByRef = new Map(traces.map(trace => [trace.waterfall_ref, trace]));
@@ -1327,7 +1424,8 @@ _RUNTIME_REPORT_ENHANCEMENTS = """<style>
         });
         button.setAttribute('aria-expanded', String(selected));
         detail.hidden = !selected;
-        detail.innerHTML = selected ? renderTraceSpanDetail(span) : '';
+        detail.innerHTML = selected ? renderTraceSpanDetail(span, trace) : '';
+        detail.querySelector('.open-span-view')?.addEventListener('click', () => openTimelineSpan(span.timeline_span_ref, trace.waterfall_ref));
       }));
       card.querySelectorAll('.trace-span-toggle').forEach(toggle => toggle.addEventListener('click', () => {
         const row = toggle.closest('.trace-span');
@@ -1345,11 +1443,12 @@ _RUNTIME_REPORT_ENHANCEMENTS = """<style>
     const allTraces = Array.isArray(data.distributed_traces) ? data.distributed_traces : [];
     if (!distributedSourceFilter.options.length) { const sourceOptions = [...new Map(allTraces.map(trace => [`${trace.source_kind}:${trace.source}`, sourceLabel(trace)])).entries()]; distributedSourceFilter.innerHTML = `<option value="">All origins</option>${sourceOptions.map(([value,label]) => `<option value="${esc(value)}">${esc(label)}</option>`).join('')}`; }
     const traces = visibleDistributedTraces();
-    if (!traces.length) { container.innerHTML = '<p class="empty">No distributed trace was observed in this window.</p>'; return; }
+    if (!traces.length) { container.innerHTML = '<p class="empty">No distributed trace was observed in this window.</p>'; renderTraceSignals(); return; }
     const groups = new Map();
     traces.forEach(trace => { const key = `${trace.source_kind}:${trace.source}`; if (!groups.has(key)) groups.set(key, []); groups.get(key).push(trace); });
     container.innerHTML = [...groups.entries()].map(([,items]) => `<section class="distributed-trace-group"><h3>${esc(sourceLabel(items[0]))}</h3>${items.map(trace => { const operations = (trace.distributed_operations || []).join(' → '); const route = (trace.route || []).join(' → '); const impact = trace._impact ? ` · ${trace._impact.executions.toLocaleString()} executions · ${formatMs(trace._impact.totalDuration)} cumulative duration` : trace._errorImpact ? ` · ${trace._errorImpact.errors.toLocaleString()} observed failed executions` : ''; return `<article class="distributed-trace" data-waterfall-ref="${esc(trace.waterfall_ref)}"><header><div><b>${esc(trace.service)} · ${esc(trace.name)}</b><div class="trace-identity"><span>${esc(route)}</span><span>${esc(operations)}</span></div><div class="subtle">${esc(trace.timestamp)} · ${trace.spans.length} spans${impact}</div></div><strong>${formatMs(trace.duration_ms)}</strong></header><div class="trace-waterfall">${renderTraceSpanRows(trace)}</div><section class="trace-span-detail" hidden aria-live="polite"></section></article>`; }).join('')}</section>`).join('');
     bindTraceSpanTrees(container, traces);
+    renderTraceSignals();
   }
   ['distributed-trace-source-filter', 'distributed-root-type-filter', 'distributed-top-ten-impact-filter', 'distributed-top-ten-error-impact-filter'].forEach(id => ['input', 'change'].forEach(event => byId(id).addEventListener(event, () => {
     renderDistributedTraces();
@@ -1375,6 +1474,29 @@ _RUNTIME_REPORT_ENHANCEMENTS = """<style>
       ['Outcome coverage', typeof outcomeCoverage === 'number' ? `${(outcomeCoverage * 100).toFixed(1)}%` : '—'],
       ['Observed dependencies', (Array.isArray(data.dependencies) ? data.dependencies.length : 0).toLocaleString()],
     ].map(([label, value]) => `<article class="card"><span class="subtle">${label}</span><b>${value}</b></article>`).join('');
+  }
+  function openTraceAnomalies(service) {
+    byId('global-service-filter').value = service || '';
+    byId('global-service-filter').dispatchEvent(new Event('change'));
+    byId('distributed-top-ten-error-impact-filter').checked = true;
+    selectView('distributed');
+    renderDistributedTraces();
+    renderTraceSignals();
+  }
+  function renderAnomalySummary() {
+    const candidates = [];
+    (data.services || []).filter(service => number(service.error_rate) > 0).forEach(service => candidates.push({
+      label: `${service.service} service errors`, detail: `${(number(service.error_rate) * 100).toFixed(1)}% errors · P95 ${formatMs(service.p95_ms)}`, service: service.service,
+    }));
+    (data.dependencies || []).filter(dependency => number(dependency.error_rate) > 0).forEach(dependency => candidates.push({
+      label: `${dependency.source} → ${dependency.target}`, detail: `${(number(dependency.error_rate) * 100).toFixed(1)}% observed errors · ${number(dependency.failure_calls).toLocaleString()} failures`, service: dependency.source,
+    }));
+    const failedTraces = (data.distributed_traces || []).filter(trace => trace.outcome === 'failure').length;
+    if (failedTraces) candidates.push({label: 'Failed trace exemplars', detail: `${failedTraces.toLocaleString()} embedded trace${failedTraces === 1 ? '' : 's'} contain a failure`, service: ''});
+    const incompleteOutcomes = (data.services || []).filter(service => number(service.outcome_coverage) > 0 && number(service.outcome_coverage) < 1);
+    incompleteOutcomes.forEach(service => candidates.push({label: `${service.service} outcome coverage`, detail: `${(number(service.outcome_coverage) * 100).toFixed(1)}% of calls have a known outcome`, service: service.service, warning: true}));
+    byId('anomaly-summary').innerHTML = candidates.length ? `<div class="anomaly-grid">${candidates.slice(0, 5).map(candidate => `<button class="anomaly-card ${candidate.warning ? '' : 'is-danger'}" type="button" data-anomaly-service="${esc(candidate.service)}"><b>${esc(candidate.label)}</b><span>${esc(candidate.detail)}</span></button>`).join('')}</div>` : '<p class="empty">No anomaly signal was observed in the embedded report data.</p>';
+    byId('anomaly-summary').querySelectorAll('[data-anomaly-service]').forEach(button => button.addEventListener('click', () => openTraceAnomalies(button.dataset.anomalyService)));
   }
   function renderTraceCoverage() {
     const coverage = (data.coverage && data.coverage.distributed_traces) || {};
@@ -1412,6 +1534,31 @@ _RUNTIME_REPORT_ENHANCEMENTS = """<style>
     renderTraceCoverage();
     byId('details-distributed-traces').scrollIntoView({block:'start'});
   }
+  function openTimelineSpan(reference, waterfallRef) {
+    const span = (data.timeline_spans || []).find(item => item.timeline_span_ref === reference);
+    if (!span) return;
+    byId('timeline-service-filter').value = span.service;
+    byId('timeline-span-type-filter').value = span.span_type;
+    byId('timeline-top-ten-longest-filter').checked = false;
+    byId('timeline-top-ten-error-impact-filter').checked = false;
+    returnToTraceRef = waterfallRef || null;
+    backToTrace.hidden = !returnToTraceRef;
+    selectView('timeline');
+    renderTimelineTriage();
+    const item = byId('timeline-events').querySelector(`[data-timeline-span-ref="${reference}"]`);
+    item?.scrollIntoView({block:'center'});
+    item?.focus();
+  }
+  backToTrace.addEventListener('click', () => {
+    if (!returnToTraceRef) return;
+    timelineWaterfallRefs = new Set([returnToTraceRef]);
+    clearTimelineWaterfallFocus.textContent = 'Clear exact Span waterfall filter (1)';
+    clearTimelineWaterfallFocus.hidden = false;
+    selectView('distributed');
+    renderDistributedTraces();
+    renderTraceCoverage();
+    byId('details-distributed-traces').scrollIntoView({block:'start'});
+  });
   function decorateTimelineEvents() {
     const visibleSpans = visibleTimelineSpans();
     byId('timeline-events').querySelectorAll('.timeline-item').forEach((event, index) => {
@@ -1438,6 +1585,7 @@ _RUNTIME_REPORT_ENHANCEMENTS = """<style>
   ['timeline-service-filter', 'timeline-span-type-filter', 'timeline-top-ten-longest-filter', 'timeline-top-ten-error-impact-filter'].forEach(id => ['input', 'change'].forEach(event => byId(id).addEventListener(event, decorateTimelineEvents)));
   decorateTimelineEvents();
   renderOutcomeSummary();
+  renderAnomalySummary();
   renderTraceCoverage();
   labelTransactionP95();
   ['transaction-service-filter', 'transaction-kind-filter'].forEach(id => byId(id).addEventListener('change', labelTransactionP95));
@@ -1474,18 +1622,19 @@ main { max-width:1440px; margin:auto; padding:24px; } h1,h2 { margin:0; } h1 { f
 #map-panel[hidden] { display:grid !important; position:absolute; left:-100000px; width:calc(100vw - 48px); visibility:hidden; }
 </style></head><body><main>
 <header><h1>APM runtime overview</h1><p class="subtle">Bounded aggregates plus a minimal recorded-transaction projection. No event source, IDs, headers, bodies, traces, or raw error messages are included.</p><div id="context" class="context"></div><div id="report-status" class="report-status"></div></header>
-<nav class="runtime-tabs" aria-label="Runtime report views"><button id="overview-tab" class="runtime-tab is-active" type="button">Services</button><button id="details-tab" class="runtime-tab" type="button">Transaction workloads</button><button id="timeline-tab" class="runtime-tab" type="button">Span execution log</button><button id="distributed-tab" class="runtime-tab" type="button">Distributed traces</button><button id="map-tab" class="runtime-tab" type="button">Dependencies</button></nav>
+<nav class="runtime-tabs" aria-label="Runtime report views"><button id="overview-tab" class="runtime-tab is-active" type="button">Services</button><button id="details-tab" class="runtime-tab" type="button">Transaction workloads</button><button id="timeline-tab" class="runtime-tab" type="button">Spans</button><button id="distributed-tab" class="runtime-tab" type="button">Traces</button><button id="map-tab" class="runtime-tab" type="button">Dependencies</button></nav>
 <section id="services-panel"><section id="cards" class="cards" aria-label="Runtime summary"></section><div id="overview-layout"><aside class="overview-sidebar">
 <section id="triage" class="panel triage"><div class="panel-head"><div><h2>Investigation priorities</h2><p class="subtle">Impact combines observed volume, error rate, and tail latency; it is a triage aid, not an SLO verdict.</p></div></div><div id="triage-items" class="triage-items"></div></section>
+<section id="anomaly-panel" class="panel service-panel" hidden><div class="panel-head"><div><h2>Anomalies to investigate</h2><p class="subtle">Observed error, latency, and outcome-coverage signals. Select one to focus the embedded traces.</p></div></div><div id="anomaly-summary"></div></section>
 <section class="panel filter-bar"><label>Observed service <select id="global-service-filter" class="tab-service-filter" aria-label="Filter Services by observed service"></select></label><select id="global-workload-filter" hidden></select><input id="failures-only-filter" type="checkbox" hidden><button id="clear-filters" type="button" hidden>Clear filters</button></section>
 </aside></div></section><section id="map-panel" class="panel map-panel dependency-panel" hidden><div class="panel-head"><div><h2>Runtime service map</h2><p class="subtle">Directed edges are observed dependencies. Select a service to inspect aggregate workload details; this does not assert a transaction-to-dependency call.</p></div><div><label>View <select id="map-mode" aria-label="Filter service map"></select></label> <label>Service <select id="map-service-filter" aria-label="Focus service map"></select></label> <label>Workload <select id="map-workload-filter" aria-label="Filter workload details"></select></label></div></div><div id="service-map" class="service-map"></div><div id="service-map-details" class="service-map-details"></div></section>
 <section id="details-hotspots" class="panel service-panel" hidden><div class="panel-head"><h2>Service hotspots</h2><span class="subtle">Ranked by P95, then error rate and volume</span></div><div id="services"></div></section>
-<section id="timeline-panel" class="panel" hidden><div class="filter-bar"><label>Observed service <select id="timeline-observed-service-filter" class="tab-service-filter" aria-label="Filter Timeline by observed service"></select></label></div><div class="panel-head"><div><h2>Span execution log</h2><p class="subtle">Bounded cross-service spans. Filters apply only to the spans embedded in this report.</p></div></div><div class="filter-bar"><label>Service <select id="timeline-service-filter" aria-label="Filter span log by service"></select></label><label>Type <select id="timeline-span-type-filter" aria-label="Filter span log by type"></select></label><label><input id="timeline-top-ten-longest-filter" type="checkbox"> 10 longest spans</label><label><input id="timeline-top-ten-error-impact-filter" type="checkbox"> 10 spans with most errors</label></div><div id="timeline-events" class="timeline"></div><p id="timeline-coverage" class="note"></p></section>
+<section id="timeline-panel" class="panel" hidden><div class="filter-bar"><label>Observed service <select id="timeline-observed-service-filter" class="tab-service-filter" aria-label="Filter Spans by observed service"></select></label></div><div class="panel-head"><div><h2>Spans</h2><p class="subtle">Bounded cross-service spans. Filters apply only to the spans embedded in this report.</p></div></div><div class="filter-bar"><label>Service <select id="timeline-service-filter" aria-label="Filter spans by service"></select></label><label>Type <select id="timeline-span-type-filter" aria-label="Filter spans by type"></select></label><label><input id="timeline-top-ten-longest-filter" type="checkbox"> 10 longest spans</label><label><input id="timeline-top-ten-error-impact-filter" type="checkbox"> 10 spans with most errors</label></div><div id="timeline-events" class="timeline"></div><p id="timeline-coverage" class="note"></p></section>
 <section class="panel filter-bar transaction-panel detail-panel" hidden><label>Observed service <select id="transactions-observed-service-filter" class="tab-service-filter" aria-label="Filter Transactions by observed service"></select></label></section>
 <section id="details-slow-transactions" class="panel service-panel" hidden><div class="panel-head"><h2>Slow transactions</h2><span class="subtle">P95 is an approximate percentile from APM histogram metrics</span></div><div id="transactions"></div></section>
 <section id="details-transactions" class="panel transaction-panel detail-panel" hidden><div class="panel-head"><div><h2>Transaction graph</h2><p class="subtle">Transactions remain owned by their service; no transaction-to-dependency call is asserted.</p></div><div><label>Service <select id="transaction-service-filter" aria-label="Filter transaction graph by service"></select></label> <label>Type <select id="transaction-kind-filter" aria-label="Filter transaction graph by type"></select></label></div></div><div id="transaction-graph" class="transaction-graph"></div></section>
-<section class="panel filter-bar distributed-panel" hidden><label>Observed service <select id="distributed-observed-service-filter" class="tab-service-filter" aria-label="Filter Distributed transactions by observed service"></select></label><label>Root type <select id="distributed-root-type-filter" aria-label="Filter distributed transactions by root span type"></select></label><label><input id="distributed-top-ten-impact-filter" type="checkbox"> 10 highest-impact transactions</label><label><input id="distributed-top-ten-error-impact-filter" type="checkbox"> 10 transactions with most errors</label></section>
-<section id="details-distributed-traces" class="panel distributed-panel" hidden><div class="panel-head"><div><h2>Distributed transactions</h2><p class="subtle">Recent multi-service traces, grouped by HTTP source service or inferred Kafka source topic. Identifiers are not included in this export.</p></div><label>Origin <select id="distributed-trace-source-filter" aria-label="Filter distributed traces by origin"></select></label></div><div id="distributed-traces"></div></section>
+<section class="panel filter-bar distributed-panel" hidden><label>Observed service <select id="distributed-observed-service-filter" class="tab-service-filter" aria-label="Filter traces by observed service"></select></label><label>Root type <select id="distributed-root-type-filter" aria-label="Filter traces by root span type"></select></label><label><input id="distributed-top-ten-impact-filter" type="checkbox"> 10 highest-impact traces</label><label><input id="distributed-top-ten-error-impact-filter" type="checkbox"> 10 traces with most errors</label></section>
+<section id="details-distributed-traces" class="panel distributed-panel" hidden><div class="panel-head"><div><h2>Traces</h2><p class="subtle">Recent multi-service traces, grouped by HTTP source service or inferred Kafka source topic. Select a span to inspect its details or open it in Spans. Identifiers are not included in this export.</p></div><label>Origin <select id="distributed-trace-source-filter" aria-label="Filter traces by origin"></select></label></div><p id="trace-sample-note" class="trace-sample-note"></p><section><h3>Failure signatures</h3><div id="trace-signatures"></div></section><section><h3>Failures by service and trace step</h3><div id="trace-failure-matrix"></div></section><div id="distributed-traces"></div></section>
 <section class="panel filter-bar dependency-panel" hidden><label>Observed service <select id="dependencies-observed-service-filter" class="tab-service-filter" aria-label="Filter Dependencies by observed service"></select></label></section>
 <section id="details-flows" class="panel dependency-panel" hidden><div class="panel-head"><h2>Focused dependency flow</h2><label>Service <select id="service-filter" aria-label="Filter dependency flow by service"></select></label></div><div id="flows" class="flow"></div></section>
 <section id="details-dependencies" class="panel dependency-panel" hidden><div class="panel-head"><h2>Dependencies</h2><span class="subtle">Average latency only; dependency P95 is a separate future pass</span></div><div id="dependencies"></div></section>

@@ -56,6 +56,46 @@ def test_trace_id_runtime_mapping_supports_indexed_otel_trace_id() -> None:
     assert "params._source['trace']" in script
 
 
+def test_synthetic_runtime_fixture_matches_the_report_contract() -> None:
+    fixture_path = Path(__file__).parent.parent / "reports" / "apm-runtime-large-test-data.json"
+    report = json.loads(fixture_path.read_text(encoding="utf-8"))
+
+    assert report["schema_version"] == "apm-runtime-report-v2"
+    assert {
+        "kind",
+        "raw_event_source_exported",
+        "recorded_transaction_projection",
+        "transaction_view",
+        "service_metricset",
+        "transaction_metricset",
+        "dependency_metricset",
+        "dependency_target_field",
+        "metric_index_patterns",
+        "timeline_trace_index_patterns",
+    } <= report["source"].keys()
+    assert report["coverage"]["timeline"]["all_spans"] is True
+
+    allowed_origins = {"HTTP", "Kafka", "Messaging", "Database", "External", "Application"}
+    trace_span_references = {
+        span["timeline_span_ref"]
+        for trace in report["distributed_traces"]
+        for span in trace["spans"]
+    }
+    timeline_references = {
+        span["timeline_span_ref"] for span in report["timeline_spans"]
+    }
+    assert timeline_references == trace_span_references
+    assert all(span["origin"] in allowed_origins for span in report["timeline_spans"])
+    assert all(
+        span["origin"] in allowed_origins
+        for trace in report["distributed_traces"]
+        for span in trace["spans"]
+    )
+    exported = fixture_path.read_text(encoding="utf-8")
+    for identifier in ('"trace.id"', '"span.id"', '"parent.id"', '"_trace_id"', '"_span_id"'):
+        assert identifier not in exported
+
+
 def _bucket(
     source: str, target: str, outcome: str, calls: int, duration_us: int
 ) -> dict[str, object]:
@@ -974,7 +1014,8 @@ def test_runtime_report_html_is_self_contained_and_does_not_embed_raw_errors() -
     assert "Runtime service map" in document
     assert 'id="timeline-tab"' in document
     assert 'id="timeline-panel"' in document
-    assert "Span execution log" in document
+    assert "Spans" in document
+    assert "Traces" in document
     assert "Directed edges are observed dependencies" in document
     assert 'id="map-mode"' in document
     assert 'id="map-service-filter"' in document

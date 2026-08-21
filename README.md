@@ -87,11 +87,11 @@ result, so Pi can distinguish absence from incomplete coverage.
 `apm report` creates an explicit HTML file for human review. Its interactive
 graph uses the same Graphology/Sigma.js CDN assets as the architecture export;
 the embedded SVG fallback remains available if those assets cannot load.
-It starts with an investigation-priority summary based on observed volume,
-error rate, and latency, then ranks services and transactions by P95 latency
+It starts with action-oriented anomaly signals based on observed error rates,
+latency, outcome coverage, and failed trace exemplars, then ranks services and transactions by P95 latency
 (with their averages, volume, and aggregate failure rate), includes a directed
 service map and lists recurring aggregate failures. Its modes are separated into
-Services, Transactions, Dependencies, and Timeline tabs; each ranking and its
+Services, Transaction workloads, Spans, Traces, and Dependencies tabs; each ranking and its
 filters live in the matching operational view.
 Without `--data`, the report is self-contained. With `--data`, the HTML stays
 small and loads the adjacent JSON file; serve their directory over HTTP (for
@@ -104,18 +104,23 @@ includes all observed aggregate transaction workloads, including local ones;
 it also shows recent distributed-trace waterfalls, grouped by their HTTP source
 service or a generic messaging source, with nested service and database spans.
 Each card shows the cross-service route and safe workload labels before the
-detailed waterfall, and can be filtered by origin. IDs and arbitrary operation
-values are used only in memory to form the tree and are never embedded. A
-Span execution log tab shows a bounded projection of recorded spans. It
+detailed waterfall, and can be filtered by origin. Traces also groups embedded
+failures into signatures and a service-by-step matrix; its duration explanation
+is an investigation aid, not a calculated critical path. IDs and arbitrary
+operation values are used only in memory to form the tree and are never embedded.
+The Spans tab shows a bounded projection of recorded spans. It
 never embeds `_source`, trace IDs, request data, headers, bodies, error
 messages, results, messaging targets, or arbitrary operation values. Dependency P95 is
 deliberately not estimated, and the one-shot report has no historical baseline.
-Span execution log records are limited to 500 by default (2,000 maximum). HTTP
+Span records are limited to 500 by default (2,000 maximum). HTTP
 spans show their method and route; Kafka spans show their topic. Each
 distributed trace waterfall is limited to 100 spans to respect Elasticsearch's
 default `index.max_inner_result_window`. If
 their bounded query times out, the aggregate report is still written and
-explicitly marks Span execution log as unavailable.
+explicitly marks Spans as unavailable. The Traces tab lists the bounded
+distributed-trace waterfalls: selecting a Span entry filters to its matching
+trace, and a span selected in a trace can open its matching Spans entry while
+its trace detail remains visible.
 
 ### Inspect the source aggregation
 

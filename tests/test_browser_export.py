@@ -63,7 +63,7 @@ def test_apm_runtime_report_filters_observed_dependency_flows() -> None:
                 {"source": "catalog", "target": "mongo", "target_type": "db", "calls": 3, "failure_calls": 0, "error_rate": 0.0, "average_ms": 10.0},
             ],
             "timeline_spans": [
-                {"timestamp": "2026-08-15T09:01:00Z", "service": "orders", "span": "Span", "span_type": "request", "duration_ms": 90.0, "outcome": "success", "waterfall_refs": ["waterfall-1"]},
+                {"timestamp": "2026-08-15T09:01:00Z", "service": "orders", "span": "Span", "span_type": "request", "duration_ms": 90.0, "outcome": "failure", "waterfall_refs": ["waterfall-1"], "timeline_span_ref": "timeline-span-waterfall-1-1"},
                 {"timestamp": "2026-08-15T09:02:00Z", "service": "catalog", "span": "Span", "span_type": "messaging", "duration_ms": 20.0, "outcome": "failure"},
             ],
             "distributed_traces": [{
@@ -76,7 +76,8 @@ def test_apm_runtime_report_filters_observed_dependency_flows() -> None:
                 "transaction_type": "request",
                 "route": ["orders", "payments"],
                 "distributed_operations": ["orders · HTTP transaction"],
-                "spans": [],
+                "spans": [{"service": "orders", "name": "Span", "kind": "span", "transaction_type": "request", "origin": "HTTP", "outcome": "failure", "error": {"category": "timeout", "message": "Dependency timed out"}, "depth": 0, "offset_ms": 0.0, "duration_ms": 90.0, "timeline_span_ref": "timeline-span-waterfall-1-1"}],
+                "outcome": "failure",
                 "truncated": False,
                 "waterfall_ref": "waterfall-1",
             }, {
@@ -120,6 +121,12 @@ def test_apm_runtime_report_filters_observed_dependency_flows() -> None:
         assert page.locator("#details-slow-transactions").is_visible()
         assert "orders" in page.locator("#transaction-graph").inner_text()
         assert page.locator("#global-service-filter").is_visible()
+        assert page.locator("#anomaly-panel").is_visible()
+        assert "orders service errors" in page.locator("#anomaly-summary").inner_text()
+        page.get_by_role("button", name="orders service errors").click()
+        page.locator("#details-distributed-traces").wait_for(state="visible")
+        assert page.locator("#distributed-top-ten-error-impact-filter").is_checked()
+        page.locator("#distributed-top-ten-error-impact-filter").uncheck()
         page.get_by_role("button", name="Dependencies").click()
         page.locator("#map-panel").wait_for(state="visible")
         dependencies_filter = page.locator("#dependencies-observed-service-filter")
@@ -137,18 +144,22 @@ def test_apm_runtime_report_filters_observed_dependency_flows() -> None:
         page.locator("#transaction-service-filter").select_option("orders")
         assert "orders" in page.locator("#transaction-graph").inner_text()
         assert "catalog" not in page.locator("#transaction-graph").inner_text()
-        page.get_by_role("button", name="Distributed traces").click()
+        page.get_by_role("button", name="Traces").click()
         page.locator("#details-distributed-traces").wait_for(state="visible")
         assert page.locator("#distributed-root-type-filter").is_visible()
         page.locator("#distributed-root-type-filter").select_option("request")
         assert "orders" in page.locator("#distributed-traces").inner_text()
+        assert "orders · HTTP · timeout" in page.locator("#trace-signatures").inner_text()
+        assert "Failures by service and trace step" in page.locator("#details-distributed-traces").inner_text()
+        page.locator("#trace-signatures [data-trace-signature]").click()
+        assert "orders" in page.locator("#trace-failure-matrix").inner_text()
         page.get_by_role("button", name="Dependencies").click()
         page.locator("#details-flows").wait_for(state="visible")
         assert "payments" in page.locator("#flows").inner_text()
         page.locator("#service-filter").select_option("orders")
         assert "payments" in page.locator("#flows").inner_text()
         assert "mongo" not in page.locator("#flows").inner_text()
-        page.get_by_role("button", name="Span execution log").click()
+        page.get_by_role("button", name="Spans").click()
         page.locator("#timeline-panel").wait_for(state="visible")
         assert page.locator("#timeline-observed-service-filter").is_visible()
         assert page.locator("#timeline-observed-service-filter").input_value() == "orders"
@@ -165,12 +176,23 @@ def test_apm_runtime_report_filters_observed_dependency_flows() -> None:
         page.locator("#timeline-service-filter").select_option("orders")
         page.locator("#timeline-events .timeline-item").click()
         page.locator("#details-distributed-traces").wait_for(state="visible")
-        assert page.get_by_role("button", name="Distributed traces").get_attribute("class") == "runtime-tab is-active"
+        assert page.get_by_role("button", name="Traces").get_attribute("class") == "runtime-tab is-active"
         assert page.locator("#distributed-observed-service-filter").is_visible()
         assert page.locator("#clear-timeline-waterfall-focus").is_visible()
         assert "exact" in page.locator("#clear-timeline-waterfall-focus").inner_text()
         assert "Partial waterfall" not in page.locator("#distributed-traces").inner_text()
         assert "catalog" not in page.locator("#distributed-traces").inner_text()
+        page.get_by_role("button", name="Traces").click()
+        page.locator(".trace-span-details").click()
+        detail = page.locator(".trace-span-detail")
+        assert detail.is_visible()
+        assert "Duration" in detail.inner_text()
+        detail.get_by_role("button", name="Open in Spans").click()
+        page.locator("#timeline-panel").wait_for(state="visible")
+        assert page.locator('#timeline-events [data-timeline-span-ref="timeline-span-waterfall-1-1"]').is_visible()
+        assert page.locator("#back-to-trace").is_visible()
+        page.locator("#back-to-trace").click()
+        page.locator("#details-distributed-traces").wait_for(state="visible")
         page.get_by_role("button", name="Transaction workloads", exact=True).click()
         assert not page.locator("#details-distributed-traces").is_visible()
         assert "P95 is an approximate percentile" in page.content()
@@ -226,14 +248,14 @@ def test_apm_runtime_report_limits_spans_and_transactions_to_ten_longest() -> No
         page = browser.new_page()
         page.set_content(document, wait_until="load")
 
-        page.get_by_role("button", name="Span execution log").click()
+        page.get_by_role("button", name="Spans").click()
         page.locator("#timeline-top-ten-longest-filter").check()
         assert page.locator("#timeline-events .timeline-item").count() == 10
         assert page.locator("#timeline-events .timeline-item strong").all_text_contents() == [
             f"{index} ms" for index in range(2, 12)
         ]
 
-        page.get_by_role("button", name="Distributed traces").click()
+        page.get_by_role("button", name="Traces").click()
         page.locator("#distributed-top-ten-impact-filter").check()
         assert page.locator("#distributed-traces .distributed-trace").count() == 10
         assert "cumulative duration" in page.locator("#distributed-traces").inner_text()
@@ -290,12 +312,12 @@ def test_apm_runtime_report_ranks_spans_and_traces_by_error_count() -> None:
         page = browser.new_page()
         page.set_content(document, wait_until="load")
 
-        page.get_by_role("button", name="Span execution log").click()
+        page.get_by_role("button", name="Spans").click()
         page.locator("#timeline-top-ten-error-impact-filter").check()
         assert page.locator("#timeline-events .timeline-item").count() == 3
         assert "3 observed failed executions" in page.locator("#timeline-events").inner_text()
 
-        page.get_by_role("button", name="Distributed traces").click()
+        page.get_by_role("button", name="Traces").click()
         page.locator("#distributed-top-ten-error-impact-filter").check()
         assert page.locator("#distributed-traces .distributed-trace").count() == 3
         assert "3 observed failed executions" in page.locator("#distributed-traces").inner_text()
@@ -340,7 +362,7 @@ def test_apm_runtime_report_expands_dense_waterfall_subspans() -> None:
         browser = playwright.chromium.launch(headless=True, executable_path=chrome)
         page = browser.new_page()
         page.set_content(document, wait_until="load")
-        page.get_by_role("button", name="Distributed traces").click()
+        page.get_by_role("button", name="Traces").click()
         rows = page.locator(".distributed-trace .trace-span")
         assert rows.count() == 26
         assert page.locator(".distributed-trace .trace-span:visible").count() == 1
