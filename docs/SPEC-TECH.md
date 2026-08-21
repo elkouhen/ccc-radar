@@ -125,7 +125,9 @@ greatest recorded cumulative duration.
 The Timeline limit defaults to 500 and the CLI caps it at 2,000. Trace and
 span reads are partitioned into one-hour windows, newest first, and stop once
 the configured Timeline limit is reached; candidate trace selection is capped
-at that same limit. Every APM HTTP request has the adapter's 15-second timeout.
+at that same limit and samples at most 200 candidate documents per shard before
+aggregating trace IDs. This selection is explicitly marked as truncated when
+Elasticsearch terminates it early. Every APM HTTP request has the adapter's 15-second timeout.
 An Elasticsearch response with `timed_out: true` is also raised as an adapter
 timeout even when it has HTTP 200 status. A timeout propagates to the CLI as an
 error, so no partial report is written.

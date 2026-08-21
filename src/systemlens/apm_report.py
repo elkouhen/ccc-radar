@@ -28,6 +28,10 @@ DEFAULT_MAX_DEPENDENCIES = 80
 DEFAULT_MAX_BUCKETS_PER_VIEW = 1_000
 DEFAULT_MAX_TIMELINE_EVENTS = 500
 MAX_DISTRIBUTED_TRACE_CANDIDATES = 10_000
+# Trace-ID selection is a discovery sample, not a complete trace inventory.
+# Elasticsearch applies ``terminate_after`` per shard, so this ceiling keeps
+# high-cardinality windows from scanning every document for a bounded report.
+MAX_TRACE_CANDIDATE_DOCUMENTS_PER_SHARD = 200
 DEFAULT_MAX_DISTRIBUTED_TRACES = 20
 # Les data streams APM et OTel du POC limitent ``top_hits`` à 100 résultats
 # par bucket (`index.max_inner_result_window`). Cette projection reste bornée
@@ -649,6 +653,7 @@ def _read_distributed_trace_ids(
         response = search_traces({
             "size": 0,
             "track_total_hits": False,
+            "terminate_after": MAX_TRACE_CANDIDATE_DOCUMENTS_PER_SHARD,
             "runtime_mappings": TRACE_ID_RUNTIME_MAPPINGS,
             "query": {"bool": {"filter": _trace_window_filters(filters, window_start, window_end)}},
             "aggs": {
@@ -677,7 +682,11 @@ def _read_distributed_trace_ids(
         buckets = traces.get("buckets")
         if not isinstance(buckets, list):
             raise ApmError("Réponse Elasticsearch invalide : buckets traces absents.")
-        truncated = truncated or bool(traces.get("sum_other_doc_count"))
+        truncated = (
+            truncated
+            or bool(response.get("terminated_early"))
+            or bool(traces.get("sum_other_doc_count"))
+        )
         for bucket in buckets:
             if not isinstance(bucket, dict):
                 continue

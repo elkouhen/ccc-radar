@@ -713,6 +713,7 @@ def test_runtime_report_uses_histogram_p95_for_services_and_transactions() -> No
     )
     assert trace_id_query["runtime_mappings"]["systemlens.trace_id"]["type"] == "keyword"  # type: ignore[index]
     assert trace_id_query["aggs"]["traces"]["terms"]["field"] == "systemlens.trace_id"  # type: ignore[index]
+    assert trace_id_query["terminate_after"] == 200
     assert report["coverage"]["timeline"] == {  # type: ignore[index]
         "items_exported": 1,
         "truncated": False,
