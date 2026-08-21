@@ -273,6 +273,7 @@ def build_runtime_reports_by_interval(
     all_spans: bool = False,
     now: datetime | None = None,
     progress: Callable[[int, int, datetime, datetime], None] | None = None,
+    completed: Callable[[int, int, dict[str, object]], None] | None = None,
 ) -> list[dict[str, object]]:
     """Build one safe report projection for each bounded analysis interval."""
     start, end = parse_since(since, now=now)
@@ -283,7 +284,7 @@ def build_runtime_reports_by_interval(
     for index, (window_start, window_end) in enumerate(windows, start=1):
         if progress is not None:
             progress(index, len(windows), window_start, window_end)
-        reports.append(build_runtime_report(
+        report = build_runtime_report(
             client,
             since=interval,
             environment=environment,
@@ -294,7 +295,10 @@ def build_runtime_reports_by_interval(
             max_timeline_events=max_timeline_events,
             all_spans=all_spans,
             window=(window_start, window_end),
-        ))
+        )
+        reports.append(report)
+        if completed is not None:
+            completed(index, len(windows), report)
     return reports
 
 

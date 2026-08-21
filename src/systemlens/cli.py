@@ -1370,12 +1370,22 @@ def apm_report_cmd(
                     err=True,
                 )
 
+            def report_interval_completed(
+                index: int, total: int, interval_report: dict[str, object]
+            ) -> None:
+                spans = interval_report.get("timeline_spans")
+                span_count = len(spans) if isinstance(spans, list) else 0
+                typer.echo(
+                    f"APM : intervalle {index}/{total} terminé — {span_count} spans importés.",
+                    err=True,
+                )
+
             reports = build_runtime_reports_by_interval(
                 client, since=since, interval=interval, environment=environment,
                 max_services=max_services, max_transactions=max_transactions,
                 max_dependencies=max_dependencies, max_buckets=max_buckets,
                 max_timeline_events=max_timeline_events, all_spans=all_spans,
-                progress=report_interval_progress,
+                progress=report_interval_progress, completed=report_interval_completed,
             )
             interval_data.mkdir(parents=True, exist_ok=True)
             manifest_intervals: list[dict[str, str]] = []

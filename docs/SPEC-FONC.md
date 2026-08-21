@@ -308,7 +308,8 @@ in memory. Counts and duration sums are added; the displayed P95 is the highest
 hourly P95 and is not a recomputed percentile for the complete window.
 When `--interval-data` is used, the CLI writes a progress line to stderr before
 each interval, including its ordinal, total, and UTC window; this progress does
-not alter the generated JSON or HTML.
+not alter the generated JSON or HTML. After each completed interval it also
+reports the number of spans projected into that interval's JSON file.
 
 The report starts with a bounded investigation-priority ranking. It combines
 observed volume, aggregate error rate, and service/transaction P95 or dependency

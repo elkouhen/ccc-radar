@@ -1345,6 +1345,9 @@ def test_apm_report_writes_one_json_per_interval(
         progress = kwargs["progress"]
         assert callable(progress)
         progress(1, 2, datetime(2026, 8, 15, 9, tzinfo=UTC), datetime(2026, 8, 15, 10, tzinfo=UTC))
+        completed = kwargs["completed"]
+        assert callable(completed)
+        completed(1, 2, reports[0])
         return reports
 
     monkeypatch.setattr("systemlens.cli.build_runtime_reports_by_interval", build_intervals)
@@ -1369,6 +1372,7 @@ def test_apm_report_writes_one_json_per_interval(
     assert "Analysis interval:" in output.read_text(encoding="utf-8")
     assert "new URL(\"intervals/index.json\",location.href)" in output.read_text(encoding="utf-8")
     assert "APM : intervalle 1/2" in result.output
+    assert "0 spans importés" in result.output
 
 
 def test_apm_doctor_json_is_safe_when_not_configured() -> None:
