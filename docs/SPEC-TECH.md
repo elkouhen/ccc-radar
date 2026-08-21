@@ -122,11 +122,11 @@ request.
 The Timeline can further retain the ten longest selected spans by duration,
 then restore chronological display order. The Distributed transactions tab can retain the ten categories with the
 greatest recorded cumulative duration.
-The Timeline limit defaults to 500 and the CLI caps it at 2,000. Every APM
-HTTP request has the adapter's 15-second timeout. A Timeline timeout is caught
-at the report boundary and recorded as `coverage.timeline.available=false` with
-`unavailable_reason="timeout"`; successfully read metric aggregates remain in
-the report.
+The Timeline limit defaults to 500 and the CLI caps it at 2,000. Trace and
+span reads are partitioned into one-hour windows, newest first, and stop once
+the configured Timeline limit is reached. Every APM HTTP request has the
+adapter's 15-second timeout. A timeout propagates to the CLI as an error, so no
+partial report is written.
 Service names are inserted through JSON data and rendered with HTML escaping
 before insertion. Transaction, span, result, and messaging-target values are
 not exported, so telemetry cannot disclose arbitrary operation content.

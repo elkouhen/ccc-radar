@@ -431,10 +431,10 @@ remain a separate, bounded view: SystemLens uses trace IDs only transiently to
 select those multi-service exemplars; it never exports, persists, or displays
 the identifiers.
 
-The APM HTTP client bounds each Elasticsearch request to 15 seconds. If the
-bounded Timeline query times out, `apm report` still writes the aggregate
-report and marks Timeline coverage as unavailable with reason `timeout`; it
-does not silently treat this as a zero-observation window.
+The APM HTTP client bounds each Elasticsearch request to 15 seconds. Trace and
+span reads are split into one-hour windows, newest first. If any Elasticsearch
+request times out, `apm report` fails with its safe timeout error and does not
+write a partial report.
 
 An `apm report` file is a one-shot snapshot and does not persist or infer a
 historical baseline. It must not present a regression comparison unless a future

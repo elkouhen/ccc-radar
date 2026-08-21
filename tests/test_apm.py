@@ -990,7 +990,7 @@ def test_runtime_report_keeps_distributed_transactions_with_all_spans() -> None:
     }]
 
 
-def test_runtime_report_keeps_aggregates_when_timeline_times_out() -> None:
+def test_runtime_report_fails_when_a_trace_query_times_out() -> None:
     class TimelineTimeoutClient:
         def search_metrics(self, body: dict[str, object]) -> dict[str, object]:
             if "relations" in body.get("aggs", {}):
@@ -1000,24 +1000,51 @@ def test_runtime_report_keeps_aggregates_when_timeline_times_out() -> None:
         def search_traces(self, body: dict[str, object]) -> dict[str, object]:
             raise ApmTimeoutError()
 
+    with pytest.raises(ApmTimeoutError):
+        build_runtime_report(
+            TimelineTimeoutClient(),  # type: ignore[arg-type]
+            since="1h",
+            environment=None,
+            now=datetime(2026, 8, 15, 10, tzinfo=UTC),
+        )
+
+
+def test_all_spans_reads_newest_hourly_windows_until_the_limit() -> None:
+    class HourlyClient:
+        def __init__(self) -> None:
+            self.all_span_queries: list[dict[str, object]] = []
+
+        def search_metrics(self, body: dict[str, object]) -> dict[str, object]:
+            if "relations" in body.get("aggs", {}):
+                return {"aggregations": {"relations": {"buckets": []}}}
+            return {"aggregations": {"items": {"buckets": []}}}
+
+        def search_all_traces(self, body: dict[str, object]) -> list[dict[str, object]]:
+            self.all_span_queries.append(body)
+            return [{"fields": {
+                "@timestamp": ["2026-08-15T09:30:00.000Z"],
+                "service.name": ["orders"], "name": ["query"],
+            }}]
+
+        def search_traces(self, body: dict[str, object]) -> dict[str, object]:
+            return {"aggregations": {"traces": {"buckets": [], "sum_other_doc_count": 0}}}
+
+    client = HourlyClient()
     report = build_runtime_report(
-        TimelineTimeoutClient(),  # type: ignore[arg-type]
-        since="1h",
+        client,  # type: ignore[arg-type]
+        since="3h",
         environment=None,
+        max_timeline_events=2,
+        all_spans=True,
         now=datetime(2026, 8, 15, 10, tzinfo=UTC),
     )
 
-    assert report["services"] == []
-    assert report["timeline_spans"] == []
-    assert report["coverage"]["timeline"] == {  # type: ignore[index]
-        "items_exported": 0,
-        "truncated": False,
-            "truncation_reasons": [],
-            "max_events": 500,
-            "all_spans": False,
-            "available": False,
-        "unavailable_reason": "timeout",
-    }
+    assert len(report["timeline_spans"]) == 2  # type: ignore[arg-type]
+    assert len(client.all_span_queries) == 2
+    first_filters = client.all_span_queries[0]["query"]["bool"]["filter"]  # type: ignore[index]
+    second_filters = client.all_span_queries[1]["query"]["bool"]["filter"]  # type: ignore[index]
+    assert {"range": {"@timestamp": {"gte": "2026-08-15T09:00:00Z", "lt": "2026-08-15T10:00:00Z"}}} in first_filters
+    assert {"range": {"@timestamp": {"gte": "2026-08-15T08:00:00Z", "lt": "2026-08-15T09:00:00Z"}}} in second_filters
 
 
 def _latency_bucket(

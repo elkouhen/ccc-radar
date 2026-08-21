@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 from html import escape
 from typing import Callable
 
@@ -33,6 +33,9 @@ DEFAULT_MAX_DISTRIBUTED_TRACES = 20
 # par bucket (`index.max_inner_result_window`). Cette projection reste bornée
 # et ne doit pas modifier les réglages d'index de production.
 MAX_SPANS_PER_DISTRIBUTED_TRACE = 100
+# APM trace events are not aggregate metric documents. Partitioning trace reads
+# keeps a long report window from becoming one expensive shard-wide request.
+TRACE_QUERY_WINDOW = timedelta(hours=1)
 # Some legacy APM streams map ``trace.id`` as text, unlike OTel streams which
 # use a keyword. Newer OTel streams may expose the ECS alias ``trace.id`` only
 # through the indexed ``trace_id`` field, with no matching value in ``_source``.
@@ -274,7 +277,7 @@ def _read_distributed_traces(
         filters.append({"term": {"service.environment": environment}})
     try:
         trace_ids, candidates_truncated = _read_distributed_trace_ids(
-            search_traces, filters, DEFAULT_MAX_DISTRIBUTED_TRACES
+            search_traces, filters, DEFAULT_MAX_DISTRIBUTED_TRACES, start=start, end=end
         )
         reasons = ["max_trace_candidates"] if candidates_truncated else []
         if len(trace_ids) > DEFAULT_MAX_DISTRIBUTED_TRACES:
@@ -320,7 +323,7 @@ def _read_distributed_traces(
             },
         })
     except ApmTimeoutError:
-        return [], False, [], "timeout"
+        raise
     aggregations = response.get("aggregations")
     traces_aggregation = aggregations.get("traces") if isinstance(aggregations, dict) else None
     trace_buckets = traces_aggregation.get("buckets") if isinstance(traces_aggregation, dict) else None
@@ -519,31 +522,36 @@ def _read_timeline_spans(
     if environment:
         filters.append({"term": {"service.environment": environment}})
     try:
-        trace_ids, candidates_truncated = _read_distributed_trace_ids(
-            search_traces, filters, max_events
-        )
-        if not trace_ids and not all_spans:
-            reasons = ["max_trace_candidates"] if candidates_truncated else []
-            return [], candidates_truncated, reasons, None
-
         if all_spans:
             search_all_traces = getattr(client, "search_all_traces", None)
             if not callable(search_all_traces):
                 return [], False, [], "unsupported_client"
-            raw_hits = search_all_traces({
-                "size": max_events,
-                "track_total_hits": False,
-                "_source": False,
-                "runtime_mappings": TRACE_ID_RUNTIME_MAPPINGS,
-                "fields": [
-                    "@timestamp", TRACE_ID_RUNTIME_FIELD, "span.id", "span_id", "service.name", "span.name", "name", "span.type", "span.subtype", "kind",
-                    "span.duration.us", "duration", "event.outcome", "http.request.method", "http.route",
-                    "url.path", "messaging.destination.name", "messaging.kafka.destination", "messaging.system",
-                ],
-                "query": {"bool": {"filter": [SPAN_EVENT_FILTER, *filters]}},
-            })
+            raw_hits: list[dict[str, object]] = []
+            for window_start, window_end in _trace_query_windows(start, end):
+                remaining = max_events - len(raw_hits)
+                if remaining < 1:
+                    break
+                raw_hits.extend(search_all_traces({
+                    "size": remaining,
+                    "track_total_hits": False,
+                    "_source": False,
+                    "runtime_mappings": TRACE_ID_RUNTIME_MAPPINGS,
+                    "fields": [
+                        "@timestamp", TRACE_ID_RUNTIME_FIELD, "span.id", "span_id", "service.name", "span.name", "name", "span.type", "span.subtype", "kind",
+                        "span.duration.us", "duration", "event.outcome", "http.request.method", "http.route",
+                        "url.path", "messaging.destination.name", "messaging.kafka.destination", "messaging.system",
+                    ],
+                    "query": {"bool": {"filter": [SPAN_EVENT_FILTER, *_trace_window_filters(filters, window_start, window_end)]}},
+                }))
             response = {"hits": {"hits": raw_hits}}
+            candidates_truncated = False
         else:
+            trace_ids, candidates_truncated = _read_distributed_trace_ids(
+                search_traces, filters, max_events, start=start, end=end
+            )
+            if not trace_ids:
+                reasons = ["max_trace_candidates"] if candidates_truncated else []
+                return [], candidates_truncated, reasons, None
             span_filters = [
                 SPAN_EVENT_FILTER,
                 *filters,
@@ -564,18 +572,19 @@ def _read_timeline_spans(
                 "query": {"bool": {"filter": span_filters}},
             })
     except ApmTimeoutError:
-        return [], False, [], "timeout"
+        raise
     hits = response.get("hits")
     if not isinstance(hits, dict):
         return [], False, [], None
-    raw_hits = hits.get("hits")
-    if not isinstance(raw_hits, list):
+    raw_hits_value = hits.get("hits")
+    if not isinstance(raw_hits_value, list):
         return [], False, [], None
+    raw_hits = [hit for hit in raw_hits_value if isinstance(hit, dict)]
     spans: list[dict[str, object]] = []
     for hit in raw_hits:
-        if not isinstance(hit, dict) or not isinstance(hit.get("fields"), dict):
+        fields = hit.get("fields")
+        if not isinstance(fields, dict):
             continue
-        fields = hit["fields"]
         timestamp = _timeline_field_string(fields, "@timestamp")
         service = _timeline_field_string(fields, "service.name")
         span = _span_display_label(fields) or _safe_operation_label(
@@ -608,50 +617,90 @@ def _read_distributed_trace_ids(
     search_traces: Callable[[dict[str, object]], dict[str, object]],
     filters: list[dict[str, object]],
     max_events: int,
+    *,
+    start: datetime,
+    end: datetime,
 ) -> tuple[list[str], bool]:
     """Select recent trace IDs that contain spans from multiple services."""
     candidate_limit = min(MAX_DISTRIBUTED_TRACE_CANDIDATES, max_events * 10)
-    response = search_traces({
-        "size": 0,
-        "track_total_hits": False,
-        "runtime_mappings": TRACE_ID_RUNTIME_MAPPINGS,
-        "query": {"bool": {"filter": filters}},
-        "aggs": {
-            "traces": {
-                "terms": {
-                    "field": TRACE_ID_RUNTIME_FIELD,
-                    "size": candidate_limit,
-                    "order": {"latest": "desc"},
-                },
-                "aggs": {
-                    "latest": {"max": {"field": "@timestamp"}},
-                    "services": {
-                        "cardinality": {
-                            "field": "service.name",
-                            "precision_threshold": 100,
-                        }
-                    },
-                },
-            }
-        },
-    })
-    aggregations = response.get("aggregations")
-    traces = aggregations.get("traces") if isinstance(aggregations, dict) else None
-    if not isinstance(traces, dict):
-        raise ApmError("Réponse Elasticsearch invalide : agrégation traces absente.")
-    buckets = traces.get("buckets")
-    if not isinstance(buckets, list):
-        raise ApmError("Réponse Elasticsearch invalide : buckets traces absents.")
     trace_ids: list[str] = []
-    for bucket in buckets:
-        if not isinstance(bucket, dict):
-            continue
-        trace_id = bucket.get("key")
-        services = bucket.get("services")
-        service_count = services.get("value") if isinstance(services, dict) else 0
-        if isinstance(trace_id, str) and isinstance(service_count, int) and service_count > 1:
-            trace_ids.append(trace_id)
-    return trace_ids, bool(traces.get("sum_other_doc_count"))
+    truncated = False
+    for window_start, window_end in _trace_query_windows(start, end):
+        remaining = candidate_limit - len(trace_ids)
+        if remaining < 1:
+            return trace_ids, True
+        response = search_traces({
+            "size": 0,
+            "track_total_hits": False,
+            "runtime_mappings": TRACE_ID_RUNTIME_MAPPINGS,
+            "query": {"bool": {"filter": _trace_window_filters(filters, window_start, window_end)}},
+            "aggs": {
+                "traces": {
+                    "terms": {
+                        "field": TRACE_ID_RUNTIME_FIELD,
+                        "size": remaining,
+                        "order": {"latest": "desc"},
+                    },
+                    "aggs": {
+                        "latest": {"max": {"field": "@timestamp"}},
+                        "services": {
+                            "cardinality": {
+                                "field": "service.name",
+                                "precision_threshold": 100,
+                            }
+                        },
+                    },
+                }
+            },
+        })
+        aggregations = response.get("aggregations")
+        traces = aggregations.get("traces") if isinstance(aggregations, dict) else None
+        if not isinstance(traces, dict):
+            raise ApmError("Réponse Elasticsearch invalide : agrégation traces absente.")
+        buckets = traces.get("buckets")
+        if not isinstance(buckets, list):
+            raise ApmError("Réponse Elasticsearch invalide : buckets traces absents.")
+        truncated = truncated or bool(traces.get("sum_other_doc_count"))
+        for bucket in buckets:
+            if not isinstance(bucket, dict):
+                continue
+            trace_id = bucket.get("key")
+            services = bucket.get("services")
+            service_count = services.get("value") if isinstance(services, dict) else 0
+            if (
+                isinstance(trace_id, str)
+                and isinstance(service_count, int)
+                and service_count > 1
+                and trace_id not in trace_ids
+            ):
+                trace_ids.append(trace_id)
+    return trace_ids, truncated
+
+
+def _trace_query_windows(start: datetime, end: datetime) -> list[tuple[datetime, datetime]]:
+    """Return at-most-hourly windows from newest to oldest."""
+    windows: list[tuple[datetime, datetime]] = []
+    window_end = end
+    while window_end > start:
+        window_start = max(start, window_end - TRACE_QUERY_WINDOW)
+        windows.append((window_start, window_end))
+        window_end = window_start
+    return windows
+
+
+def _trace_window_filters(
+    filters: list[dict[str, object]], start: datetime, end: datetime
+) -> list[dict[str, object]]:
+    window_filters: list[dict[str, object]] = []
+    for item in filters:
+        range_filter = item.get("range")
+        if isinstance(range_filter, dict) and "@timestamp" in range_filter:
+            window_filters.append(
+                {"range": {"@timestamp": {"gte": _iso8601(start), "lt": _iso8601(end)}}}
+            )
+        else:
+            window_filters.append(item)
+    return window_filters
 
 
 def _timeline_field_string(fields: dict[str, object], name: str) -> str | None:
