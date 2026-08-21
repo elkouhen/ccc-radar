@@ -518,6 +518,7 @@ def test_runtime_report_uses_histogram_p95_for_services_and_transactions() -> No
                 item.get("bool", {}).get("should") == [
                     {"term": {"processor.event": "span"}},
                     {"exists": {"field": "span.name"}},
+                    {"exists": {"field": "name"}},
                 ]
                 for item in filters
                 if isinstance(item, dict)
@@ -640,6 +641,7 @@ def test_runtime_report_uses_histogram_p95_for_services_and_transactions() -> No
             "should": [
                 {"term": {"processor.event": "span"}},
                 {"exists": {"field": "span.name"}},
+                {"exists": {"field": "name"}},
             ],
             "minimum_should_match": 1,
         }
@@ -928,8 +930,8 @@ def test_runtime_report_keeps_distributed_transactions_with_all_spans() -> None:
             return [{"fields": {
                 "@timestamp": ["2026-08-15T09:30:00.000Z"],
                 "service.name": ["orders"],
-                "span.name": ["query"],
-                "span.duration.us": [1_000],
+                "name": ["query"],
+                "duration": [1_000_000],
             }}]
 
     report = build_runtime_report(
@@ -941,7 +943,15 @@ def test_runtime_report_keeps_distributed_transactions_with_all_spans() -> None:
     )
 
     assert [item["transaction"] for item in report["transactions"]] == ["HTTP transaction"]  # type: ignore[index]
-    assert len(report["timeline_spans"]) == 1  # type: ignore[arg-type]
+    assert report["timeline_spans"] == [{  # type: ignore[comparison-overlap]
+        "timestamp": "2026-08-15T09:30:00.000Z",
+        "service": "orders",
+        "span": "Span",
+        "span_type": "other",
+        "origin": "Application",
+        "duration_ms": 1.0,
+        "outcome": None,
+    }]
 
 
 def test_runtime_report_keeps_aggregates_when_timeline_times_out() -> None:

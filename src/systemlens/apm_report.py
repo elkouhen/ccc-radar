@@ -57,6 +57,9 @@ SPAN_EVENT_FILTER: dict[str, object] = {
         "should": [
             {"term": {"processor.event": "span"}},
             {"exists": {"field": "span.name"}},
+            # OTel-native Elastic Agent streams keep the operation name at the
+            # document root instead of duplicating it under ``span.name``.
+            {"exists": {"field": "name"}},
         ],
         "minimum_should_match": 1,
     }
@@ -302,10 +305,10 @@ def _read_distributed_traces(
                                 "_source": False,
                                 "sort": [{"@timestamp": {"order": "asc"}}],
                                 "fields": [
-                                    "@timestamp", "span.id", "parent.id",
-                                    "span.name", "span.type", "span.subtype", "service.name", "processor.event",
+                                    "@timestamp", "span.id", "span_id", "parent.id", "parent_span_id",
+                                    "span.name", "name", "span.type", "span.subtype", "kind", "service.name", "processor.event",
                                     "transaction.name", "transaction.type",
-                                    "transaction.duration.us", "span.duration.us",
+                                    "transaction.duration.us", "span.duration.us", "duration",
                                     "event.outcome", "error.type", "http.request.method",
                                     "http.route", "url.path", "messaging.destination.name",
                                     "messaging.kafka.destination", "messaging.system",
@@ -344,25 +347,24 @@ def _read_distributed_traces(
             fields = hit.get("fields") if isinstance(hit, dict) else None
             if not isinstance(fields, dict):
                 continue
-            span_id = _timeline_field_string(fields, "span.id")
+            span_id = _timeline_field_string(fields, "span.id") or _timeline_field_string(fields, "span_id")
             timestamp = _timeline_field_string(fields, "@timestamp")
             service = _timeline_field_string(fields, "service.name")
             transaction_name = _timeline_field_string(fields, "transaction.name")
             span_label = _span_display_label(fields)
-            name = transaction_name or span_label or _timeline_field_string(fields, "span.name")
+            name = transaction_name or span_label or _span_event_name(fields)
             if not span_id or not timestamp or not service or name is None:
                 continue
-            duration_us = _timeline_field_number(fields, "transaction.duration.us")
-            if duration_us is None:
-                duration_us = _timeline_field_number(fields, "span.duration.us")
+            duration_us = _timeline_duration_us(fields, transaction=True)
             by_trace.setdefault(trace_id, []).append({
                 "id": span_id,
-                "parent": _timeline_field_string(fields, "parent.id"),
+                "parent": _timeline_field_string(fields, "parent.id")
+                or _timeline_field_string(fields, "parent_span_id"),
                 "timestamp": timestamp,
                 "service": service,
                 "name": name,
                 "structured_span_label": span_label is not None and transaction_name is None,
-                "kind": "transaction" if _timeline_field_string(fields, "processor.event") == "transaction" else "span",
+                "kind": _trace_event_kind(fields),
                 "transaction_type": _timeline_field_string(fields, "transaction.type"),
                 "origin": _span_origin(fields),
                 "duration_ms": round(duration_us / 1_000, 3) if duration_us is not None else None,
@@ -533,8 +535,8 @@ def _read_timeline_spans(
                 "_source": False,
                 "runtime_mappings": TRACE_ID_RUNTIME_MAPPINGS,
                 "fields": [
-                    "@timestamp", TRACE_ID_RUNTIME_FIELD, "span.id", "service.name", "span.name", "span.type", "span.subtype",
-                    "span.duration.us", "event.outcome", "http.request.method", "http.route",
+                    "@timestamp", TRACE_ID_RUNTIME_FIELD, "span.id", "span_id", "service.name", "span.name", "name", "span.type", "span.subtype", "kind",
+                    "span.duration.us", "duration", "event.outcome", "http.request.method", "http.route",
                     "url.path", "messaging.destination.name", "messaging.kafka.destination", "messaging.system",
                 ],
                 "query": {"bool": {"filter": [SPAN_EVENT_FILTER, *filters]}},
@@ -553,8 +555,8 @@ def _read_timeline_spans(
                 "runtime_mappings": TRACE_ID_RUNTIME_MAPPINGS,
                 "sort": [{"@timestamp": {"order": "desc"}}],
                 "fields": [
-                    "@timestamp", TRACE_ID_RUNTIME_FIELD, "span.id", "service.name", "span.name", "span.type", "span.subtype",
-                    "span.duration.us", "event.outcome", "http.request.method", "http.route",
+                    "@timestamp", TRACE_ID_RUNTIME_FIELD, "span.id", "span_id", "service.name", "span.name", "name", "span.type", "span.subtype", "kind",
+                    "span.duration.us", "duration", "event.outcome", "http.request.method", "http.route",
                     "url.path", "messaging.destination.name", "messaging.kafka.destination",
                     "messaging.system",
                 ],
@@ -576,16 +578,17 @@ def _read_timeline_spans(
         timestamp = _timeline_field_string(fields, "@timestamp")
         service = _timeline_field_string(fields, "service.name")
         span = _span_display_label(fields) or _safe_operation_label(
-            _timeline_field_string(fields, "span.name"), "span", None
+            _span_event_name(fields), "span", None
         )
         if not timestamp or not service or span is None:
             continue
-        duration = _timeline_field_number(fields, "span.duration.us")
+        duration = _timeline_duration_us(fields)
         span_event: dict[str, object] = {
             "timestamp": timestamp,
             "service": service,
             "span": span,
-            "_span_id": _timeline_field_string(fields, "span.id"),
+            "_span_id": _timeline_field_string(fields, "span.id")
+            or _timeline_field_string(fields, "span_id"),
             "_trace_id": _timeline_field_string(fields, TRACE_ID_RUNTIME_FIELD)
             or _timeline_field_string(fields, "trace.id"),
             "span_type": _safe_span_type(_timeline_field_string(fields, "span.type")),
@@ -662,6 +665,34 @@ def _timeline_field_number(fields: dict[str, object], name: str) -> float | None
     if isinstance(value, list) and value:
         value = value[0]
     return float(value) if isinstance(value, (int, float)) else None
+
+
+def _span_event_name(fields: dict[str, object]) -> str | None:
+    """Read the ECS name first, then the OTel-native root-level name."""
+    return _timeline_field_string(fields, "span.name") or _timeline_field_string(
+        fields, "name"
+    )
+
+
+def _timeline_duration_us(
+    fields: dict[str, object], *, transaction: bool = False
+) -> float | None:
+    """Read ECS microseconds or convert OTel-native nanoseconds safely."""
+    if transaction:
+        duration = _timeline_field_number(fields, "transaction.duration.us")
+        if duration is not None:
+            return duration
+    duration = _timeline_field_number(fields, "span.duration.us")
+    if duration is not None:
+        return duration
+    native_duration_ns = _timeline_field_number(fields, "duration")
+    return native_duration_ns / 1_000 if native_duration_ns is not None else None
+
+
+def _trace_event_kind(fields: dict[str, object]) -> str:
+    if _timeline_field_string(fields, "processor.event") == "transaction":
+        return "transaction"
+    return "span"
 
 
 def _span_display_label(fields: dict[str, object]) -> str | None:

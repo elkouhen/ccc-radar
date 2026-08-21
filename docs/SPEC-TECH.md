@@ -73,7 +73,11 @@ with spans from more than one service; IDs remain in memory and are never
 included in the report. The Timeline first reads transaction identities only in
 memory to retain the distributed transaction aggregate view, then explicitly
 sets `_source: false` for spans, requesting timestamp, trace ID, service, span
-name/type, duration, and outcome. Trace IDs are held only in memory to join
+name/type, duration, and outcome. It accepts both ECS fields (`span.name`,
+`span.duration.us`, `parent.id`) and OTel-native Elastic Agent fields (`name`,
+nanosecond `duration`, `parent_span_id`); instrumentation-controlled operation
+names remain redacted to safe categories in the projection.
+Trace IDs are held only in memory to join
 each Timeline span to its exact waterfall, then replaced by report-local opaque
 `waterfall-*` references before serialization. Instrumentation-controlled span
 names are replaced with a safe `Span` label and span types are allowlisted
