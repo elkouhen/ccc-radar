@@ -78,6 +78,9 @@ systemlens apm report --since 1h --environment production --html apm-runtime.htm
 
 # Lightweight HTML plus a JSON sidecar, useful with --all-spans
 systemlens apm report --since 1h --all-spans --html apm-runtime.html --data apm-runtime.json
+
+# One JSON projection per hour; choose the interval from the HTML selector.
+systemlens apm report --since 10h --html apm-runtime.html --interval-data apm-runtime-intervals --interval 1h
 ```
 
 The export defaults to 80 relations and 50 KB. Its `coverage` object states
@@ -97,6 +100,9 @@ Without `--data`, the report is self-contained. With `--data`, the HTML stays
 small and loads the adjacent JSON file; serve their directory over HTTP (for
 example in WSL: `python3 -m http.server 8000`) then open
 `http://localhost:8000/apm-runtime.html` from the Windows browser.
+With `--interval-data`, the directory contains an `index.json` manifest and one
+safe JSON projection per interval; the HTML selector loads only the chosen
+interval. Serve the HTML and that directory over HTTP.
 The report also
 records its snapshot window and whether any view was truncated, so it can be
 shared without mistaking incomplete rankings for absence. The Transactions tab

@@ -16,6 +16,7 @@ from urllib.request import Request, urlopen
 DEFAULT_MAX_BUCKETS = 5_000
 DEFAULT_MAX_BYTES = 50_000
 DEFAULT_MAX_RELATIONS = 80
+AGGREGATE_QUERY_WINDOW = timedelta(hours=1)
 _DURATION_PATTERN = re.compile(r"^(?P<amount>[1-9][0-9]*)(?P<unit>[smhd])$")
 APM_METRIC_INDEX_PATTERNS = (
     "metrics-apm.service_destination.1m-*",
@@ -412,9 +413,25 @@ def _read_relation_buckets(
     max_buckets: int,
 ) -> tuple[list[dict[str, object]], bool, str]:
     for target_field in ("service.target.name", "span.destination.service.resource"):
-        buckets, truncated = _read_buckets_for_target_field(
-            client, start, end, environment, max_buckets, target_field
-        )
+        buckets: list[dict[str, object]] = []
+        truncated = False
+        for window_start, window_end in _aggregate_query_windows(start, end):
+            remaining = max_buckets - len(buckets)
+            if remaining < 1:
+                truncated = True
+                break
+            page, page_truncated = _read_buckets_for_target_field(
+                client,
+                window_start,
+                window_end,
+                environment,
+                remaining,
+                target_field,
+            )
+            buckets.extend(page)
+            truncated = truncated or page_truncated
+            if page_truncated:
+                break
         if buckets or truncated:
             return buckets, truncated, target_field
     return [], False, "service.target.name"
@@ -465,6 +482,19 @@ def _read_buckets_for_target_field(
             return buckets, False
         after_key = next_after
     return buckets, True
+
+
+def _aggregate_query_windows(
+    start: datetime, end: datetime
+) -> list[tuple[datetime, datetime]]:
+    """Return fixed one-hour reads from newest to oldest."""
+    windows: list[tuple[datetime, datetime]] = []
+    window_end = end
+    while window_end > start:
+        window_start = max(start, window_end - AGGREGATE_QUERY_WINDOW)
+        windows.append((window_start, window_end))
+        window_end = window_start
+    return windows
 
 
 def _service_destination_query(

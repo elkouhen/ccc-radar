@@ -85,6 +85,7 @@ def build_runtime_report(
     max_timeline_events: int = DEFAULT_MAX_TIMELINE_EVENTS,
     all_spans: bool = False,
     now: datetime | None = None,
+    window: tuple[datetime, datetime] | None = None,
 ) -> dict[str, object]:
     """Read three aggregate metric projections for the runtime HTML report.
 
@@ -102,16 +103,12 @@ def build_runtime_report(
         if value < 1:
             raise ApmError(f"`{option}` doit être supérieur à zéro.")
 
-    start, end = parse_since(since, now=now)
-    service_buckets, services_query_truncated = _read_composite_buckets(
-        client,
-        _latency_query("service", start, end, environment),
-        max_buckets,
+    start, end = window if window is not None else parse_since(since, now=now)
+    service_buckets, services_query_truncated = _read_latency_buckets(
+        client, "service", start, end, environment, max_buckets
     )
-    transaction_buckets, transactions_query_truncated = _read_composite_buckets(
-        client,
-        _latency_query("transaction", start, end, environment),
-        max_buckets,
+    transaction_buckets, transactions_query_truncated = _read_latency_buckets(
+        client, "transaction", start, end, environment, max_buckets
     )
     dependency_buckets, dependencies_query_truncated, target_field = (
         _read_relation_buckets(client, start, end, environment, max_buckets)
@@ -146,6 +143,8 @@ def build_runtime_report(
         for item in timeline_spans
         if isinstance(item.get("_trace_id"), str) and isinstance(item.get("_span_id"), str)
     }
+
+
     timeline_span_refs: dict[tuple[str, str], str] = {}
     for trace in distributed_traces:
         trace_id = trace.get("_trace_id")
@@ -258,6 +257,44 @@ def build_runtime_report(
             },
         },
     }
+
+
+def build_runtime_reports_by_interval(
+    client: ElasticApmClient,
+    *,
+    since: str,
+    interval: str,
+    environment: str | None,
+    max_services: int = DEFAULT_MAX_SERVICES,
+    max_transactions: int = DEFAULT_MAX_TRANSACTIONS,
+    max_dependencies: int = DEFAULT_MAX_DEPENDENCIES,
+    max_buckets: int = DEFAULT_MAX_BUCKETS_PER_VIEW,
+    max_timeline_events: int = DEFAULT_MAX_TIMELINE_EVENTS,
+    all_spans: bool = False,
+    now: datetime | None = None,
+) -> list[dict[str, object]]:
+    """Build one safe report projection for each bounded analysis interval."""
+    start, end = parse_since(since, now=now)
+    interval_start, _ = parse_since(interval, now=end)
+    interval_size = end - interval_start
+    reports: list[dict[str, object]] = []
+    window_end = end
+    while window_end > start:
+        window_start = max(start, window_end - interval_size)
+        reports.append(build_runtime_report(
+            client,
+            since=interval,
+            environment=environment,
+            max_services=max_services,
+            max_transactions=max_transactions,
+            max_dependencies=max_dependencies,
+            max_buckets=max_buckets,
+            max_timeline_events=max_timeline_events,
+            all_spans=all_spans,
+            window=(window_start, window_end),
+        ))
+        window_end = window_start
+    return reports
 
 
 def _read_distributed_traces(
@@ -996,6 +1033,72 @@ def _read_composite_buckets(
     return buckets, True
 
 
+def _read_latency_buckets(
+    client: ElasticApmClient,
+    kind: str,
+    start: datetime,
+    end: datetime,
+    environment: str | None,
+    max_buckets: int,
+) -> tuple[list[dict[str, object]], bool]:
+    """Read hourly aggregate pages and merge identical workload buckets."""
+    buckets: list[dict[str, object]] = []
+    truncated = False
+    for window_start, window_end in _trace_query_windows(start, end):
+        remaining = max_buckets - len(buckets)
+        if remaining < 1:
+            return _merge_latency_buckets(buckets), True
+        page, page_truncated = _read_composite_buckets(
+            client,
+            _latency_query(kind, window_start, window_end, environment),
+            remaining,
+        )
+        buckets.extend(page)
+        truncated = truncated or page_truncated
+        if page_truncated:
+            break
+    return _merge_latency_buckets(buckets), truncated
+
+
+def _merge_latency_buckets(
+    buckets: list[dict[str, object]],
+) -> list[dict[str, object]]:
+    """Combine hourly counts and sums; retain the highest hourly P95."""
+    merged: dict[str, dict[str, object]] = {}
+    for bucket in buckets:
+        key = bucket.get("key")
+        if not isinstance(key, dict):
+            continue
+        identity = json.dumps(key, sort_keys=True, separators=(",", ":"))
+        existing = merged.get(identity)
+        if existing is None:
+            existing = {**bucket, "key": dict(key)}
+            for name in ("calls", "duration_us", "outcome_calls", "success_calls", "p95"):
+                metric = existing.get(name)
+                if isinstance(metric, dict):
+                    existing[name] = dict(metric)
+            merged[identity] = existing
+            continue
+        for name in ("calls", "duration_us", "outcome_calls", "success_calls"):
+            current = existing.get(name)
+            incoming = bucket.get(name)
+            if isinstance(current, dict) and isinstance(incoming, dict):
+                current["value"] = _as_number(current.get("value")) + _as_number(
+                    incoming.get("value")
+                )
+        current_p95 = existing.get("p95")
+        incoming_p95 = bucket.get("p95")
+        if isinstance(current_p95, dict) and isinstance(incoming_p95, dict):
+            current_values = current_p95.get("values")
+            incoming_values = incoming_p95.get("values")
+            if isinstance(current_values, dict) and isinstance(incoming_values, dict):
+                for percentile, value in incoming_values.items():
+                    current_values[percentile] = max(
+                        _as_number(current_values.get(percentile)), _as_number(value)
+                    )
+    return list(merged.values())
+
+
 def _rank_latency_buckets(
     buckets: list[dict[str, object]], *, kind: str
 ) -> list[dict[str, object]]:
@@ -1159,12 +1262,25 @@ def runtime_report_json(report: dict[str, object]) -> str:
 
 
 def render_runtime_report_html(
-    report: dict[str, object], *, data_url: str | None = None
+    report: dict[str, object], *, data_url: str | None = None,
+    interval_manifest_url: str | None = None,
 ) -> str:
     """Render an aggregate-only runtime report with the shared Sigma.js view."""
     data = runtime_report_json(report) if data_url is None else ""
     loader = ""
-    if data_url is not None:
+    if interval_manifest_url is not None:
+        loader = (
+            "<script>(function(){const get=url=>{const request=new XMLHttpRequest();"
+            "request.open('GET',url,false);request.send(null);if(request.status!==200)throw new Error('Unable to load APM report data');return request.responseText;};"
+            f"const manifestUrl={json.dumps(interval_manifest_url)};const manifest=JSON.parse(get(manifestUrl));"
+            "const selected=new URLSearchParams(location.search).get('interval');const item=(manifest.intervals||[]).find(value=>value.id===selected)||(manifest.intervals||[])[0];"
+            "if(!item)throw new Error('No APM interval data');document.getElementById('runtime-data').textContent=get(new URL(item.data,manifestUrl).toString());"
+            "const picker=document.createElement('label');picker.className='note';picker.textContent='Analysis interval: ';const select=document.createElement('select');"
+            "(manifest.intervals||[]).forEach(value=>{const option=document.createElement('option');option.value=value.id;option.textContent=value.label;option.selected=value.id===item.id;select.append(option);});"
+            "select.addEventListener('change',()=>{const url=new URL(location.href);url.searchParams.set('interval',select.value);location.assign(url);});picker.append(select);document.querySelector('main').prepend(picker);"
+            "})().catch(()=>{document.body.innerHTML='<main><h1>APM data unavailable</h1><p>Serve this directory over HTTP and verify the interval JSON files.</p></main>';throw new Error('Unable to load APM interval data');});</script>"
+        )
+    elif data_url is not None:
         loader = (
             "<script>(function(){const request=new XMLHttpRequest();"
             f"request.open('GET',{json.dumps(data_url)},false);request.send(null);"

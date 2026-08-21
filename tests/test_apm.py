@@ -1070,6 +1070,42 @@ def test_all_spans_reads_newest_hourly_windows_until_the_limit() -> None:
     assert {"range": {"@timestamp": {"gte": "2026-08-15T08:00:00Z", "lt": "2026-08-15T09:00:00Z"}}} in second_filters
 
 
+def test_runtime_report_reads_metric_aggregates_in_hourly_windows() -> None:
+    class HourlyAggregateClient:
+        def __init__(self) -> None:
+            self.metric_queries: list[dict[str, object]] = []
+
+        def search_metrics(self, body: dict[str, object]) -> dict[str, object]:
+            self.metric_queries.append(body)
+            if "relations" in body.get("aggs", {}):
+                return {"aggregations": {"relations": {"buckets": [
+                    _bucket("orders", "inventory", "success", 1, 1_000)
+                ]}}}
+            return {"aggregations": {"items": {"buckets": []}}}
+
+        def search_traces(self, body: dict[str, object]) -> dict[str, object]:
+            return {"aggregations": {"traces": {"buckets": [], "sum_other_doc_count": 0}}}
+
+    client = HourlyAggregateClient()
+    build_runtime_report(
+        client,  # type: ignore[arg-type]
+        since="3h",
+        environment=None,
+        now=datetime(2026, 8, 15, 10, tzinfo=UTC),
+    )
+
+    service_windows = [
+        query["query"]["bool"]["filter"][1]["range"]["@timestamp"]  # type: ignore[index]
+        for query in client.metric_queries
+        if query["query"]["bool"]["filter"][0] == {"term": {"metricset.name": "service_transaction"}}  # type: ignore[index]
+    ]
+    assert service_windows == [
+        {"gte": "2026-08-15T09:00:00Z", "lt": "2026-08-15T10:00:00Z"},
+        {"gte": "2026-08-15T08:00:00Z", "lt": "2026-08-15T09:00:00Z"},
+        {"gte": "2026-08-15T07:00:00Z", "lt": "2026-08-15T08:00:00Z"},
+    ]
+
+
 def _latency_bucket(
     key: dict[str, object],
     calls: int,
@@ -1296,6 +1332,38 @@ def test_apm_report_writes_a_json_sidecar(
     document = output.read_text(encoding="utf-8")
     assert '<script id="runtime-data" type="application/json"></script>' in document
     assert "apm-data.json" in document
+
+
+def test_apm_report_writes_one_json_per_interval(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    reports = [
+        {"window": {"from": "2026-08-15T09:00:00Z", "to": "2026-08-15T10:00:00Z"}, "services": [], "transactions": [], "dependencies": [], "timeline_spans": [], "distributed_traces": []},
+        {"window": {"from": "2026-08-15T08:00:00Z", "to": "2026-08-15T09:00:00Z"}, "services": [], "transactions": [], "dependencies": [], "timeline_spans": [], "distributed_traces": []},
+    ]
+    monkeypatch.setattr(
+        "systemlens.cli.build_runtime_reports_by_interval",
+        lambda *args, **kwargs: reports,
+    )
+    output = tmp_path / "runtime.html"
+    interval_data = tmp_path / "intervals"
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "apm", "report", "--html", str(output), "--interval-data", str(interval_data),
+            "--endpoint", "https://elastic.example.test", "--api-key", "not-a-real-key",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    manifest = json.loads((interval_data / "index.json").read_text(encoding="utf-8"))
+    assert manifest["interval"] == "1h"
+    assert [item["data"] for item in manifest["intervals"]] == [
+        "interval-0001.json", "interval-0002.json"
+    ]
+    assert (interval_data / "interval-0001.json").exists()
+    assert "Analysis interval:" in output.read_text(encoding="utf-8")
 
 
 def test_apm_doctor_json_is_safe_when_not_configured() -> None:

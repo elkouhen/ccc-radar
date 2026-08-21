@@ -23,6 +23,7 @@ from systemlens.apm import (
 )
 from systemlens.apm_report import (
     build_runtime_report,
+    build_runtime_reports_by_interval,
     render_runtime_report_html,
     runtime_report_json,
 )
@@ -1283,6 +1284,14 @@ def apm_report_cmd(
         "--data",
         help="JSON séparé chargé par le HTML ; servir le répertoire via HTTP.",
     ),
+    interval_data: Optional[Path] = typer.Option(  # noqa: UP007
+        None,
+        "--interval-data",
+        help="Répertoire contenant un JSON par intervalle et son manifeste HTML.",
+    ),
+    interval: str = typer.Option(
+        "1h", "--interval", help="Pas des fichiers d'analyse : 15m, 1h, etc."
+    ),
     since: str = typer.Option("1h", "--since", help="Fenêtre : 15m, 1h, 7d, etc."),
     environment: Optional[str] = typer.Option(  # noqa: UP007
         None, "--environment", help="Filtre exact service.environment (optionnel)."
@@ -1347,24 +1356,42 @@ def apm_report_cmd(
     """
     client: ElasticApmClient | None = None
     try:
+        if data is not None and interval_data is not None:
+            raise ApmError("`--data` et `--interval-data` ne peuvent pas être utilisés ensemble.")
         settings = load_apm_settings(endpoint, api_key, insecure_tls=insecure)
         client = ElasticApmClient(settings)
-        report = build_runtime_report(
-            client,
-            since=since,
-            environment=environment,
-            max_services=max_services,
-            max_transactions=max_transactions,
-            max_dependencies=max_dependencies,
-            max_buckets=max_buckets,
-            max_timeline_events=max_timeline_events,
-            all_spans=all_spans,
-        )
-        if data is not None:
+        if interval_data is not None:
+            reports = build_runtime_reports_by_interval(
+                client, since=since, interval=interval, environment=environment,
+                max_services=max_services, max_transactions=max_transactions,
+                max_dependencies=max_dependencies, max_buckets=max_buckets,
+                max_timeline_events=max_timeline_events, all_spans=all_spans,
+            )
+            interval_data.mkdir(parents=True, exist_ok=True)
+            manifest_intervals: list[dict[str, str]] = []
+            for index, interval_report in enumerate(reports, start=1):
+                filename = f"interval-{index:04}.json"
+                (interval_data / filename).write_text(runtime_report_json(interval_report), encoding="utf-8")
+                window = cast(dict[str, object], interval_report["window"])
+                manifest_intervals.append({"id": str(index), "data": filename, "label": f"{window['from']} – {window['to']}"})
+            manifest = {"schema_version": "apm-runtime-report-interval-manifest-v1", "interval": interval, "intervals": manifest_intervals}
+            manifest_path = interval_data / "index.json"
+            manifest_path.write_text(json.dumps(manifest, ensure_ascii=False), encoding="utf-8")
+            report = reports[0]
+            manifest_url = os.path.relpath(manifest_path, html.parent)
+            document = render_runtime_report_html(report, interval_manifest_url=manifest_url)
+        else:
+            report = build_runtime_report(
+                client, since=since, environment=environment,
+                max_services=max_services, max_transactions=max_transactions,
+                max_dependencies=max_dependencies, max_buckets=max_buckets,
+                max_timeline_events=max_timeline_events, all_spans=all_spans,
+            )
+        if interval_data is None and data is not None:
             data.write_text(runtime_report_json(report), encoding="utf-8")
             data_url = os.path.relpath(data, html.parent)
             document = render_runtime_report_html(report, data_url=data_url)
-        else:
+        elif interval_data is None:
             document = render_runtime_report_html(report)
         html.write_text(document, encoding="utf-8")
     except ApmError as exc:

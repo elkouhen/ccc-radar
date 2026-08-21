@@ -67,7 +67,10 @@ percentile. Its dependency view reuses the bounded
 `service_destination` aggregate adapter and therefore intentionally reports
 only average latency, call count, and aggregate failure rate.
 
-The aggregate queries use `size: 0`. Before the bounded Timeline query,
+All metric aggregate queries use `size: 0` and are split into one-hour windows,
+newest first. SystemLens merges matching service, transaction, and dependency
+buckets in memory: counts and duration sums are added, while a displayed P95
+is the highest hourly P95, never a recomputed multi-window percentile. Before the bounded Timeline query,
 SystemLens uses a bounded trace-ID aggregation to retain only recent traces
 with spans from more than one service; IDs remain in memory and are never
 included in the report. The Timeline first reads transaction identities only in
