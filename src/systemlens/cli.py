@@ -84,6 +84,7 @@ from systemlens.workspace import (
     discover_maven_services,
     load_federation,
 )
+from systemlens.web import SystemLensWebApplication, create_web_server
 from systemlens.doctor import has_errors, run_doctor
 
 app = typer.Typer(
@@ -1054,6 +1055,54 @@ def version() -> None:
     Exemple : `systemlens version`.
     """
     typer.echo(__version__)
+
+
+@app.command("web")
+def web_cmd(
+    host: str = typer.Option("127.0.0.1", "--host", help="Adresse d'écoute locale."),
+    port: int = typer.Option(8765, "--port", min=1, max=65535, help="Port HTTP."),
+    since: str = typer.Option("1h", "--since", help="Fenêtre APM : 15m, 1h, 7d, etc."),
+    environment: str | None = typer.Option(None, "--environment", help="Filtre APM service.environment exact."),
+    endpoint: str | None = typer.Option(None, "--endpoint", help="URL Elasticsearch ; sinon SYSTEMLENS_ELASTICSEARCH_URL."),
+    api_key: str | None = typer.Option(None, "--api-key", help="Clé Elasticsearch ; sinon SYSTEMLENS_ELASTICSEARCH_API_KEY."),
+    insecure: bool = typer.Option(False, "--insecure", help="Accepte un certificat TLS APM auto-signé."),
+    max_services: int = typer.Option(30, "--max-services", min=1, max=1_000),
+    max_transactions: int = typer.Option(50, "--max-transactions", min=1, max=10_000),
+    max_dependencies: int = typer.Option(80, "--max-dependencies", min=1, max=10_000),
+    max_buckets: int = typer.Option(1_000, "--max-buckets", min=1, max=100_000),
+    max_timeline_events: int = typer.Option(500, "--max-timeline-events", min=1, max=2_000),
+) -> None:
+    """Démarre l'espace web local Architecture + APM runtime.
+
+    La vue Architecture lit le snapshot indexé à chaque ouverture. La vue APM
+    exécute une lecture bornée à chaque ouverture ; elle reste indisponible
+    tant que l'accès APM n'est pas configuré, sans empêcher l'architecture.
+    """
+    application = SystemLensWebApplication(
+        Path.cwd(),
+        since=since,
+        environment=environment,
+        endpoint=endpoint,
+        api_key=api_key,
+        insecure_tls=insecure,
+        max_services=max_services,
+        max_transactions=max_transactions,
+        max_dependencies=max_dependencies,
+        max_buckets=max_buckets,
+        max_timeline_events=max_timeline_events,
+    )
+    try:
+        server = create_web_server(application, host, port)
+    except OSError as exc:
+        typer.echo(f"Impossible de démarrer le serveur web : {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+    typer.echo(f"SystemLens web : http://{host}:{port}/ (Ctrl-C pour arrêter)")
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        typer.echo("\nServeur web arrêté.")
+    finally:
+        server.server_close()
 
 
 @app.command(name="doctor")

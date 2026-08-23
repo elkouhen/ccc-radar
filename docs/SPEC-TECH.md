@@ -24,7 +24,14 @@ discover build units; `relations.py` derives typed architecture relations from
 modules, endpoints and build dependencies. `indexer.py` orchestrates the
 incremental transaction. `store.py` owns SQLite persistence.
 
-`cli.py` and `mcp_server.py` are thin delivery layers over the domain modules.
+`cli.py`, `mcp_server.py`, and the standard-library local HTTP server in
+`web.py` are thin delivery layers over the domain modules. `systemlens web`
+serves only an in-memory landing page and the two existing HTML projections:
+`/architecture` loads the persisted architecture snapshot and renders it for
+that request, while `/runtime` reads a fresh bounded APM projection for that
+request. The web layer has no filesystem-serving route, does not write SQLite,
+and does not persist APM observations or credentials. It binds to loopback by
+default; changing the host is an explicit user choice.
 
 ### Elastic APM digest adapter
 

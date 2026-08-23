@@ -36,6 +36,21 @@ systemlens export microservices --html architecture.html
 Use `systemlens microservices`, `systemlens topics`, `systemlens apis`, and
 `systemlens analyze audit` for terminal-oriented exploration.
 
+To use the static architecture export and the APM runtime report as one local
+Python web application, start:
+
+```bash
+systemlens web
+```
+
+Open `http://127.0.0.1:8765/`. The Architecture page renders the current
+persisted index snapshot on each request. The APM runtime page performs its
+usual bounded, read-only APM query when opened; if APM is not configured, that
+page explains the unavailable configuration while the Architecture page stays
+available. Use `--host`, `--port`, `--since`, and the documented APM options to
+adjust the local server. The default loopback address avoids exposing indexed
+architecture details on the network.
+
 Indexing is incremental. Use `systemlens index --full` after a broad change, and
 `systemlens index --topic-strategy strategy1` only for repositories that follow the
 documented Strategy1 Kafka and REST conventions.
