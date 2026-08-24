@@ -36,6 +36,12 @@ explicit initial-index action; it does not persist APM observations or
 credentials. It binds to loopback by
 default; changing the host is an explicit user choice.
 
+The separate `simpleweb` executable is a dependency-free static server for an
+explicit report directory. It uses `SimpleHTTPRequestHandler` with that
+directory as its only document root, has no application or write routes, and
+binds to loopback by default. It is intentionally separate from `systemlens
+web`, whose routes are in-memory architecture and runtime projections.
+
 ### Elastic APM digest adapter
 
 `apm.py` is deliberately outside the indexing pipeline and SQLite model. The

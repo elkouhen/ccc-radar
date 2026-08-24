@@ -51,6 +51,16 @@ available. Use `--host`, `--port`, `--since`, and the documented APM options to
 adjust the local server. The default loopback address avoids exposing indexed
 architecture details on the network.
 
+When an HTML export loads adjacent JSON data, serve its output directory with:
+
+```bash
+cd report-directory
+simpleweb
+```
+
+It serves the current directory at `http://127.0.0.1:8000/`; use `--port` or
+`--host` to change the local address.
+
 Indexing is incremental. Use `systemlens index --full` after a broad change, and
 `systemlens index --topic-strategy strategy1` only for repositories that follow the
 documented Strategy1 Kafka and REST conventions.
