@@ -19,6 +19,10 @@ DEFAULT_MAX_RELATIONS = 80
 AGGREGATE_QUERY_WINDOW = timedelta(hours=1)
 _DURATION_PATTERN = re.compile(r"^(?P<amount>[1-9][0-9]*)(?P<unit>[smhd])$")
 APM_METRIC_INDEX_PATTERNS = (
+    # Elastic APM 8.5 stores application metrics per service in this legacy
+    # stream family. Keeping it lets wildcard metric reads resolve on clusters
+    # that predate the rollup ``*.1m-*`` streams.
+    "metrics-apm.app.*",
     "metrics-apm.service_destination.1m-*",
     "metrics-apm.service_transaction.1m-*",
     "metrics-apm.transaction.1m-*",
@@ -619,7 +623,7 @@ def _metric_value(bucket: dict[str, object], name: str) -> float:
     metric = bucket.get(name)
     if not isinstance(metric, dict):
         return 0.0
-    return _as_number(metric.get("value"))
+    return _as_number(metric.get("value", metric.get("doc_count")))
 
 
 def _as_number(value: object) -> float:

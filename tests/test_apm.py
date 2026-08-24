@@ -237,6 +237,74 @@ def test_export_digest_returns_an_empty_digest_when_no_apm_index_exists() -> Non
     assert digest["source"]["target_field"] == "service.target.name"  # type: ignore[index]
 
 
+def test_runtime_report_is_empty_when_no_apm_metric_index_exists() -> None:
+    class NoApmIndexClient:
+        def search_metrics(self, body: dict[str, object]) -> dict[str, object]:
+            return {"_shards": {"total": 0}, "hits": {"hits": []}}
+
+        def search_traces(self, body: dict[str, object]) -> dict[str, object]:
+            return {"_shards": {"total": 0}, "hits": {"hits": []}}
+
+    report = build_runtime_report(
+        NoApmIndexClient(),  # type: ignore[arg-type]
+        since="1h",
+        environment=None,
+        now=datetime(2026, 8, 19, 7, tzinfo=UTC),
+    )
+
+    assert report["services"] == []
+    assert report["transactions"] == []
+    assert report["dependencies"] == []
+
+
+def test_runtime_report_falls_back_to_legacy_trace_transaction_aggregates() -> None:
+    class LegacyApmClient:
+        trace_queries: list[dict[str, object]] = []
+
+        def search_metrics(self, body: dict[str, object]) -> dict[str, object]:
+            aggregations = body.get("aggs")
+            if isinstance(aggregations, dict) and "items" in aggregations:
+                return {"aggregations": {"items": {"buckets": []}}}
+            return {"_shards": {"total": 0}}
+
+        def search_traces(self, body: dict[str, object]) -> dict[str, object]:
+            self.trace_queries.append(body)
+            aggregations = body.get("aggs")
+            if not isinstance(aggregations, dict):
+                return {"hits": {"hits": []}}
+            if "items" not in aggregations:
+                return {"aggregations": {"traces": {"buckets": []}}}
+            sources = aggregations["items"]["composite"]["sources"]  # type: ignore[index]
+            key: dict[str, object] = {"service": "orders"}
+            if len(sources) > 1:
+                key.update({"transaction": "POST /orders", "transaction_type": "request"})
+            return {"aggregations": {"items": {"buckets": [{
+                "key": key,
+                "calls": {"value": 4},
+                "duration_us": {"value": 12_000},
+                "p95": {"values": {"95.0": 4_000}},
+                "outcome_calls": {"value": 4},
+                "success_calls": {"doc_count": 3},
+            }]}}}
+
+    client = LegacyApmClient()
+    report = build_runtime_report(
+        client,  # type: ignore[arg-type]
+        since="1h",
+        environment=None,
+        now=datetime(2026, 8, 19, 7, tzinfo=UTC),
+    )
+
+    assert report["services"] == [{
+        "service": "orders", "calls": 4, "failure_calls": 1,
+        "outcome_calls": 4, "error_rate": 0.25, "outcome_coverage": 1.0,
+        "average_ms": 3.0, "p95_ms": 4.0,
+    }]
+    assert report["transactions"][0]["transaction"] == "HTTP transaction"  # type: ignore[index]
+    legacy_filters = client.trace_queries[0]["query"]["bool"]["filter"]  # type: ignore[index]
+    assert legacy_filters[0] == {"term": {"processor.event": "transaction"}}
+
+
 @pytest.mark.parametrize("value", ["0h", "one-hour", "1w"])
 def test_parse_since_rejects_ambiguous_windows(value: str) -> None:
     with pytest.raises(ApmError):
@@ -739,7 +807,7 @@ def test_runtime_report_uses_histogram_p95_for_services_and_transactions() -> No
             "spans": [{
                 "service": "orders", "name": "HTTP transaction", "kind": "transaction",
                 "transaction_type": "request", "origin": "HTTP", "outcome": "success", "depth": 0,
-            "offset_ms": 0, "duration_ms": 400.0,
+            "offset_ms": 0, "duration_ms": 400.0, "event_id": "root",
         }],
     }]
     assert report["coverage"]["distributed_traces"] == {  # type: ignore[index]
@@ -759,6 +827,9 @@ def test_runtime_report_uses_histogram_p95_for_services_and_transactions() -> No
     assert waterfall_query["size"] == 0
     assert {"terms": {"systemlens.trace_id": ["distributed-trace"]}} in waterfall_query["query"]["bool"]["filter"]  # type: ignore[index]
     assert waterfall_query["aggs"]["traces"]["aggs"]["spans"]["top_hits"]["size"] == 100  # type: ignore[index]
+    waterfall_fields = waterfall_query["aggs"]["traces"]["aggs"]["spans"]["top_hits"]["fields"]  # type: ignore[index]
+    assert "transaction.id" in waterfall_fields
+    assert "transaction.parent_id" in waterfall_fields
     exported = json.dumps(report)
     assert '"trace.id"' not in exported
     assert '"span.id"' not in exported

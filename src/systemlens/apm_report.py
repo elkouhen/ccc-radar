@@ -110,6 +110,17 @@ def build_runtime_report(
     transaction_buckets, transactions_query_truncated = _read_latency_buckets(
         client, "transaction", start, end, environment, max_buckets
     )
+    # Elastic APM 8.5 has only ``metrics-apm.app.*`` application metrics; it
+    # does not emit the transaction rollups consumed above. Use bounded trace
+    # transaction aggregates as a compatibility fallback in that case.
+    if not service_buckets:
+        service_buckets, services_query_truncated = _read_legacy_trace_latency_buckets(
+            client, "service", start, end, environment, max_buckets
+        )
+    if not transaction_buckets:
+        transaction_buckets, transactions_query_truncated = _read_legacy_trace_latency_buckets(
+            client, "transaction", start, end, environment, max_buckets
+        )
     dependency_buckets, dependencies_query_truncated, target_field = (
         _read_relation_buckets(client, start, end, environment, max_buckets)
     )
@@ -157,6 +168,9 @@ def build_runtime_report(
             span_id = span.pop("_span_id", None)
             if not isinstance(span_id, str):
                 continue
+            # Kept only in the local Runtime projection so the detail panel
+            # can identify the selected transaction or span.
+            span["event_id"] = span_id
             if (trace_id, span_id) not in timeline_span_keys:
                 continue
             reference = f"timeline-span-{trace['waterfall_ref']}-{span_index}"
@@ -354,7 +368,7 @@ def _read_distributed_traces(
                                 "_source": False,
                                 "sort": [{"@timestamp": {"order": "asc"}}],
                                 "fields": [
-                                    "@timestamp", "span.id", "span_id", "parent.id", "parent_span_id",
+                                    "@timestamp", "span.id", "span_id", "transaction.id", "transaction.parent_id", "parent.id", "parent_span_id",
                                     "span.name", "name", "span.type", "span.subtype", "kind", "service.name", "processor.event",
                                     "transaction.name", "transaction.type",
                                     "transaction.duration.us", "span.duration.us", "duration",
@@ -396,7 +410,11 @@ def _read_distributed_traces(
             fields = hit.get("fields") if isinstance(hit, dict) else None
             if not isinstance(fields, dict):
                 continue
-            span_id = _timeline_field_string(fields, "span.id") or _timeline_field_string(fields, "span_id")
+            span_id = (
+                _timeline_field_string(fields, "span.id")
+                or _timeline_field_string(fields, "span_id")
+                or _timeline_field_string(fields, "transaction.id")
+            )
             timestamp = _timeline_field_string(fields, "@timestamp")
             service = _timeline_field_string(fields, "service.name")
             transaction_name = _timeline_field_string(fields, "transaction.name")
@@ -408,7 +426,8 @@ def _read_distributed_traces(
             by_trace.setdefault(trace_id, []).append({
                 "id": span_id,
                 "parent": _timeline_field_string(fields, "parent.id")
-                or _timeline_field_string(fields, "parent_span_id"),
+                or _timeline_field_string(fields, "parent_span_id")
+                or _timeline_field_string(fields, "transaction.parent_id"),
                 "timestamp": timestamp,
                 "service": service,
                 "name": name,
@@ -720,6 +739,11 @@ def _read_distributed_trace_ids(
         aggregations = response.get("aggregations")
         traces = aggregations.get("traces") if isinstance(aggregations, dict) else None
         if not isinstance(traces, dict):
+            shards = response.get("_shards")
+            if isinstance(shards, dict) and shards.get("total") == 0:
+                # A successful wildcard trace search with no resolved data
+                # stream has no aggregation section.
+                return trace_ids, truncated
             raise ApmError("Réponse Elasticsearch invalide : agrégation traces absente.")
         buckets = traces.get("buckets")
         if not isinstance(buckets, list):
@@ -1014,19 +1038,55 @@ def _latency_query(
     return build
 
 
+def _legacy_trace_latency_query(
+    kind: str, start: datetime, end: datetime, environment: str | None
+) -> Callable[[int, dict[str, object] | None], dict[str, object]]:
+    """Aggregate transaction events for Elastic APM 8.5 compatibility."""
+    build = _latency_query(kind, start, end, environment)
+
+    def legacy_build(size: int, after_key: dict[str, object] | None) -> dict[str, object]:
+        query = build(size, after_key)
+        filters = query["query"]["bool"]["filter"]  # type: ignore[index]
+        assert isinstance(filters, list)
+        filters[0] = {"term": {"processor.event": "transaction"}}
+        aggregations = query["aggs"]  # type: ignore[index]
+        assert isinstance(aggregations, dict)
+        items = aggregations["items"]
+        assert isinstance(items, dict)
+        item_aggs = items["aggs"]
+        assert isinstance(item_aggs, dict)
+        item_aggs.update({
+            "calls": {"value_count": {"field": "transaction.duration.us"}},
+            "duration_us": {"sum": {"field": "transaction.duration.us"}},
+            "p95": {"percentiles": {"field": "transaction.duration.us", "percents": [95]}},
+            "outcome_calls": {"value_count": {"field": "event.outcome"}},
+            "success_calls": {"filter": {"term": {"event.outcome": "success"}}},
+        })
+        return query
+
+    return legacy_build
+
+
 def _read_composite_buckets(
     client: ElasticApmClient,
     query_builder: Callable[[int, dict[str, object] | None], dict[str, object]],
     max_buckets: int,
+    *,
+    search: Callable[[dict[str, object]], dict[str, object]] | None = None,
 ) -> tuple[list[dict[str, object]], bool]:
     """Page a composite aggregate without retrieving any raw event documents."""
     buckets: list[dict[str, object]] = []
     after_key: dict[str, object] | None = None
     while len(buckets) < max_buckets:
         remaining = max_buckets - len(buckets)
-        response = client.search_metrics(query_builder(min(1_000, remaining), after_key))
+        response = (search or client.search_metrics)(query_builder(min(1_000, remaining), after_key))
         aggregations = response.get("aggregations")
         if not isinstance(aggregations, dict):
+            shards = response.get("_shards")
+            if isinstance(shards, dict) and shards.get("total") == 0:
+                # Elasticsearch omits aggregations for a successful wildcard
+                # search when none of the APM metric data streams exists yet.
+                return [], False
             raise ApmError("Réponse Elasticsearch invalide : agrégations absentes.")
         aggregation = aggregations.get("items")
         if not isinstance(aggregation, dict):
@@ -1070,6 +1130,44 @@ def _read_latency_buckets(
     return _merge_latency_buckets(buckets), truncated
 
 
+def _read_legacy_trace_latency_buckets(
+    client: ElasticApmClient,
+    kind: str,
+    start: datetime,
+    end: datetime,
+    environment: str | None,
+    max_buckets: int,
+) -> tuple[list[dict[str, object]], bool]:
+    """Read bounded transaction aggregates from legacy APM trace streams."""
+    search_traces = getattr(client, "search_traces", None)
+    if not callable(search_traces):
+        return [], False
+    buckets: list[dict[str, object]] = []
+    truncated = False
+    for window_start, window_end in _trace_query_windows(start, end):
+        remaining = max_buckets - len(buckets)
+        if remaining < 1:
+            return _merge_latency_buckets(buckets), True
+        try:
+            page, page_truncated = _read_composite_buckets(
+                client,
+                _legacy_trace_latency_query(kind, window_start, window_end, environment),
+                remaining,
+                search=search_traces,
+            )
+        except ApmError as exc:
+            # The fallback is optional: a client that exposes trace-only
+            # waterfall aggregations cannot provide legacy latency buckets.
+            if str(exc) == "Réponse Elasticsearch invalide : agrégation items absente.":
+                return _merge_latency_buckets(buckets), truncated
+            raise
+        buckets.extend(page)
+        truncated = truncated or page_truncated
+        if page_truncated:
+            break
+    return _merge_latency_buckets(buckets), truncated
+
+
 def _merge_latency_buckets(
     buckets: list[dict[str, object]],
 ) -> list[dict[str, object]]:
@@ -1093,8 +1191,10 @@ def _merge_latency_buckets(
             current = existing.get(name)
             incoming = bucket.get(name)
             if isinstance(current, dict) and isinstance(incoming, dict):
-                current["value"] = _as_number(current.get("value")) + _as_number(
-                    incoming.get("value")
+                current["value"] = _as_number(
+                    current.get("value", current.get("doc_count"))
+                ) + _as_number(
+                    incoming.get("value", incoming.get("doc_count"))
                 )
         current_p95 = existing.get("p95")
         incoming_p95 = bucket.get("p95")
@@ -1645,13 +1745,14 @@ _RUNTIME_REPORT_ENHANCEMENTS = """<style>
     const failureNote = error ? `<dt>Error category</dt><dd>${esc(error.category)}</dd><dt>Error message</dt><dd class="is-failure">${esc(error.message)}</dd>` : '';
     const privacyNote = outcome === 'failure' ? '<p class="note">Error messages are sanitized categories; raw exception data is not included in this report.</p>' : '';
     const spanViewLink = span.timeline_span_ref ? `<p><button class="open-span-view" type="button" data-timeline-span-ref="${esc(span.timeline_span_ref)}">Open in Spans</button></p>` : '';
+    const eventId = span.event_id ? `<dt>${span.kind === 'transaction' ? 'Transaction ID' : 'Span ID'}</dt><dd><code>${esc(span.event_id)}</code></dd>` : '';
     const spans = Array.isArray(trace.spans) ? trace.spans : [];
     const largest = spans.reduce((best, candidate) => number(candidate.duration_ms) > number(best.duration_ms) ? candidate : best, spans[0] || {});
     const byService = new Map(); spans.forEach(candidate => byService.set(candidate.service, number(byService.get(candidate.service)) + number(candidate.duration_ms)));
     const contributions = [...byService.entries()].sort((left,right) => right[1] - left[1]).map(([service, duration]) => `${esc(service)} ${formatMs(duration)}`).join(' · ');
     const traceBadge = traceDurationP95 !== null && number(trace.duration_ms) >= traceDurationP95 ? '<span class="anomaly-badge">Slow trace</span>' : '';
     const timingExplanation = `<div class="trace-insights">${traceBadge}<span class="trace-insight">Trace duration ${formatMs(trace.duration_ms)}</span><span class="trace-insight">Longest recorded span: ${esc(largest.service)} · ${formatMs(largest.duration_ms)}</span></div><p class="note">Recorded span duration by service: ${contributions || '—'}. Nested spans can overlap, so this is an investigation aid rather than an exclusive critical-path calculation.</p>`;
-    return `${timingExplanation}<dl><dt>Service</dt><dd>${esc(span.service)}</dd><dt>Operation</dt><dd>${esc(span.name)}</dd><dt>Origin</dt><dd>${esc(span.origin)}</dd><dt>Kind</dt><dd>${esc(span.kind)}</dd><dt>Type</dt><dd>${esc(span.transaction_type || 'other')}</dd><dt>Outcome</dt><dd class="${outcome === 'failure' ? 'is-failure' : ''}">${esc(outcome)}</dd>${failureNote}<dt>Start offset</dt><dd>${formatMs(span.offset_ms)}</dd><dt>Duration</dt><dd>${formatMs(span.duration_ms)}</dd></dl>${spanViewLink}${privacyNote}`;
+    return `${timingExplanation}<dl><dt>Service</dt><dd>${esc(span.service)}</dd><dt>Operation</dt><dd>${esc(span.name)}</dd>${eventId}<dt>Origin</dt><dd>${esc(span.origin)}</dd><dt>Kind</dt><dd>${esc(span.kind)}</dd><dt>Type</dt><dd>${esc(span.transaction_type || 'other')}</dd><dt>Outcome</dt><dd class="${outcome === 'failure' ? 'is-failure' : ''}">${esc(outcome)}</dd>${failureNote}<dt>Start offset</dt><dd>${formatMs(span.offset_ms)}</dd><dt>Duration</dt><dd>${formatMs(span.duration_ms)}</dd></dl>${spanViewLink}${privacyNote}`;
   }
   function bindTraceSpanTrees(container, traces) {
     const tracesByRef = new Map(traces.map(trace => [trace.waterfall_ref, trace]));
@@ -1870,8 +1971,8 @@ main { max-width:1440px; margin:auto; padding:24px; } h1,h2 { margin:0; } h1 { f
 #overview-layout { display:grid; gap:12px; } .overview-sidebar { display:grid; gap:12px; } .overview-sidebar .panel { margin-top:0; } .map-panel { display:grid; grid-template-columns:minmax(0,1fr) minmax(250px,.42fr); gap:12px; align-items:start; overflow:visible; } .map-panel .panel-head { grid-column:1/-1; } .map-panel .service-map { grid-column:1; } .map-panel .service-map-details { grid-column:2; grid-row:2; grid-template-columns:1fr; margin-top:0; max-height:410px; overflow:auto; } @media (max-width:800px) { .map-panel { grid-template-columns:1fr; } .map-panel .service-map,.map-panel .service-map-details { grid-column:1; grid-row:auto; } .map-panel .service-map-details { max-height:none; } }
 #map-panel[hidden] { display:grid !important; position:absolute; left:-100000px; width:calc(100vw - 48px); visibility:hidden; }
 </style></head><body><main>
-<header><h1>APM runtime overview</h1><p class="subtle">Bounded aggregates plus a minimal recorded-transaction projection. No event source, IDs, headers, bodies, traces, or raw error messages are included.</p><div id="context" class="context"></div><div id="report-status" class="report-status"></div></header>
-<nav class="runtime-tabs" aria-label="Runtime report views"><button id="overview-tab" class="runtime-tab is-active" type="button">Services</button><button id="details-tab" class="runtime-tab" type="button">Transaction workloads</button><button id="timeline-tab" class="runtime-tab" type="button">Spans</button><button id="distributed-tab" class="runtime-tab" type="button">Traces</button><button id="map-tab" class="runtime-tab" type="button">Dependencies</button></nav>
+<header><h1>APM runtime overview</h1><p class="subtle">Bounded aggregates plus sampled cross-service traces. Selecting an event in a trace exposes its transaction or span ID; request data, headers, bodies and raw error messages are excluded.</p><div id="context" class="context"></div><div id="report-status" class="report-status"></div></header>
+<nav class="runtime-tabs" aria-label="Runtime report views"><button id="overview-tab" class="runtime-tab is-active" type="button">Services</button><button id="details-tab" class="runtime-tab" type="button">Transaction aggregates</button><button id="timeline-tab" class="runtime-tab" type="button">Spans</button><button id="distributed-tab" class="runtime-tab" type="button">Traces</button><button id="map-tab" class="runtime-tab" type="button">Dependencies</button></nav>
 <section id="services-panel"><section id="cards" class="cards" aria-label="Runtime summary"></section><div id="overview-layout"><aside class="overview-sidebar">
 <section id="triage" class="panel triage"><div class="panel-head"><div><h2>Investigation priorities</h2><p class="subtle">Impact combines observed volume, error rate, and tail latency; it is a triage aid, not an SLO verdict.</p></div></div><div id="triage-items" class="triage-items"></div></section>
 <section id="anomaly-panel" class="panel service-panel" hidden><div class="panel-head"><div><h2>Anomalies to investigate</h2><p class="subtle">Observed error, latency, and outcome-coverage signals. Select one to focus the embedded traces.</p></div></div><div id="anomaly-summary"></div></section>
@@ -1882,8 +1983,8 @@ main { max-width:1440px; margin:auto; padding:24px; } h1,h2 { margin:0; } h1 { f
 <section class="panel filter-bar transaction-panel detail-panel" hidden><label>Observed service <select id="transactions-observed-service-filter" class="tab-service-filter" aria-label="Filter Transactions by observed service"></select></label></section>
 <section id="details-slow-transactions" class="panel service-panel" hidden><div class="panel-head"><h2>Slow transactions</h2><span class="subtle">P95 is an approximate percentile from APM histogram metrics</span></div><div id="transactions"></div></section>
 <section id="details-transactions" class="panel transaction-panel detail-panel" hidden><div class="panel-head"><div><h2>Transaction graph</h2><p class="subtle">Transactions remain owned by their service; no transaction-to-dependency call is asserted.</p></div><div><label>Service <select id="transaction-service-filter" aria-label="Filter transaction graph by service"></select></label> <label>Type <select id="transaction-kind-filter" aria-label="Filter transaction graph by type"></select></label></div></div><div id="transaction-graph" class="transaction-graph"></div></section>
-<section class="panel filter-bar distributed-panel" hidden><label>Observed service <select id="distributed-observed-service-filter" class="tab-service-filter" aria-label="Filter traces by observed service"></select></label><label>Root type <select id="distributed-root-type-filter" aria-label="Filter traces by root span type"></select></label><label><input id="distributed-top-ten-impact-filter" type="checkbox"> 10 highest-impact traces</label><label><input id="distributed-top-ten-error-impact-filter" type="checkbox"> 10 traces with most errors</label></section>
-<section id="details-distributed-traces" class="panel distributed-panel" hidden><div class="panel-head"><div><h2>Traces</h2><p class="subtle">Recent multi-service traces, grouped by HTTP source service or inferred Kafka source topic. Select a span to inspect its details or open it in Spans. Identifiers are not included in this export.</p></div><label>Origin <select id="distributed-trace-source-filter" aria-label="Filter traces by origin"></select></label></div><p id="trace-sample-note" class="trace-sample-note"></p><section><h3>Failure signatures</h3><div id="trace-signatures"></div></section><section><h3>Failures by service and trace step</h3><div id="trace-failure-matrix"></div></section><div id="distributed-traces"></div></section>
+<section class="panel filter-bar distributed-panel" hidden><label>Observed service <select id="distributed-observed-service-filter" class="tab-service-filter" aria-label="Filter traces by observed service"></select></label><label>Root transaction type <select id="distributed-root-type-filter" aria-label="Filter traces by root transaction type"></select></label><label><input id="distributed-top-ten-impact-filter" type="checkbox"> 10 highest-impact traces</label><label><input id="distributed-top-ten-error-impact-filter" type="checkbox"> 10 traces with most errors</label></section>
+<section id="details-distributed-traces" class="panel distributed-panel" hidden><div class="panel-head"><div><h2>Traces</h2><p class="subtle">Recent sampled traces spanning multiple services, grouped by HTTP source service or inferred Kafka topic. Select a transaction or span to inspect its details and ID, or open a span in Spans.</p></div><label>Origin <select id="distributed-trace-source-filter" aria-label="Filter traces by origin"></select></label></div><p id="trace-sample-note" class="trace-sample-note"></p><section><h3>Failure signatures</h3><div id="trace-signatures"></div></section><section><h3>Failures by service and trace step</h3><div id="trace-failure-matrix"></div></section><div id="distributed-traces"></div></section>
 <section class="panel filter-bar dependency-panel" hidden><label>Observed service <select id="dependencies-observed-service-filter" class="tab-service-filter" aria-label="Filter Dependencies by observed service"></select></label></section>
 <section id="details-flows" class="panel dependency-panel" hidden><div class="panel-head"><h2>Focused dependency flow</h2><label>Service <select id="service-filter" aria-label="Filter dependency flow by service"></select></label></div><div id="flows" class="flow"></div></section>
 <section id="details-dependencies" class="panel dependency-panel" hidden><div class="panel-head"><h2>Dependencies</h2><span class="subtle">Average latency only; dependency P95 is a separate future pass</span></div><div id="dependencies"></div></section>
