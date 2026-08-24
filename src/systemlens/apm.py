@@ -76,16 +76,22 @@ def load_settings(
     *,
     insecure_tls: bool = False,
 ) -> ApmSettings:
-    """Load explicit values first, then the documented environment variables."""
+    """Load explicit values, SystemLens variables, then compatible Elastic ones."""
     selected_endpoint = (
         endpoint
         if endpoint is not None
-        else os.environ.get("SYSTEMLENS_ELASTICSEARCH_URL")
+        else (
+            os.environ.get("SYSTEMLENS_ELASTICSEARCH_URL")
+            or os.environ.get("ELASTICSEARCH_URL")
+        )
     )
     selected_api_key = (
         api_key
         if api_key is not None
-        else os.environ.get("SYSTEMLENS_ELASTICSEARCH_API_KEY")
+        else (
+            os.environ.get("SYSTEMLENS_ELASTICSEARCH_API_KEY")
+            or os.environ.get("ELASTICSEARCH_API_KEY")
+        )
     )
     if selected_endpoint is not None:
         selected_endpoint = _normalise_endpoint(selected_endpoint)
@@ -144,7 +150,8 @@ class ElasticApmClient:
         if not settings.configured:
             raise ApmError(
                 "Configuration APM incomplète : définissez SYSTEMLENS_ELASTICSEARCH_URL "
-                "et SYSTEMLENS_ELASTICSEARCH_API_KEY."
+                "et SYSTEMLENS_ELASTICSEARCH_API_KEY (ou les variables Elastic "
+                "compatibles ELASTICSEARCH_URL et ELASTICSEARCH_API_KEY)."
             )
         assert settings.endpoint is not None
         assert settings.api_key is not None
@@ -438,7 +445,78 @@ def _read_relation_buckets(
                 break
         if buckets or truncated:
             return buckets, truncated, target_field
+    # Elastic APM 8.5 does not create service-destination metric rollups.
+    # Its span events retain the same source/target evidence, so use them as a
+    # bounded compatibility fallback for the Runtime dependency view.
+    search_traces = getattr(client, "search_traces", None)
+    if callable(search_traces):
+        for target_field in ("service.target.name", "span.destination.service.resource"):
+            buckets, truncated = _read_legacy_relation_buckets(
+                search_traces, start, end, environment, max_buckets, target_field
+            )
+            if buckets or truncated:
+                return buckets, truncated, target_field
     return [], False, "service.target.name"
+
+
+def _read_legacy_relation_buckets(
+    search_traces: object,
+    start: datetime,
+    end: datetime,
+    environment: str | None,
+    max_buckets: int,
+    target_field: str,
+) -> tuple[list[dict[str, object]], bool]:
+    """Read service dependencies from legacy APM span events."""
+    if not callable(search_traces):
+        return [], False
+    buckets: list[dict[str, object]] = []
+    after_key: dict[str, object] | None = None
+    while len(buckets) < max_buckets:
+        remaining = max_buckets - len(buckets)
+        response = search_traces(_legacy_relation_query(
+            start, end, environment, target_field, min(1_000, remaining), after_key
+        ))
+        aggregations = response.get("aggregations")
+        relations = aggregations.get("relations") if isinstance(aggregations, dict) else None
+        if not isinstance(relations, dict):
+            return buckets, False
+        page = relations.get("buckets")
+        if not isinstance(page, list):
+            return buckets, False
+        page_buckets = [item for item in page if isinstance(item, dict)]
+        buckets.extend(page_buckets)
+        next_after = relations.get("after_key")
+        if not page_buckets or not isinstance(next_after, dict):
+            return buckets, False
+        after_key = next_after
+    return buckets, True
+
+
+def _legacy_relation_query(
+    start: datetime,
+    end: datetime,
+    environment: str | None,
+    target_field: str,
+    size: int,
+    after_key: dict[str, object] | None,
+) -> dict[str, object]:
+    query = _service_destination_query(start, end, environment, target_field, size, after_key)
+    filters = query["query"]["bool"]["filter"]  # type: ignore[index]
+    assert isinstance(filters, list)
+    filters[0] = {"term": {"processor.event": "span"}}
+    relations = query["aggs"]["relations"]  # type: ignore[index]
+    assert isinstance(relations, dict)
+    composite = relations["composite"]
+    assert isinstance(composite, dict)
+    sources = composite["sources"]
+    assert isinstance(sources, list)
+    sources[2] = {"target_type": {"terms": {"field": "span.type", "missing_bucket": True}}}
+    relations["aggs"] = {
+        "calls": {"value_count": {"field": "span.duration.us"}},
+        "duration_us": {"sum": {"field": "span.duration.us"}},
+    }
+    return query
 
 
 def _read_buckets_for_target_field(

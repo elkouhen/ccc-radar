@@ -28,9 +28,12 @@ incremental transaction. `store.py` owns SQLite persistence.
 `web.py` are thin delivery layers over the domain modules. `systemlens web`
 serves only an in-memory landing page and the two existing HTML projections:
 `/architecture` loads the persisted architecture snapshot and renders it for
-that request, while `/runtime` reads a fresh bounded APM projection for that
-request. The web layer has no filesystem-serving route, does not write SQLite,
-and does not persist APM observations or credentials. It binds to loopback by
+that request. If no local index exists, its explicit POST action creates the
+default configuration when needed and indexes the repository before rendering
+the snapshot. `/runtime` reads a fresh bounded APM projection for that request.
+The web layer has no filesystem-serving route and writes SQLite only for this
+explicit initial-index action; it does not persist APM observations or
+credentials. It binds to loopback by
 default; changing the host is an explicit user choice.
 
 ### Elastic APM digest adapter

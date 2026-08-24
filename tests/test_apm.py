@@ -338,6 +338,22 @@ def test_load_settings_keeps_an_explicit_value_ahead_of_environment(
         load_settings(endpoint="https://from-flag.example", api_key="")
 
 
+def test_load_settings_accepts_elastic_environment_variables(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("SYSTEMLENS_ELASTICSEARCH_URL", raising=False)
+    monkeypatch.delenv("SYSTEMLENS_ELASTICSEARCH_API_KEY", raising=False)
+    monkeypatch.setenv("ELASTICSEARCH_URL", "https://elastic.poc.test:443")
+    monkeypatch.setenv("ELASTICSEARCH_API_KEY", "id:secret")
+
+    settings = load_settings()
+
+    assert settings.endpoint == "https://elastic.poc.test:443"
+    assert settings.api_key == b64encode(b"id:secret").decode("ascii")
+    assert settings.endpoint_source == "env"
+    assert settings.api_key_source == "env"
+
+
 def test_load_settings_can_explicitly_disable_tls_verification() -> None:
     settings = load_settings(
         endpoint="https://elastic.example.test",

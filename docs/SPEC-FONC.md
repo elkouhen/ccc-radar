@@ -16,6 +16,13 @@ exclude: [".git/**", ".venv/**", "node_modules/**", ".systemlens/**"]
 min_severity: INFO
 ```
 
+For Elastic APM commands, explicit `--endpoint` and `--api-key` values take
+precedence over `SYSTEMLENS_ELASTICSEARCH_URL` and
+`SYSTEMLENS_ELASTICSEARCH_API_KEY`. When the SystemLens-specific variables are
+absent, the compatible `ELASTICSEARCH_URL` and `ELASTICSEARCH_API_KEY` shell
+variables are accepted. No credential is written to the SystemLens
+configuration or SQLite index.
+
 This is a breaking rename from `cccr`, `archlens`, and `codeatlas`: SystemLens
 does not read an existing `.cccr/`, `.archlens/`, or `.codeatlas/` directory.
 Run `systemlens init` and
@@ -52,7 +59,7 @@ but does not alter AST endpoint extraction.
 | `systemlens export microservices (--html FILE \| --c4 DIRECTORY \| --json) [--root-path DIRECTORY] [--apm-overlay --since DURATION --environment NAME --endpoint URL --api-key KEY --insecure --max-relations N --max-buckets N]` | Exports the microservice, Kafka-topic and MongoDB-collection topology. `--root-path` provides the local source root for HTML VS Code links. `--apm-overlay` (HTML only) additionally queries bounded Elastic APM aggregates and overlays them on the graph; `--insecure` explicitly accepts a self-signed TLS certificate; see "Elastic APM microservice overlay". |
 | `systemlens export modules --html FILE` | Exports the Maven/Gradle build-dependency view. |
 | `systemlens export request-reply --html FILE` | Exports Strategy1 Kafka request/reply candidates. |
-| `systemlens web [--host HOST] [--port PORT] [--since DURATION] [--environment NAME] [--endpoint URL] [--api-key KEY] [--insecure] [--max-services N] [--max-transactions N] [--max-dependencies N] [--max-buckets N] [--max-timeline-events N]` | Starts the local Python web application at `http://127.0.0.1:8765/` by default. Its home page links to Architecture and APM runtime. Architecture renders the persisted snapshot for each request; APM runtime performs the same bounded, read-only query as `apm report` each time that page is opened. An unavailable APM configuration affects only that page. The default loopback host prevents network exposure unless the user explicitly changes `--host`. |
+| `systemlens web [--host HOST] [--port PORT] [--since DURATION] [--environment NAME] [--endpoint URL] [--api-key KEY] [--insecure] [--max-services N] [--max-transactions N] [--max-dependencies N] [--max-buckets N] [--max-timeline-events N]` | Starts the local Python web application at `http://127.0.0.1:8765/` by default. Its home page links to Architecture and APM runtime. Architecture renders the persisted snapshot for each request, excluding test-fixture microservices and every relation attached to them; when no index exists, it offers an explicit local button that creates the default configuration when needed and indexes the repository. APM runtime performs the same bounded, read-only query as `apm report` each time that page is opened. An unavailable APM configuration affects only that page. The default loopback host prevents network exposure unless the user explicitly changes `--host`. |
 | `systemlens mcp` | Starts the stdio MCP server. |
 
 `systemlens index` reports its file delta, AST analysis stage, persisted endpoint

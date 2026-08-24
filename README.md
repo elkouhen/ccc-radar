@@ -98,6 +98,12 @@ systemlens apm report --since 1h --all-spans --html apm-runtime.html --data apm-
 systemlens apm report --since 10h --html apm-runtime.html --interval-data apm-runtime-intervals --interval 1h
 ```
 
+`SYSTEMLENS_ELASTICSEARCH_URL` and `SYSTEMLENS_ELASTICSEARCH_API_KEY` take
+precedence. For compatibility with Elastic tooling, SystemLens also accepts
+`ELASTICSEARCH_URL` and `ELASTICSEARCH_API_KEY`; this lets a shell session that
+has sourced an Elastic credentials loader run SystemLens without copying those
+values.
+
 The export defaults to 80 relations and 50 KB. Its `coverage` object states
 when either the Elasticsearch aggregation or the output budget truncated the
 result, so Pi can distinguish absence from incomplete coverage.
