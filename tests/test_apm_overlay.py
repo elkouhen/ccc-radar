@@ -70,7 +70,7 @@ def _latency_bucket(
 
 
 class FakeOverlayClient:
-    """Serves the same two aggregate views as ``apm export``/``apm report``."""
+    """Serves the same two aggregate views as ``apm export``."""
 
     def __init__(self) -> None:
         self.queries: list[dict[str, object]] = []

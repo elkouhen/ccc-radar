@@ -21,12 +21,6 @@ from systemlens.apm import (
     export_digest,
     load_settings as load_apm_settings,
 )
-from systemlens.apm_report import (
-    build_runtime_report,
-    build_runtime_reports_by_interval,
-    render_runtime_report_html,
-    runtime_report_json,
-)
 from systemlens.apm_overlay import build_microservice_overlay
 from systemlens.architecture import (
     analyze as analyze_architecture,
@@ -105,8 +99,7 @@ apm_app = typer.Typer(
     help=(
         "Vérifier l'accès Elastic APM et produire des synthèses bornées, sans traces brutes.\n\n"
         "Exemples : `systemlens apm doctor --json`, "
-        "`systemlens apm export --since 1h --out apm-digest.json`, "
-        "`systemlens apm report --since 1h --html runtime.html`."
+        "`systemlens apm export --since 1h --out apm-digest.json`."
     )
 )
 topics_app = typer.Typer(
@@ -1061,36 +1054,12 @@ def version() -> None:
 def web_cmd(
     host: str = typer.Option("127.0.0.1", "--host", help="Adresse d'écoute locale."),
     port: int = typer.Option(8765, "--port", min=1, max=65535, help="Port HTTP."),
-    since: str = typer.Option("1h", "--since", help="Fenêtre APM : 15m, 1h, 7d, etc."),
-    environment: str | None = typer.Option(None, "--environment", help="Filtre APM service.environment exact."),
-    endpoint: str | None = typer.Option(None, "--endpoint", help="URL Elasticsearch ; sinon SYSTEMLENS_ELASTICSEARCH_URL."),
-    api_key: str | None = typer.Option(None, "--api-key", help="Clé Elasticsearch ; sinon SYSTEMLENS_ELASTICSEARCH_API_KEY."),
-    insecure: bool = typer.Option(False, "--insecure", help="Accepte un certificat TLS APM auto-signé."),
-    max_services: int = typer.Option(30, "--max-services", min=1, max=1_000),
-    max_transactions: int = typer.Option(50, "--max-transactions", min=1, max=10_000),
-    max_dependencies: int = typer.Option(80, "--max-dependencies", min=1, max=10_000),
-    max_buckets: int = typer.Option(1_000, "--max-buckets", min=1, max=100_000),
-    max_timeline_events: int = typer.Option(500, "--max-timeline-events", min=1, max=2_000),
 ) -> None:
-    """Démarre l'espace web local Architecture + APM runtime.
+    """Démarre l'espace web local Architecture.
 
-    La vue Architecture lit le snapshot indexé à chaque ouverture. La vue APM
-    exécute une lecture bornée à chaque ouverture ; elle reste indisponible
-    tant que l'accès APM n'est pas configuré, sans empêcher l'architecture.
+    La vue Architecture lit le snapshot indexé à chaque ouverture.
     """
-    application = SystemLensWebApplication(
-        Path.cwd(),
-        since=since,
-        environment=environment,
-        endpoint=endpoint,
-        api_key=api_key,
-        insecure_tls=insecure,
-        max_services=max_services,
-        max_transactions=max_transactions,
-        max_dependencies=max_dependencies,
-        max_buckets=max_buckets,
-        max_timeline_events=max_timeline_events,
-    )
+    application = SystemLensWebApplication(Path.cwd())
     try:
         server = create_web_server(application, host, port)
     except OSError as exc:
@@ -1322,183 +1291,6 @@ def apm_export_cmd(
     exported = coverage["relations_exported"] if isinstance(coverage, dict) else "?"
     typer.echo(
         f"Digest APM écrit : {out} ({exported} relations, {len(serialized.encode('utf-8'))} octets)."
-    )
-
-
-@apm_app.command("report")
-def apm_report_cmd(
-    html: Path = typer.Option(..., "--html", help="Fichier HTML autonome à produire."),
-    data: Optional[Path] = typer.Option(  # noqa: UP007
-        None,
-        "--data",
-        help="JSON séparé chargé par le HTML ; servir le répertoire via HTTP.",
-    ),
-    interval_data: Optional[Path] = typer.Option(  # noqa: UP007
-        None,
-        "--interval-data",
-        help="Répertoire contenant un JSON par intervalle et son manifeste HTML.",
-    ),
-    interval: str = typer.Option(
-        "1h", "--interval", help="Pas des fichiers d'analyse : 15m, 1h, etc."
-    ),
-    since: str = typer.Option("1h", "--since", help="Fenêtre : 15m, 1h, 7d, etc."),
-    environment: Optional[str] = typer.Option(  # noqa: UP007
-        None, "--environment", help="Filtre exact service.environment (optionnel)."
-    ),
-    endpoint: Optional[str] = typer.Option(  # noqa: UP007
-        None,
-        "--endpoint",
-        help="URL Elasticsearch. Sinon SYSTEMLENS_ELASTICSEARCH_URL.",
-    ),
-    api_key: Optional[str] = typer.Option(  # noqa: UP007
-        None,
-        "--api-key",
-        help="Clé d'API Elasticsearch en lecture seule. Sinon SYSTEMLENS_ELASTICSEARCH_API_KEY.",
-    ),
-    insecure: bool = typer.Option(
-        False,
-        "--insecure",
-        help="Accepte un certificat TLS auto-signé (réduit la sécurité de la connexion).",
-    ),
-    max_services: int = typer.Option(
-        30, "--max-services", min=1, max=1_000, help="Services maximum affichés."
-    ),
-    max_transactions: int = typer.Option(
-        50,
-        "--max-transactions",
-        min=1,
-        max=10_000,
-        help="Transactions maximum affichées.",
-    ),
-    max_dependencies: int = typer.Option(
-        80,
-        "--max-dependencies",
-        min=1,
-        max=10_000,
-        help="Dépendances maximum affichées.",
-    ),
-    max_buckets: int = typer.Option(
-        1_000,
-        "--max-buckets",
-        min=1,
-        max=100_000,
-        help="Buckets Elastic maximum lus par vue avant troncature.",
-    ),
-    max_timeline_events: int = typer.Option(
-        500,
-        "--max-timeline-events",
-        min=1,
-        max=2_000,
-        help="Échantillons de transaction maximum dans Timeline (500 par défaut, 2 000 maximum).",
-    ),
-    all_spans: bool = typer.Option(
-        False,
-        "--all-spans",
-        help="Inclut les spans de toute la fenêtre, bornés par --max-timeline-events.",
-    ),
-) -> None:
-    """Produit une vue HTML APM interactive à partir d'agrégats bornés.
-
-    Le rapport contient des P95 pour les services et transactions, une moyenne
-    pour les dépendances et des comptes d'échecs agrégés. Il n'exporte aucune
-    trace, requête, identifiant ou message d'erreur.
-    """
-    client: ElasticApmClient | None = None
-    try:
-        if data is not None and interval_data is not None:
-            raise ApmError("`--data` et `--interval-data` ne peuvent pas être utilisés ensemble.")
-        settings = load_apm_settings(endpoint, api_key, insecure_tls=insecure)
-        client = ElasticApmClient(settings)
-        if interval_data is not None:
-            interval_data.mkdir(parents=True, exist_ok=True)
-            manifest_intervals: list[dict[str, str]] = []
-            manifest_path = interval_data / "index.json"
-
-            def write_interval_manifest() -> None:
-                manifest = {
-                    "schema_version": "apm-runtime-report-interval-manifest-v1",
-                    "interval": interval,
-                    "intervals": manifest_intervals,
-                }
-                manifest_path.write_text(
-                    json.dumps(manifest, ensure_ascii=False), encoding="utf-8"
-                )
-
-            def report_interval_progress(
-                index: int, total: int, window_start: datetime, window_end: datetime
-            ) -> None:
-                typer.echo(
-                    "APM : intervalle "
-                    f"{index}/{total} ({window_start.isoformat()} → {window_end.isoformat()})…",
-                    err=True,
-                )
-
-            def report_interval_completed(
-                index: int, total: int, interval_report: dict[str, object]
-            ) -> None:
-                spans = interval_report.get("timeline_spans")
-                span_count = len(spans) if isinstance(spans, list) else 0
-                filename = f"interval-{index:04}.json"
-                (interval_data / filename).write_text(
-                    runtime_report_json(interval_report), encoding="utf-8"
-                )
-                window = cast(dict[str, object], interval_report["window"])
-                manifest_intervals.append({
-                    "id": str(index),
-                    "data": filename,
-                    "label": f"{window['from']} – {window['to']}",
-                })
-                write_interval_manifest()
-                typer.echo(
-                    f"APM : intervalle {index}/{total} terminé — {span_count} spans importés.",
-                    err=True,
-                )
-
-            reports = build_runtime_reports_by_interval(
-                client, since=since, interval=interval, environment=environment,
-                max_services=max_services, max_transactions=max_transactions,
-                max_dependencies=max_dependencies, max_buckets=max_buckets,
-                max_timeline_events=max_timeline_events, all_spans=all_spans,
-                progress=report_interval_progress, completed=report_interval_completed,
-            )
-            report = reports[0]
-            manifest_url = os.path.relpath(manifest_path, html.parent)
-            document = render_runtime_report_html(report, interval_manifest_url=manifest_url)
-        else:
-            report = build_runtime_report(
-                client, since=since, environment=environment,
-                max_services=max_services, max_transactions=max_transactions,
-                max_dependencies=max_dependencies, max_buckets=max_buckets,
-                max_timeline_events=max_timeline_events, all_spans=all_spans,
-            )
-        if interval_data is None and data is not None:
-            data.write_text(runtime_report_json(report), encoding="utf-8")
-            data_url = os.path.relpath(data, html.parent)
-            document = render_runtime_report_html(report, data_url=data_url)
-        elif interval_data is None:
-            document = render_runtime_report_html(report)
-        html.write_text(document, encoding="utf-8")
-    except ApmError as exc:
-        typer.echo(str(exc), err=True)
-        if client is not None:
-            _print_apm_failed_request_curl(client)
-        raise typer.Exit(code=2) from exc
-    except OSError as exc:
-        typer.echo(f"Impossible d'écrire le rapport APM : {exc}", err=True)
-        raise typer.Exit(code=1) from exc
-    services = cast(list[object], report.get("services", []))
-    transactions = cast(list[object], report.get("transactions", []))
-    dependencies = cast(list[object], report.get("dependencies", []))
-    timeline_spans = cast(list[object], report.get("timeline_spans", []))
-    distributed_traces = cast(list[object], report.get("distributed_traces", []))
-    typer.echo(f"Rapport APM écrit : {html}.")
-    typer.echo(
-        "Résumé de génération : "
-        f"{len(services)} services, "
-        f"{len(transactions)} transactions agrégées, "
-        f"{len(dependencies)} dépendances, "
-        f"{len(timeline_spans)} spans affichés, "
-        f"{len(distributed_traces)} traces distribuées."
     )
 
 

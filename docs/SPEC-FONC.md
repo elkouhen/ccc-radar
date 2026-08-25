@@ -42,7 +42,6 @@ but does not alter AST endpoint extraction.
 | `systemlens version` | Prints the installed `systemlens` package version. |
 | `systemlens apm doctor [--endpoint URL] [--api-key KEY] [--insecure] [--json]` | Read-only validation of Elasticsearch access to the APM metrics. It reports only whether the endpoint and key are configured and their source (`flag` or `env`); it never prints the URL or key. `--insecure` explicitly accepts a self-signed TLS certificate. |
 | `systemlens apm export [--since DURATION] [--environment NAME] [--endpoint URL] [--api-key KEY] [--insecure] [--max-relations N] [--max-bytes N] [--max-buckets N] [--export-curl] [--out FILE]` | Reads `service_destination` aggregates from Elasticsearch and emits compact JSON to stdout, or writes it to `FILE`. It does not export raw spans, logs, headers, identifiers, or source content. A failed export preserves the safe HTTP/access error and prints read-only diagnostic guidance; HTTP 429 guidance includes Kibana Dev Tools commands for cluster health, disk allocation, and watermark settings, never the endpoint or API key. `--insecure` explicitly accepts a self-signed TLS certificate; `--export-curl` includes curl's equivalent `--insecure` flag and prints a reproducible curl command for the export's first APM query, using environment-variable references rather than credential values. |
-| `systemlens apm report --html FILE [--data FILE \| --interval-data DIRECTORY [--interval DURATION]] [--since DURATION] [--environment NAME] [--endpoint URL] [--api-key KEY] [--insecure] [--max-services N] [--max-transactions N] [--max-dependencies N] [--max-buckets N] [--max-timeline-events N]` | Reads bounded APM metric aggregates plus a bounded field projection of recorded transaction events and writes an HTML human investigation report. `--interval-data` writes one safe JSON projection per interval (one hour by default) plus a manifest; the HTML loads the selected interval through its selector. Its interactive graph uses the same Graphology/Sigma.js CDN assets as the architecture export and falls back to embedded SVG when unavailable. It never reads `_source`, request data, headers, bodies, logs, credentials, or unredacted error values; trace identifiers are held only in memory to create report-local waterfall references and are never exported. `--insecure` explicitly accepts a self-signed TLS certificate. |
 | `systemlens index [MANIFEST]... [--full] [--topic-strategy default\|strategy1] [--manifest FILE]... [--kubernetes] [--kubernetes-namespace NAME]` | Incrementally extracts and persists architecture facts. `--kubernetes` queries the active `kubectl` context for Deployments and StatefulSets; `--kubernetes-namespace` restricts it to one namespace. |
 | `systemlens microservices`, `topics`, `apis`, `dtos`, `mongodb`, `modules` | Browse the indexed catalog; `microservices`, `topics` and `mongodb` list the corresponding architecture objects directly, each with a `kind` and `name`, and support the documented list/show/neighbors actions and JSON output where applicable. |
 | `systemlens microservices topics\|apis\|mongodb\|properties\|openapi NAME [--root DIR] [--json]` | Follow one linked object kind from a single named microservice. |
@@ -59,7 +58,7 @@ but does not alter AST endpoint extraction.
 | `systemlens export microservices (--html FILE \| --c4 DIRECTORY \| --json) [--root-path DIRECTORY] [--apm-overlay --since DURATION --environment NAME --endpoint URL --api-key KEY --insecure --max-relations N --max-buckets N]` | Exports the microservice, Kafka-topic and MongoDB-collection topology. `--root-path` provides the local source root for HTML VS Code links. `--apm-overlay` (HTML only) additionally queries bounded Elastic APM aggregates and overlays them on the graph; `--insecure` explicitly accepts a self-signed TLS certificate; see "Elastic APM microservice overlay". |
 | `systemlens export modules --html FILE` | Exports the Maven/Gradle build-dependency view. |
 | `systemlens export request-reply --html FILE` | Exports Strategy1 Kafka request/reply candidates. |
-| `systemlens web [--host HOST] [--port PORT] [--since DURATION] [--environment NAME] [--endpoint URL] [--api-key KEY] [--insecure] [--max-services N] [--max-transactions N] [--max-dependencies N] [--max-buckets N] [--max-timeline-events N]` | Starts the local Python web application at `http://127.0.0.1:8765/` by default. Its home page links to Architecture and APM runtime. Architecture renders the persisted snapshot for each request, excluding test-fixture microservices and every relation attached to them; when no index exists, it offers an explicit local button that creates the default configuration when needed and indexes the repository. APM runtime performs the same bounded, read-only query as `apm report` each time that page is opened. An unavailable APM configuration affects only that page. The default loopback host prevents network exposure unless the user explicitly changes `--host`. |
+| `systemlens web [--host HOST] [--port PORT]` | Starts the local Python web application at `http://127.0.0.1:8765/` by default. Its home page links to Architecture. Architecture renders the persisted snapshot for each request, excluding test-fixture microservices and every relation attached to them; when no index exists, it offers an explicit local button that creates the default configuration when needed and indexes the repository. The default loopback host prevents network exposure unless the user explicitly changes `--host`. |
 | `simpleweb [DIRECTORY] [--host HOST] [--port PORT]` | Serves static files from `DIRECTORY`, or from the current directory when omitted, for opening generated HTML files that load adjacent JSON. It binds to `http://127.0.0.1:8000/` by default, has no write routes, and does not create or modify files. The directory must exist. |
 | `systemlens mcp` | Starts the stdio MCP server. |
 
@@ -278,205 +277,11 @@ and a protective Elasticsearch `--max-buckets` read limit (5,000 by default).
 No digest result is persisted in SQLite, surfaced through MCP, or merged into
 an architecture HTML export.
 
-## Elastic APM runtime report
-
-`apm report` is an explicit read-only command which requires `--html FILE`.
-It accepts the same bounded UTC `--since` duration and optional exact
-environment filter as `apm export`. It queries the same APM and OpenTelemetry
-metric streams with `size: 0` for aggregate views and both `traces-apm*` and
-`traces-*.otel-*` for at most 500 recorded transaction
-projections by default (configurable with `--max-timeline-events`, capped at
-2,000), then emits a versioned
-`apm-runtime-report-v2` observation embedded in the requested HTML file. It is not persisted in
-SQLite, merged into the static architecture snapshot, or exposed through MCP.
-With `--all-spans`, the same `--max-timeline-events` limit is a strict read
-limit: SystemLens stops the Elasticsearch scroll once that many span documents
-have been read, rather than traversing the complete selected window.
-After writing the file, the CLI prints a generation summary with the displayed
-service, aggregate-transaction, dependency, execution-log-span, and
-distributed-trace counts. The span and trace figures are bounded report
-projections, not exhaustive counts of the selected APM window.
-
-The service view reads `metricset.name=service_transaction`; the transaction
-view reads `metricset.name=transaction`; both aggregate the `value_count` and
-`sum` metrics of `transaction.duration.summary`, and the P95 of
-`transaction.duration.histogram`. They derive failures from known outcomes
-minus `event.success_count` successes and expose outcome coverage. The summary
-failure rate uses known outcomes only and displays its coverage. To avoid
-exporting arbitrary operation names, transaction rows with the same safe
-service/type category are merged; their displayed `Highest operation P95` is
-the maximum P95 among the merged operations, not a recomputed category
-percentile. The dependency
-view reads `metricset.name=service_destination` and reports call count, average
-latency, and aggregate failure rate. It first uses `service.target.name`, then
-retries the legacy `span.destination.service.resource` field only when the
-first query is empty. Dependency P95 is not returned: it requires a separate,
-explicitly approved second pass over sampled span aggregates.
-All aggregate reads are split into one-hour windows, newest first, then merged
-in memory. Counts and duration sums are added; the displayed P95 is the highest
-hourly P95 and is not a recomputed percentile for the complete window.
-When `--interval-data` is used, the CLI writes a progress line to stderr before
-each interval, including its ordinal, total, and UTC window; this progress does
-not alter the generated JSON or HTML. After each completed interval it also
-reports the number of spans projected into that interval's JSON file.
-Each completed interval JSON and the updated manifest are written immediately
-to `--interval-data`; if a later interval fails, those earlier interval files
-remain available while the HTML file is not written.
-When externally loaded JSON omits an expected report attribute, the HTML emits
-a browser-console warning listing only the missing attribute names; it never
-logs telemetry values or credentials.
-The HTML also includes a Data quality panel that checks the expected safe report
-attributes, validates projected-list shapes, and reports only attribute names
-and record counts; it never displays telemetry values in its analysis.
-
-The report starts with a bounded investigation-priority ranking. It combines
-observed volume, aggregate error rate, and service/transaction P95 or dependency
-average latency only as a triage aid; it is not an SLO verdict or a causal
-claim. Its context shows the UTC window, environment, snapshot instant, and a
-visible complete/limited coverage state. The summary failure rate is calculated
-from the service aggregate only and is therefore not double-counted across the
-service and transaction views.
-
-The Transactions tab additionally displays up to 20 recent distributed-trace
-waterfalls. They are grouped and sorted by the HTTP source service, a generic
-messaging source when a producer span follows the observed publish convention,
-or their root service. Trace, span, and parent identifiers are used only in
-memory to reconstruct the tree and are never embedded in the HTML or persisted.
-Each waterfall exports only timestamp, service, safe workload labels,
-transaction kind, outcome, relative timing, duration, and tree depth; it is
-therefore an exemplar for investigation, not a complete trace archive. Trace
-selection and each per-trace span limit expose truncation in the report status
-and on each partial waterfall. Its card
-starts with the cross-service route and distributed transaction operations, and
-the tab offers an origin filter so database spans can be read as details of the
-selected flow.
-For traces with more than 20 spans, nested spans are collapsed by default.
-Expanding a span reveals only its descendants, so dense traces remain
-navigable. The report retrieves at most 500 spans per waterfall and continues
-to mark any truncated waterfall as partial.
-
-The report separates its investigation modes into Services, Transaction
-workloads, Spans, Traces, and Dependencies tabs. Each
-tab starts with
-the same observed-service filter. Selecting a service in any tab synchronizes
-the selection across all tabs and their view-specific controls. Services contains
-the context, priority ranking, service hotspot table, and recurring failures.
-Services contains the slow-transaction ranking. Transaction workloads provides
-the ownership graph. Traces provides the waterfall exemplars and
-their origin filter. Its observed-service and root type (`HTTP/request`,
-`messaging`, or other) filters narrow the bounded waterfall examples locally;
-they do not issue a new Elasticsearch request. The optional `10
-highest-impact traces` filter groups matching waterfalls by their safe
-service/type/route category, ranks categories by observed cumulative duration
-(duration across all recorded executions), then displays up to ten distinct
-exemplars with their execution count and cumulative duration.
-The `10 traces with most errors` filter instead retains failed waterfalls,
-groups them by the same safe category, and ranks up to ten exemplars by their
-observed error count. The count shown on each card is limited to the embedded
-waterfall data and is not an exhaustive error total; it represents failed
-executions of the grouped operation, not errors on one individual span.
-Spans offers equivalent `10 spans with most errors` filtering:
-it groups failed spans by safe service/type/label, ranks those groups by
-observed error count, and shows one exemplar and count per group.
-Selecting a span in a distributed waterfall reveals its safe execution details:
-service, operation, kind, type, observed outcome, relative start offset, and
-duration. For failures, the report explicitly states that raw error messages
-and exception data are excluded. It displays a sanitized error category and
-controlled message when the telemetry error type can be classified (for
-example, `Dependency timed out`); it never displays the raw telemetry error
-message. Failed spans are also visually distinct in
-the waterfall through a red row, red timing bar, and an `Error` badge.
-Services also presents a bounded, action-oriented anomaly summary for observed
-service and dependency error rates, failed trace exemplars, and incomplete
-outcome coverage. Selecting a signal opens Traces with the relevant local
-focus; it is an investigation priority, not a causal claim. Traces groups
-failed span examples into safe failure signatures (service, origin, sanitized
-category, and trace step) and displays a service-by-step failure matrix. Both
-explicitly count only currently embedded examples. A selected span also shows
-the trace duration, longest recorded span, and non-exclusive recorded duration
-by service; nested spans may overlap, so this is a timing explanation rather
-than a calculated critical path. Trace and span duration badges compare only
-with bounded embedded examples of the same safe grouping.
-Dependencies contains the directed map, its map mode,
-service, and workload selectors, the selected node's aggregate workloads and
-observed directions, the dependency table, and focused flows. The shared
-observed-service selector is duplicated for access at the top of every tab;
-other selectors remain owned by their view. Its primary visual is
-an interactive directed service map: circle nodes are
-observed services and diamond nodes are observed messaging targets. Every arrow
-is directed from the observed source service to its target; it is labelled HTTP
-for a non-messaging target and `send` for a recognized outgoing messaging target.
-Edge thickness represents volume and risk colour errors or comparatively high
-average latency. It offers hotspot/all, service, and workload-type filters. Selecting a service opens its
-HTTP (`transaction.type=request` or `http`), messaging
-(`transaction.type=messaging`), and other transaction aggregates alongside its
-inbound and outbound dependencies. A messaging diamond is an APM target whose
-type indicates messaging (`kafka`, `rabbitmq`, `jms`, etc.); its name is not
-claimed to be a confirmed broker topic. The map does not assert a transaction-
-to-dependency call. Each ranking
-reports `items_seen`, `items_exported`, its result limit, bucket limit, and
-truncation reasons. A zero result means no matching aggregate was observed in
-the covered window; it does not prove a static HTTP, Kafka, MongoDB, or S3
-dependency is absent. Service P95 values are approximate histogram percentiles;
-merged transaction rows explicitly show the highest constituent-operation P95.
-
-The Spans tab is a chronological, bounded view for selected
-cross-service traces. It displays safe span labels, service, span type,
-outcome, timestamp, and duration. Its filters narrow the embedded span set by
-service and type (including `request` and `messaging` when observed); they do
-not query Elasticsearch again and therefore cannot extend the report window. The view
-states its displayed span count and waterfall-exemplar count, so it cannot be
-mistaken for an exhaustive execution archive. Its Elasticsearch query sets
-`_source: false` and retrieves only `@timestamp`, service name, span name/type,
-duration, outcome, and a transient trace ID. Span names are replaced with the
-safe `Span` label and types are allowlisted before export. It never exports
-request or response data, headers, bodies, stack traces, logs, error values,
-result values, or messaging queue/topic names.
-The optional `10 longest spans` filter retains the ten longest spans after all
-other Timeline filters and keeps their chronological display order.
-Selecting a Span entry opens the Traces view and filters waterfalls to the
-exact associated trace. Selecting a span in a trace keeps its safe execution
-details visible there and, when that span is present in the bounded Spans view,
-offers an action to open the exact matching Span entry. SystemLens receives
-trace and span IDs only in memory to create report-local opaque references,
-then removes the original IDs before serializing the report. The report exposes
-a clear action to remove the exact-trace filter; it never displays a route name
-or trace ID. When a trace opens a matching Span, Spans offers a return action
-to the exact originating trace.
-
-The report does not correlate observed names with static identities in this
-release. Its aggregate views remain separate from the Spans view's bounded
-transaction-field projection; trace IDs, request data, headers, bodies, log
-messages, credentials, unredacted exception values, and telemetry-controlled
-operation labels are excluded.
-
-The Transactions view contains all observed aggregate transaction workloads in
-the selected window, including local operations. Distributed-trace waterfalls
-remain a separate, bounded view: SystemLens uses trace IDs only transiently to
-select those multi-service exemplars; it never exports, persists, or displays
-the identifiers.
-
-The APM HTTP client bounds each Elasticsearch request to 15 seconds. Trace and
-span reads are split into one-hour windows, newest first, and stop once their
-explicit result budget is reached. A server-side Elasticsearch `timed_out`
-response is treated as a timeout even when it uses HTTP 200. If any
-Elasticsearch request times out, `apm report` fails with its safe timeout error
-and does not write a partial report.
-
-An `apm report` file is a one-shot snapshot and does not persist or infer a
-historical baseline. It must not present a regression comparison unless a future
-explicit comparison input and coverage contract are added.
-
-Kafka latency, consumer failures, MongoDB activity, S3 activity, and Kubernetes
-capacity signals require their own documented source fields and availability
-checks. Their absence must be reported as unavailable coverage rather than
-estimated from another telemetry type.
-
 ## Elastic APM microservice overlay
 
 `export microservices --html FILE --apm-overlay` decorates the static
 microservice graph with the same bounded, read-only APM aggregates as
-`apm export`/`apm report`, using the same `--since` (default `1h`),
+`apm export`, using the same `--since` (default `1h`),
 `--environment`, connection, and result-limit flags — except `--max-buckets`,
 which defaults to 2,000 for the overlay versus 5,000 for `apm export`, because
 the overlay reads two aggregate queries per export. It is opt-in and requires

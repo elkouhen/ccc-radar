@@ -1,10 +1,9 @@
-"""Local web application for the static architecture and runtime APM views.
+"""Local web application for the static architecture view.
 
 The application is intentionally built on :mod:`http.server`: SystemLens keeps
-its normal installation dependency-free and the views already own their HTML
+its normal installation dependency-free and the view already owns its HTML
 and client-side interactions. It normally reads the architecture snapshot, but
-can explicitly create a missing local index from the Architecture page. It
-never persists APM observations.
+can explicitly create a missing local index from the Architecture page.
 """
 
 from __future__ import annotations
@@ -14,10 +13,8 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import TypeAlias
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import urlsplit
 
-from systemlens.apm import ApmError, ElasticApmClient, load_settings
-from systemlens.apm_report import build_runtime_report, render_runtime_report_html
 from systemlens.architecture_inventory import ArchitectureInventoryError, load_architecture_inventory
 from systemlens.config import ConfigError, init_config, load_config
 from systemlens.graph import graph_edges_from_relations
@@ -27,54 +24,27 @@ from systemlens.render import render_graph_html
 from systemlens.store import Store, StoreError
 
 Document: TypeAlias = tuple[HTTPStatus, str]
-_RUNTIME_WINDOWS = frozenset({"15m", "1h", "6h", "24h", "7d"})
 
 
 class SystemLensWebApplication:
-    """Serve the two existing HTML projections from their authoritative inputs."""
+    """Serve the static architecture HTML projection from its authoritative input."""
 
-    def __init__(
-        self,
-        root: Path,
-        *,
-        since: str,
-        environment: str | None,
-        endpoint: str | None,
-        api_key: str | None,
-        insecure_tls: bool,
-        max_services: int,
-        max_transactions: int,
-        max_dependencies: int,
-        max_buckets: int,
-        max_timeline_events: int,
-    ) -> None:
+    def __init__(self, root: Path) -> None:
         self.root = root.resolve()
-        self.since = since
-        self.environment = environment
-        self.endpoint = endpoint
-        self.api_key = api_key
-        self.insecure_tls = insecure_tls
-        self.max_services = max_services
-        self.max_transactions = max_transactions
-        self.max_dependencies = max_dependencies
-        self.max_buckets = max_buckets
-        self.max_timeline_events = max_timeline_events
 
-    def document(self, path: str, *, since: str | None = None) -> Document:
+    def document(self, path: str) -> Document:
         """Return one complete HTML document for a request path."""
         if path in {"/", "/index.html"}:
             return HTTPStatus.OK, _HOME_HTML
         if path == "/architecture":
             return self._architecture_document()
-        if path == "/runtime":
-            return self._runtime_document(since if since in _RUNTIME_WINDOWS else self.since)
-        return HTTPStatus.NOT_FOUND, _error_document("Page not found", "Choose Architecture or APM runtime.")
+        return HTTPStatus.NOT_FOUND, _error_document("Page not found", "Choose Architecture.")
 
     def post(self, path: str) -> Document:
         """Handle the small set of state-changing local web actions."""
         if path == "/architecture/index":
             return self._create_architecture_index()
-        return HTTPStatus.NOT_FOUND, _error_document("Page not found", "Choose Architecture or APM runtime.")
+        return HTTPStatus.NOT_FOUND, _error_document("Page not found", "Choose Architecture.")
 
     def _architecture_document(self) -> Document:
         if not db_path(self.root).is_file():
@@ -143,26 +113,6 @@ class SystemLensWebApplication:
             )
         return self._architecture_document()
 
-    def _runtime_document(self, since: str) -> Document:
-        try:
-            settings = load_settings(
-                self.endpoint, self.api_key, insecure_tls=self.insecure_tls
-            )
-            report = build_runtime_report(
-                ElasticApmClient(settings),
-                since=since,
-                environment=self.environment,
-                max_services=self.max_services,
-                max_transactions=self.max_transactions,
-                max_dependencies=self.max_dependencies,
-                max_buckets=self.max_buckets,
-                max_timeline_events=self.max_timeline_events,
-            )
-        except ApmError as exc:
-            return HTTPStatus.SERVICE_UNAVAILABLE, _error_document("APM runtime unavailable", str(exc))
-        report["selected_window"] = since
-        return HTTPStatus.OK, render_runtime_report_html(report)
-
 
 def create_web_server(
     application: SystemLensWebApplication, host: str, port: int
@@ -172,8 +122,7 @@ def create_web_server(
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self) -> None:  # noqa: N802 - required stdlib handler name
             parsed = urlsplit(self.path)
-            since = parse_qs(parsed.query).get("since", [None])[0]
-            status, document = application.document(parsed.path, since=since)
+            status, document = application.document(parsed.path)
             payload = document.encode("utf-8")
             self.send_response(status)
             self.send_header("Content-Type", "text/html; charset=utf-8")
@@ -206,7 +155,7 @@ def _error_document(title: str, detail: str) -> str:
 
 _HOME_HTML = """<!doctype html><html lang="en"><head><meta charset="utf-8"><title>SystemLens</title>
 <style>body{font-family:system-ui,sans-serif;max-width:56rem;margin:4rem auto;padding:0 1rem;color:#172033}.cards{display:flex;gap:1rem;flex-wrap:wrap}.card{border:1px solid #dbe3f0;border-radius:.75rem;padding:1.25rem;flex:1 1 20rem}a{color:#2563eb;font-weight:650}</style></head>
-<body><h1>SystemLens</h1><p>Local architecture and runtime investigation workspace.</p><div class="cards"><section class="card"><h2>Architecture</h2><p>Indexed microservices, APIs, Kafka, MongoDB, build, and quality views.</p><a href="/architecture">Open architecture</a></section><section class="card"><h2>APM runtime</h2><p>Bounded read-only Elastic APM aggregate report for the configured window.</p><a href="/runtime">Open APM runtime</a></section></div></body></html>"""
+<body><h1>SystemLens</h1><p>Local architecture investigation workspace.</p><div class="cards"><section class="card"><h2>Architecture</h2><p>Indexed microservices, APIs, Kafka, MongoDB, build, and quality views.</p><a href="/architecture">Open architecture</a></section></div></body></html>"""
 
 
 def _missing_index_document() -> str:

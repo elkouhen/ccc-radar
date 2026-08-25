@@ -36,19 +36,15 @@ systemlens export microservices --html architecture.html
 Use `systemlens microservices`, `systemlens topics`, `systemlens apis`, and
 `systemlens analyze audit` for terminal-oriented exploration.
 
-To use the static architecture export and the APM runtime report as one local
-Python web application, start:
+To use the static architecture export as a local Python web application, start:
 
 ```bash
 systemlens web
 ```
 
 Open `http://127.0.0.1:8765/`. The Architecture page renders the current
-persisted index snapshot on each request. The APM runtime page performs its
-usual bounded, read-only APM query when opened; if APM is not configured, that
-page explains the unavailable configuration while the Architecture page stays
-available. Use `--host`, `--port`, `--since`, and the documented APM options to
-adjust the local server. The default loopback address avoids exposing indexed
+persisted index snapshot on each request. Use `--host` and `--port` to adjust
+the local server. The default loopback address avoids exposing indexed
 architecture details on the network.
 
 When an HTML export loads adjacent JSON data, serve its output directory with:
@@ -97,15 +93,6 @@ export SYSTEMLENS_ELASTICSEARCH_API_KEY=...
 systemlens apm doctor --json
 systemlens apm export --since 1h --environment production --out apm-digest.json
 pi -p @apm-digest.json "Analyse the service dependencies, error rates and latency hotspots."
-
-# Self-contained runtime overview for human investigation
-systemlens apm report --since 1h --environment production --html apm-runtime.html
-
-# Lightweight HTML plus a JSON sidecar, useful with --all-spans
-systemlens apm report --since 1h --all-spans --html apm-runtime.html --data apm-runtime.json
-
-# One JSON projection per hour; choose the interval from the HTML selector.
-systemlens apm report --since 10h --html apm-runtime.html --interval-data apm-runtime-intervals --interval 1h
 ```
 
 `SYSTEMLENS_ELASTICSEARCH_URL` and `SYSTEMLENS_ELASTICSEARCH_API_KEY` take
@@ -117,47 +104,6 @@ values.
 The export defaults to 80 relations and 50 KB. Its `coverage` object states
 when either the Elasticsearch aggregation or the output budget truncated the
 result, so Pi can distinguish absence from incomplete coverage.
-
-`apm report` creates an explicit HTML file for human review. Its interactive
-graph uses the same Graphology/Sigma.js CDN assets as the architecture export;
-the embedded SVG fallback remains available if those assets cannot load.
-It starts with action-oriented anomaly signals based on observed error rates,
-latency, outcome coverage, and failed trace exemplars, then ranks services and transactions by P95 latency
-(with their averages, volume, and aggregate failure rate), includes a directed
-service map and lists recurring aggregate failures. Its modes are separated into
-Services, Transaction workloads, Spans, Traces, and Dependencies tabs; each ranking and its
-filters live in the matching operational view.
-Without `--data`, the report is self-contained. With `--data`, the HTML stays
-small and loads the adjacent JSON file; serve their directory over HTTP (for
-example in WSL: `python3 -m http.server 8000`) then open
-`http://localhost:8000/apm-runtime.html` from the Windows browser.
-With `--interval-data`, the directory contains an `index.json` manifest and one
-safe JSON projection per interval; the HTML selector loads only the chosen
-interval. Serve the HTML and that directory over HTTP.
-The report also
-records its snapshot window and whether any view was truncated, so it can be
-shared without mistaking incomplete rankings for absence. The Transactions tab
-includes all observed aggregate transaction workloads, including local ones;
-it also shows recent distributed-trace waterfalls, grouped by their HTTP source
-service or a generic messaging source, with nested service and database spans.
-Each card shows the cross-service route and safe workload labels before the
-detailed waterfall, and can be filtered by origin. Traces also groups embedded
-failures into signatures and a service-by-step matrix; its duration explanation
-is an investigation aid, not a calculated critical path. IDs and arbitrary
-operation values are used only in memory to form the tree and are never embedded.
-The Spans tab shows a bounded projection of recorded spans. It
-never embeds `_source`, trace IDs, request data, headers, bodies, error
-messages, results, messaging targets, or arbitrary operation values. Dependency P95 is
-deliberately not estimated, and the one-shot report has no historical baseline.
-Span records are limited to 500 by default (2,000 maximum). HTTP
-spans show their method and route; Kafka spans show their topic. Each
-distributed trace waterfall is limited to 100 spans to respect Elasticsearch's
-default `index.max_inner_result_window`. If a bounded Elasticsearch query
-times out (including a server-side `timed_out` response), report generation
-fails without writing a partial file. The Traces tab lists the bounded
-distributed-trace waterfalls: selecting a Span entry filters to its matching
-trace, and a span selected in a trace can open its matching Spans entry while
-its trace detail remains visible.
 
 ### Inspect the source aggregation
 

@@ -26,21 +26,20 @@ incremental transaction. `store.py` owns SQLite persistence.
 
 `cli.py`, `mcp_server.py`, and the standard-library local HTTP server in
 `web.py` are thin delivery layers over the domain modules. `systemlens web`
-serves only an in-memory landing page and the two existing HTML projections:
-`/architecture` loads the persisted architecture snapshot and renders it for
+serves only an in-memory landing page and the existing `/architecture` HTML
+projection: it loads the persisted architecture snapshot and renders it for
 that request. If no local index exists, its explicit POST action creates the
 default configuration when needed and indexes the repository before rendering
-the snapshot. `/runtime` reads a fresh bounded APM projection for that request.
+the snapshot.
 The web layer has no filesystem-serving route and writes SQLite only for this
-explicit initial-index action; it does not persist APM observations or
-credentials. It binds to loopback by
+explicit initial-index action; it does not persist credentials. It binds to loopback by
 default; changing the host is an explicit user choice.
 
 The separate `simpleweb` executable is a dependency-free static server for an
 explicit report directory. It uses `SimpleHTTPRequestHandler` with that
 directory as its only document root, has no application or write routes, and
 binds to loopback by default. It is intentionally separate from `systemlens
-web`, whose routes are in-memory architecture and runtime projections.
+web`, whose only route is the in-memory architecture projection.
 
 ### Elastic APM digest adapter
 
@@ -62,150 +61,12 @@ contains its time window, metric field used, aggregate relations, and explicit
 coverage/truncation metadata. It contains no raw span, trace, log, request, or
 source data and is not merged with a snapshot.
 
-### Elastic APM runtime report projection
-
-`apm_report.py` constructs an in-memory `apm-runtime-report-v2` observation
-from three explicit read-only aggregate queries over both Elastic APM and
-compatible OpenTelemetry metric streams, plus bounded span-execution and
-distributed-trace exemplar queries over `traces-apm*` and
-`traces-*.otel-*` (the Elastic Agent/EDOT dataset is configurable). Its service
-and transaction views page composite buckets and aggregate transaction count,
-duration sum, success/outcome count from `event.success_count`, and the P95
-percentile of `transaction.duration.histogram`. Failure count is known outcomes
-minus successes; error rate is calculated only over known outcomes and the
-projection records and displays its outcome coverage. Redacted transaction
-labels are merged by service and transaction type. Transaction aggregates are
-not constrained to traces spanning multiple services; distributed-trace
-selection is used only for waterfall exemplars and the default Timeline
-projection. Their exported P95 is
-explicitly the maximum constituent-operation P95, never a synthetic aggregate
-percentile. Its dependency view reuses the bounded
-`service_destination` aggregate adapter and therefore intentionally reports
-only average latency, call count, and aggregate failure rate.
-
-All metric aggregate queries use `size: 0` and are split into one-hour windows,
-newest first. SystemLens merges matching service, transaction, and dependency
-buckets in memory: counts and duration sums are added, while a displayed P95
-is the highest hourly P95, never a recomputed multi-window percentile. Before the bounded Timeline query,
-SystemLens uses a bounded trace-ID aggregation to retain only recent traces
-with spans from more than one service; IDs remain in memory and are never
-included in the report. The Timeline first reads transaction identities only in
-memory to retain the distributed transaction aggregate view, then explicitly
-sets `_source: false` for spans, requesting timestamp, trace ID, service, span
-name/type, duration, and outcome. It accepts both ECS fields (`span.name`,
-`span.duration.us`, `parent.id`) and OTel-native Elastic Agent fields (`name`,
-nanosecond `duration`, `parent_span_id`); instrumentation-controlled operation
-names remain redacted to safe categories in the projection.
-Trace IDs are held only in memory to join
-each Timeline span to its exact waterfall, then replaced by report-local opaque
-`waterfall-*` references before serialization. Instrumentation-controlled span
-names are replaced with a safe `Span` label and span types are allowlisted
-before export. The HTML labels Timeline spans and waterfalls as bounded
-cross-service examples. Its local service and span-type filters operate on the
-embedded projection only. With `--all-spans`, the scroll uses
-`max_timeline_events` as a strict total cap and stops before requesting another
-page once reached. To produce
-at most 20 waterfall exemplars, a second `_source: false` terms aggregation
-uses a `top_hits` limit of 500 per selected trace, temporarily reading span and parent
-IDs plus timestamp, service, operation, duration and outcome. It
-reconstructs each span tree in memory and discards all IDs. The exported
-projection never contains those IDs, headers, bodies, stack traces, logs,
-error values, or arbitrary operation/target labels. Each view has an
-independent composite-bucket guard and output-result guard. The
-projection records the UTC window, environment, source metricsets/field,
-per-view coverage, limits, and truncation, including trace selection and
-per-trace span truncation. The renderer surfaces this status globally and on
-each partial waterfall. `render_runtime_report_html` embeds
-only this versioned aggregate projection in an explicitly requested HTML file.
-It does not write to SQLite, snapshots, or MCP cache.
-The waterfall renderer uses the persisted tree depth to provide progressive
-disclosure: traces with more than 20 spans begin with expandable nested spans
-collapsed. Expanding a row changes only visibility of its descendants in the
-embedded report and does not load additional telemetry.
-Client-side error-impact filters operate only on the bounded projection. They
-retain `outcome=failure` observations, group spans by safe service/type/label
-and waterfalls by safe service/type/route, then retain up to ten highest-count
-groups with one duration-maximizing exemplar per group.
-Waterfall span-detail controls reuse the safe span projection and never embed
-raw error messages, exception data, trace IDs, span IDs, or parent IDs.
-The bounded trace query reads `error.type`, never `error.message`; a fixed
-allowlist maps its normalized value to a category and controlled message before
-the report HTML boundary.
-Each distributed-trace projection also carries its root transaction type. The
-Distributed transactions tab filters its waterfall examples by safe root type.
-Its optional impact ranking groups matching waterfalls by safe service/type/route
-category, ranks each group by cumulative recorded duration, and returns the
-up to ten distinct exemplars with their execution count and cumulative duration. These are
-client-side visibility filters only; they do not issue a new Elasticsearch
-request.
-The Timeline can further retain the ten longest selected spans by duration,
-then restore chronological display order. The Distributed transactions tab can retain the ten categories with the
-greatest recorded cumulative duration.
-The Timeline limit defaults to 500 and the CLI caps it at 2,000. Trace and
-span reads are partitioned into one-hour windows, newest first, and stop once
-the configured Timeline limit is reached; candidate trace selection is capped
-at that same limit and samples at most 200 candidate documents per shard before
-aggregating trace IDs. This selection is explicitly marked as truncated when
-Elasticsearch terminates it early. Every APM HTTP request has the adapter's 15-second timeout.
-An Elasticsearch response with `timed_out: true` is also raised as an adapter
-timeout even when it has HTTP 200 status. A timeout propagates to the CLI as an
-error, so no partial report is written.
-Service names are inserted through JSON data and rendered with HTML escaping
-before insertion. Transaction, span, result, and messaging-target values are
-not exported, so telemetry cannot disclose arbitrary operation content.
-The projection also records the query-window end as `generated_at`, the
-auditable snapshot instant shown in the HTML report. The renderer derives its
-summary failure rate from `services` only, never by adding service and
-transaction failure buckets, which describe overlapping observations.
-
-The HTML renderer derives a bounded investigation-priority list from the
-already embedded aggregates: volume × error rate plus latency weighted by the
-logarithm of volume. This is a display-only ordering, explicitly labelled as
-triage rather than an SLO or health calculation, and it introduces no new APM
-query or persisted fact. Each tab owns only its relevant client-side controls:
-Services owns service filtering, Transaction workloads owns its service/type
-graph filters, Dependencies owns map mode/service/workload and focused-flow
-filters, and Span execution log owns its service selection. The Span execution
-log renderer additionally derives three duration
-bands from the already projected duration values; it does not request any new
-trace field. The report stores no prior report and therefore
-does not calculate regressions or invent a historical baseline.
-The renderer exposes separate Services, Transaction workloads, Span execution
-log, Distributed traces, and Dependencies tabs. Every tab contains a synchronized
-observed-service filter; changing it also updates the view-specific service
-controls where that service is available.
-
-The report's primary visual is a client-side directed service map. It places
-observed services on circle nodes and recognized messaging targets on diamond
-nodes. Each `service_destination` aggregate is a directed edge from its source
-service to its target: non-messaging targets are labelled HTTP and recognized
-messaging targets are labelled `send`; edge width represents call volume and
-risk colour represents an aggregate error or comparatively high average
-latency. Recognized messaging types are `amqp`, `jms`, `kafka`, `messaging`,
-`nats`, `pulsar`, `rabbitmq`, and `sqs`. This is a presentation classification:
-the APM target name remains a messaging target rather than an asserted topic.
-Selecting a service node only reveals transaction buckets owned by that service, grouped from the observed
-`transaction.type` (`request`/`http` as HTTP, `messaging` as messaging, all
-other values as `Other`), plus inbound and outbound aggregates. It intentionally
-does not connect a transaction bucket to a dependency edge because the three
-metric aggregate queries do not prove that causal relationship. The report uses
-the same Graphology 0.25.4 and Sigma.js 2.4.0 CDN assets as the architecture
-HTML export; if those scripts cannot load, its preceding embedded SVG rendering
-remains visible instead.
-
-The report is a standalone runtime view and does not join observed names to
-static identities. A later correlation remains a delivery-layer join, not a
-topology derivation: it may attach one observed name only through exact
-persisted evidence, retain mapping state and confidence, and never infer a
-static HTTP, Kafka, MongoDB, or S3 relation from a name coincidence.
-
 ### Elastic APM microservice overlay
 
 The overlay is computed by the HTML export path (`render/html_export.py`)
 when `--apm-overlay` is set, reusing `apm.py`'s existing bounded
-`service_destination` reader/aggregator for edges and `apm_report.py`'s
-existing bounded `service_transaction` composite-bucket reader for node
-average latency. No new Elasticsearch query shape is introduced; the overlay
+`service_destination` reader/aggregator for edges and its existing bounded
+`service_transaction` composite-bucket reader for node average latency. No new Elasticsearch query shape is introduced; the overlay
 only combines the two existing aggregate result sets with the already-indexed
 microservice name list held in memory for that export.
 

@@ -9,6 +9,7 @@ import re
 import ssl
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from typing import Callable
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
 from urllib.request import Request, urlopen
@@ -174,49 +175,6 @@ class ElasticApmClient:
         return self._request_json(
             "POST", f"/{','.join(APM_TRACE_INDEX_PATTERNS)}/_search", body
         )
-
-    def search_all_traces(self, body: dict[str, object]) -> list[dict[str, object]]:
-        """Read at most the caller's bounded number of trace events by scroll."""
-        # Elasticsearch rejects track_total_hits in a scroll context. ``size``
-        # is a total cap supplied by the report, not an invitation to walk the
-        # entire time window: a long ``--since`` range must remain bounded.
-        requested_limit = body.get("size")
-        max_events = requested_limit if isinstance(requested_limit, int) else 1_000
-        max_events = max(1, max_events)
-        request_body = {
-            key: value for key, value in body.items() if key != "track_total_hits"
-        }
-        request_body.update({"size": min(1_000, max_events), "sort": ["_doc"]})
-        response = self._request_json(
-            "POST", f"/{','.join(APM_TRACE_INDEX_PATTERNS)}/_search?scroll=1m", request_body
-        )
-        scroll_id = response.get("_scroll_id")
-        events: list[dict[str, object]] = []
-        try:
-            while True:
-                hits = response.get("hits")
-                page = hits.get("hits") if isinstance(hits, dict) else None
-                if not isinstance(page, list) or not page:
-                    break
-                remaining = max_events - len(events)
-                events.extend(hit for hit in page[:remaining] if isinstance(hit, dict))
-                if len(events) >= max_events:
-                    break
-                if not isinstance(scroll_id, str):
-                    break
-                response = self._request_json(
-                    "POST", "/_search/scroll", {"scroll": "1m", "scroll_id": scroll_id}
-                )
-                next_scroll_id = response.get("_scroll_id")
-                if isinstance(next_scroll_id, str):
-                    scroll_id = next_scroll_id
-        finally:
-            if isinstance(scroll_id, str):
-                try:
-                    self._request_json("DELETE", "/_search/scroll", {"scroll_id": [scroll_id]})
-                except ApmError:
-                    pass
-        return events
 
     def check_metrics_access(self) -> int | None:
         """Validate index-read access without requiring Elasticsearch monitor rights."""
@@ -820,3 +778,218 @@ def _compact_json(value: dict[str, object]) -> bytes:
 
 def _iso8601(value: datetime) -> str:
     return value.astimezone(UTC).isoformat().replace("+00:00", "Z")
+
+
+def _latency_query(
+    kind: str, start: datetime, end: datetime, environment: str | None
+) -> Callable[[int, dict[str, object] | None], dict[str, object]]:
+    """Build a bounded composite aggregation for service or transaction latency.
+
+    Shared by the microservice overlay (:mod:`systemlens.apm_overlay`); it
+    reads only aggregate metric documents, never raw spans or traces.
+    """
+    sources: list[dict[str, object]]
+    if kind == "service":
+        sources = [{"service": {"terms": {"field": "service.name"}}}]
+        metricset = "service_transaction"
+    elif kind == "transaction":
+        sources = [
+            {"service": {"terms": {"field": "service.name"}}},
+            {"transaction": {"terms": {"field": "transaction.name"}}},
+            {
+                "transaction_type": {
+                    "terms": {
+                        "field": "transaction.type",
+                        "missing_bucket": True,
+                    }
+                }
+            },
+        ]
+        metricset = "transaction"
+    else:  # pragma: no cover - internal caller only
+        raise ValueError(f"Unknown latency report kind: {kind}")
+
+    def build(size: int, after_key: dict[str, object] | None) -> dict[str, object]:
+        composite: dict[str, object] = {"size": size, "sources": sources}
+        if after_key is not None:
+            composite["after"] = after_key
+        filters: list[dict[str, object]] = [
+            {"term": {"metricset.name": metricset}},
+            {
+                "range": {
+                    "@timestamp": {"gte": _iso8601(start), "lt": _iso8601(end)}
+                }
+            },
+        ]
+        if environment:
+            filters.append({"term": {"service.environment": environment}})
+        return {
+            "size": 0,
+            "track_total_hits": False,
+            "query": {
+                "bool": {
+                    "filter": filters
+                }
+            },
+            "aggs": {
+                "items": {
+                    "composite": composite,
+                    "aggs": {
+                        "calls": {
+                            "value_count": {
+                                "field": "transaction.duration.summary"
+                            }
+                        },
+                        "duration_us": {
+                            "sum": {"field": "transaction.duration.summary"}
+                        },
+                        "p95": {
+                            "percentiles": {
+                                "field": "transaction.duration.histogram",
+                                "percents": [95],
+                            }
+                        },
+                        "outcome_calls": {
+                            "value_count": {"field": "event.success_count"}
+                        },
+                        "success_calls": {
+                            "sum": {"field": "event.success_count"}
+                        },
+                    },
+                }
+            },
+        }
+
+    return build
+
+
+def _read_composite_buckets(
+    client: ElasticApmClient,
+    query_builder: Callable[[int, dict[str, object] | None], dict[str, object]],
+    max_buckets: int,
+    *,
+    search: Callable[[dict[str, object]], dict[str, object]] | None = None,
+) -> tuple[list[dict[str, object]], bool]:
+    """Page a composite aggregate without retrieving any raw event documents."""
+    buckets: list[dict[str, object]] = []
+    after_key: dict[str, object] | None = None
+    while len(buckets) < max_buckets:
+        remaining = max_buckets - len(buckets)
+        response = (search or client.search_metrics)(query_builder(min(1_000, remaining), after_key))
+        aggregations = response.get("aggregations")
+        if not isinstance(aggregations, dict):
+            shards = response.get("_shards")
+            if isinstance(shards, dict) and shards.get("total") == 0:
+                # Elasticsearch omits aggregations for a successful wildcard
+                # search when none of the APM metric data streams exists yet.
+                return [], False
+            raise ApmError("Réponse Elasticsearch invalide : agrégations absentes.")
+        aggregation = aggregations.get("items")
+        if not isinstance(aggregation, dict):
+            raise ApmError("Réponse Elasticsearch invalide : agrégation items absente.")
+        page = aggregation.get("buckets")
+        if not isinstance(page, list):
+            raise ApmError("Réponse Elasticsearch invalide : buckets absents.")
+        page_buckets = [item for item in page if isinstance(item, dict)]
+        buckets.extend(page_buckets)
+        next_after = aggregation.get("after_key")
+        if not page_buckets or not isinstance(next_after, dict):
+            return buckets, False
+        after_key = next_after
+    return buckets, True
+
+
+def _safe_operation_label(
+    value: str | None, processor_event: str | None, transaction_type: str | None
+) -> str | None:
+    """Replace instrumentation-controlled operation values before export."""
+    if value is None:
+        return None
+    if processor_event == "span":
+        return "Span"
+    if str(transaction_type).lower() in {"request", "http"}:
+        return "HTTP transaction"
+    if str(transaction_type).lower() == "messaging":
+        return "Messaging transaction"
+    return "Transaction"
+
+
+def _percentile_ms(bucket: dict[str, object]) -> float | None:
+    p95 = bucket.get("p95")
+    if not isinstance(p95, dict):
+        return None
+    values = p95.get("values")
+    if not isinstance(values, dict):
+        return None
+    value = values.get("95.0")
+    if not isinstance(value, (int, float)):
+        return None
+    return round(value / 1_000, 3)
+
+
+def _rank_latency_buckets(
+    buckets: list[dict[str, object]], *, kind: str
+) -> list[dict[str, object]]:
+    result: list[dict[str, object]] = []
+    for bucket in buckets:
+        key = bucket.get("key")
+        if not isinstance(key, dict):
+            continue
+        service = key.get("service")
+        if not isinstance(service, str) or not service:
+            continue
+        calls = round(_metric_value(bucket, "calls"))
+        duration_us = _metric_value(bucket, "duration_us")
+        outcome_calls = round(_metric_value(bucket, "outcome_calls"))
+        success_calls = round(_metric_value(bucket, "success_calls"))
+        failures = max(0, outcome_calls - success_calls)
+        item: dict[str, object] = {
+            "service": service,
+            "calls": calls,
+            "failure_calls": round(failures),
+            "outcome_calls": outcome_calls,
+            "error_rate": round(failures / outcome_calls, 6) if outcome_calls else None,
+            "outcome_coverage": round(outcome_calls / calls, 6) if calls else None,
+            "average_ms": round(duration_us / calls / 1_000, 3) if calls else None,
+            "p95_ms": _percentile_ms(bucket),
+        }
+        if kind == "transaction":
+            name = key.get("transaction")
+            if not isinstance(name, str) or not name:
+                continue
+            transaction_type = key.get("transaction_type")
+            item["_transaction_identity"] = name
+            item["transaction"] = _safe_operation_label(
+                name, "transaction", transaction_type if isinstance(transaction_type, str) else None
+            )
+            if isinstance(transaction_type, str):
+                item["transaction_type"] = transaction_type
+        result.append(item)
+    return sorted(
+        result,
+        key=lambda item: (
+            -_as_number(item.get("p95_ms")),
+            -_as_number(item.get("error_rate")),
+            -_as_number(item.get("calls")),
+            str(item["service"]),
+            str(item.get("transaction", "")),
+        ),
+    )
+
+
+def _view_coverage(
+    seen: int, exported: int, max_buckets: int, query_truncated: bool
+) -> dict[str, object]:
+    reasons: list[str] = []
+    if query_truncated:
+        reasons.append("query_bucket_limit")
+    if seen > exported:
+        reasons.append("view_result_limit")
+    return {
+        "items_seen": seen,
+        "items_exported": min(seen, exported),
+        "truncated": bool(reasons),
+        "truncation_reasons": reasons,
+        "max_results": exported,
+        "max_buckets": max_buckets,
+    }

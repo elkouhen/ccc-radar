@@ -61,10 +61,9 @@ Delivered:
 - An explicit, stateless Elastic APM digest command for external-agent analysis.
   It exports bounded service-to-destination metric aggregates only; it does not
   export raw spans or alter the source inventory.
-- An explicit, self-contained Elastic APM runtime report. It uses bounded
-  aggregate-only queries to rank service and transaction P95 latency, dependency
-  average latency, and aggregate failure counts; it does not alter the source
-  inventory.
+- An opt-in APM aggregate overlay on the static microservice graph export. It
+  reuses the same bounded, read-only adapter to show observed call volume,
+  error rate, and average latency; it does not alter the source inventory.
 
 Planned:
 

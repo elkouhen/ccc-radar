@@ -17,14 +17,12 @@ from systemlens.apm import (
     _aggregate_relations,
     _as_number,
     _iso8601,
-    _read_relation_buckets,
-    parse_since,
-)
-from systemlens.apm_report import (
     _latency_query,
     _rank_latency_buckets,
     _read_composite_buckets,
+    _read_relation_buckets,
     _view_coverage,
+    parse_since,
 )
 
 DEFAULT_MAX_RELATIONS = 80
@@ -160,8 +158,8 @@ def build_microservice_overlay(
 
     Edge metrics (call volume, failures, error rate) come from the same
     bounded ``service_destination`` reader used by ``apm export``. Node
-    latency comes from the same bounded ``service_transaction`` reader used by
-    ``apm report``. Observed names are joined to ``indexed_service_names``
+    latency comes from the same bounded ``service_transaction`` reader.
+    Observed names are joined to ``indexed_service_names``
     only through :func:`correlate_service_name`; ambiguous and unmapped
     observations never enrich a node or edge.
     """

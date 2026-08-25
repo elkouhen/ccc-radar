@@ -7,27 +7,14 @@ from systemlens.web import SystemLensWebApplication
 
 
 def _application() -> SystemLensWebApplication:
-    return SystemLensWebApplication(
-        Path.cwd(),
-        since="1h",
-        environment=None,
-        endpoint=None,
-        api_key=None,
-        insecure_tls=False,
-        max_services=30,
-        max_transactions=50,
-        max_dependencies=80,
-        max_buckets=1_000,
-        max_timeline_events=500,
-    )
+    return SystemLensWebApplication(Path.cwd())
 
 
-def test_web_home_links_the_two_existing_views() -> None:
+def test_web_home_links_the_architecture_view() -> None:
     status, document = _application().document("/")
 
     assert status is HTTPStatus.OK
     assert 'href="/architecture"' in document
-    assert 'href="/runtime"' in document
 
 
 def test_web_returns_a_safe_not_found_document() -> None:
@@ -39,19 +26,7 @@ def test_web_returns_a_safe_not_found_document() -> None:
 
 
 def test_web_offers_to_create_a_missing_architecture_index(tmp_path: Path) -> None:
-    application = SystemLensWebApplication(
-        tmp_path,
-        since="1h",
-        environment=None,
-        endpoint=None,
-        api_key=None,
-        insecure_tls=False,
-        max_services=30,
-        max_transactions=50,
-        max_dependencies=80,
-        max_buckets=1_000,
-        max_timeline_events=500,
-    )
+    application = SystemLensWebApplication(tmp_path)
 
     status, document = application.document("/architecture")
 
@@ -61,19 +36,7 @@ def test_web_offers_to_create_a_missing_architecture_index(tmp_path: Path) -> No
 
 
 def test_web_creates_a_missing_architecture_index(tmp_path: Path) -> None:
-    application = SystemLensWebApplication(
-        tmp_path,
-        since="1h",
-        environment=None,
-        endpoint=None,
-        api_key=None,
-        insecure_tls=False,
-        max_services=30,
-        max_transactions=50,
-        max_dependencies=80,
-        max_buckets=1_000,
-        max_timeline_events=500,
-    )
+    application = SystemLensWebApplication(tmp_path)
 
     status, document = application.post("/architecture/index")
 

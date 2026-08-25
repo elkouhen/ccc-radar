@@ -218,7 +218,7 @@ historical comparisons, and visual overlays remain future work.
 
 ## ADR-14 — Use metric histograms for service and transaction P95, not dependency P95
 
-**Status:** Accepted.
+**Status:** Superseded — the `apm report` command and its HTML runtime report were removed; kept as historical context.
 
 **Context:** A quick runtime investigation needs a tail-latency signal for
 services and transactions, while the bounded APM `service_destination` metrics
@@ -240,7 +240,7 @@ three metricsets cannot provide.
 
 ## ADR-15 — Show transaction ownership without inventing transaction-to-dependency calls
 
-**Status:** Accepted.
+**Status:** Superseded — the `apm report` command and its HTML runtime report were removed; kept as historical context.
 
 **Context:** The runtime report has separate aggregate transaction and
 service-destination metrics. A visual connection between a transaction and a
@@ -273,8 +273,8 @@ waiting for the full SL-009/SL-010 ranking and alias-mapping adapters.
 5,000 for `apm export`, because the overlay reads two aggregate queries per
 export). When set, the export additionally queries `service_destination`
 (edge call volume and error rate) and `service_transaction` (node average
-latency) aggregates, using the same bounded, read-only adapter as `apm export`
-and `apm report`. The result is joined to indexed microservice names through a
+latency) aggregates, using the same bounded, read-only adapter as `apm export`.
+The result is joined to indexed microservice names through a
 best-effort name correlation:
 
 - An exact, case/separator-normalized name match is a **matched** observation.
@@ -330,7 +330,7 @@ identity from forbidden raw trace identifiers.
 
 ## ADR-18 — Restrict transaction workloads to distributed trace exemplars
 
-**Status:** Superseded by ADR-22.
+**Status:** Superseded by ADR-22, then retired — the `apm report` command and its HTML runtime report were removed; kept as historical context.
 
 **Context:** Aggregate transaction metrics include health checks and local
 operations. The runtime report's Transactions view must focus on workloads
@@ -350,7 +350,7 @@ service and dependency views remain unchanged.
 
 ## ADR-19 — Export bounded, identifier-free distributed trace waterfalls
 
-**Status:** Accepted.
+**Status:** Superseded — the `apm report` command and its HTML runtime report were removed; kept as historical context.
 
 **Context:** Aggregate transaction rows identify distributed workloads but do
 not show the cross-service and database work that makes a trace actionable.
@@ -375,7 +375,7 @@ span naming fall back to the root service instead of guessing a destination.
 
 ## ADR-20 — Timeline is a bounded span execution log
 
-**Status:** Accepted.
+**Status:** Superseded — the `apm report` command and its HTML runtime report were removed; kept as historical context.
 
 **Context:** Transaction examples do not expose enough execution detail to
 diagnose a complex distributed flow. Exporting raw APM documents, however,
@@ -394,7 +394,7 @@ identifiers, and cannot be interpreted as a full observability archive.
 
 ## ADR-21 — Expose only classified span-error messages
 
-**Status:** Accepted.
+**Status:** Superseded — the `apm report` command and its HTML runtime report were removed; kept as historical context.
 
 **Context:** Waterfall investigation needs an actionable explanation for failed
 spans, while raw APM error messages and exception data can contain credentials,
@@ -411,7 +411,7 @@ weakening its privacy boundary. Unknown error types degrade to the generic
 
 ## ADR-22 — Show aggregate transaction workloads independently of distributed traces
 
-**Status:** Accepted.
+**Status:** Superseded — the `apm report` command and its HTML runtime report were removed; kept as historical context.
 
 **Context:** Operators need the runtime report to surface aggregate transaction
 workloads even when no recent trace crosses a service boundary. Restricting the
