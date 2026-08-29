@@ -22,6 +22,7 @@ from systemlens.apm import (
     load_settings as load_apm_settings,
 )
 from systemlens.apm_overlay import build_microservice_overlay
+from systemlens.ai_graph import AiGraphError, load_ai_graph
 from systemlens.architecture import (
     analyze as analyze_architecture,
     build_catalog,
@@ -1497,6 +1498,18 @@ def _load_microservice_graph(
     )
 
 
+def _load_ai_graph(path: Path) -> _MicroserviceGraphData:
+    try:
+        services, edges, collections, issues = load_ai_graph(path)
+    except AiGraphError as exc:
+        typer.echo(f"Manifeste de graphe IA invalide : {exc}", err=True)
+        raise typer.Exit(code=2) from exc
+    result = render_graph_json(list(services), edges, [], warnings=issues, cross_module_data_available=True)
+    return _MicroserviceGraphData(
+        services, edges, collections, {}, [], [], [], issues, [], False, result, None, None
+    )
+
+
 def _write_likec4_project(destination: Path, model: str) -> None:
     """Write a self-contained LikeC4 project that can be started with npm."""
     if destination.exists() and not destination.is_dir():
@@ -1569,6 +1582,11 @@ The generated site is written to `dist/`.
 
 @export_app.command(name="microservices")
 def export_microservices_cmd(
+    graph: Optional[Path] = typer.Option(
+        None,
+        "--graph",
+        help="Manifeste JSON `systemlens-ai-graph-v1` produit par une IA.",
+    ),
     workspace: Optional[Path] = typer.Option(
         None,
         "--workspace",
@@ -1638,6 +1656,11 @@ def export_microservices_cmd(
     `systemlens export microservices --json`,
     `systemlens export microservices --html graph.html --apm-overlay --since 1h`.
     """
+    # Direct Python callers (including embedding applications and tests) may
+    # omit newly added Typer options; Typer otherwise leaves an OptionInfo
+    # object in the function default.
+    if not isinstance(graph, Path):
+        graph = None
     outputs = [output for output in (html, c4) if output is not None]
     if len(outputs) + int(json_output) != 1:
         typer.echo("Choisissez un seul format parmi --html, --c4 ou --json.", err=True)
@@ -1650,7 +1673,10 @@ def export_microservices_cmd(
     if apm_overlay and html is None:
         typer.echo("`--apm-overlay` nécessite `--html`.", err=True)
         raise typer.Exit(code=2)
-    graph_data = _load_microservice_graph(Path.cwd(), workspace, include_mongodb=True)
+    if graph is not None and (workspace is not None or apm_overlay):
+        typer.echo("`--graph` ne peut pas être combiné avec `--workspace` ou `--apm-overlay`.", err=True)
+        raise typer.Exit(code=2)
+    graph_data = _load_ai_graph(graph) if graph is not None else _load_microservice_graph(Path.cwd(), workspace, include_mongodb=True)
     if json_output:
         typer.echo(json.dumps(graph_data.result))
         return

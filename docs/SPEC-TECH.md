@@ -219,6 +219,15 @@ declaring module.
 
 ## Export snapshot contract
 
+The read-only `--graph FILE` export path accepts the versioned
+`systemlens-ai-graph-v1` manifest described in [AI-GRAPH.md](AI-GRAPH.md).
+The adapter validates node IDs, kinds, relation endpoints, relative evidence
+paths and ambiguity status before projecting safe claims onto the existing
+HTML graph model. It never writes the manifest to SQLite. Confirmed and
+proposed claims become visual relations; ambiguous and unresolved claims are
+quality issues. This keeps AI-generated convention analysis separate from
+persisted source evidence while still making its reasoning inspectable.
+
 HTML and JSON graph exports only consume the loaded architecture snapshot.
 They do not reopen OpenAPI documents or recursively parse Java DTO sources at
 render time. The export can show indexed Kafka payload-type identities and

@@ -55,7 +55,7 @@ but does not alter AST endpoint extraction.
 | `systemlens analyze microservices impact NAME [--root DIR] [--json]` | Lists direct and transitive impact paths. |
 | `systemlens analyze microservices path FROM TO [--root DIR] [--json] [--max-depth N] [--limit N]` | Lists bounded paths between services. |
 | `systemlens analyze request-reply [--root DIR] [--json]` | Lists Strategy1 Kafka request/reply candidates. |
-| `systemlens export microservices (--html FILE \| --c4 DIRECTORY \| --json) [--root-path DIRECTORY] [--apm-overlay --since DURATION --environment NAME --endpoint URL --api-key KEY --insecure --max-relations N --max-buckets N]` | Exports the microservice, Kafka-topic and MongoDB-collection topology. `--root-path` provides the local source root for HTML VS Code links. `--apm-overlay` (HTML only) additionally queries bounded Elastic APM aggregates and overlays them on the graph; `--insecure` explicitly accepts a self-signed TLS certificate; see "Elastic APM microservice overlay". |
+| `systemlens export microservices (--html FILE \| --c4 DIRECTORY \| --json) [--graph FILE] [--root-path DIRECTORY] [--apm-overlay --since DURATION --environment NAME --endpoint URL --api-key KEY --insecure --max-relations N --max-buckets N]` | Exports the microservice, Kafka-topic and MongoDB-collection topology. `--graph FILE` reads a validated `systemlens-ai-graph-v1` manifest produced by an AI when deterministic source conventions are too complex; confirmed/proposed claims are displayed and ambiguous/unresolved claims remain in the quality panel. `--root-path` provides the local source root for HTML VS Code links. `--apm-overlay` (HTML only) additionally queries bounded Elastic APM aggregates and overlays them on the graph; `--insecure` explicitly accepts a self-signed TLS certificate; see "Elastic APM microservice overlay". |
 | `systemlens export modules --html FILE` | Exports the Maven/Gradle build-dependency view. |
 | `systemlens export request-reply --html FILE` | Exports Strategy1 Kafka request/reply candidates. |
 | `systemlens web [--host HOST] [--port PORT]` | Starts the local Python web application at `http://127.0.0.1:8765/` by default. Its home page links to Architecture. Architecture renders the persisted snapshot for each request, excluding test-fixture microservices and every relation attached to them; when no index exists, it offers an explicit local button that creates the default configuration when needed and indexes the repository. The default loopback host prevents network exposure unless the user explicitly changes `--host`. |
@@ -108,6 +108,10 @@ Quality. It includes compact architecture counters, task-oriented starting
 actions, a floating context panel, and a full-size resource inspector. On
 narrow viewports the controls and context panel use separate bounded regions so
 the graph remains visible while either panel scrolls independently.
+The export opens with an Archify-inspired dark blue presentation (or follows
+the browser's light preference), and provides a theme toggle in the graph
+toolbar. The selected theme is stored only in browser local storage and does
+not affect persisted inventory facts or exported architecture data.
 Its initial view foregrounds task-oriented entry points (Kafka topic, service
 dependencies, service-to-service path and Kafka messages). Relation/resource
 filters and graph layouts are available as advanced controls. Dedicated
