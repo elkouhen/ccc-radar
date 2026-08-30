@@ -49,7 +49,7 @@ from systemlens.graph import (
 )
 from systemlens.indexer import index_repo
 from systemlens.inventory_freshness import endpoint_inventory_warning
-from systemlens.models import MessageEndpoint
+from systemlens.models import GraphFact, MessageEndpoint
 from systemlens.models import ExtractionDiagnostic
 from systemlens.modules import (
     DiscoveredModule,
@@ -1430,6 +1430,7 @@ class _MicroserviceGraphData:
     result: GraphResult
     kafka_dto_definitions: list[dict[str, object]] | None = None
     openapi_contracts: list[dict[str, object]] | None = None
+    graph_facts: list[GraphFact] | None = None
 
 
 def _is_exportable_microservice(name: str) -> bool:
@@ -1481,6 +1482,8 @@ def _load_microservice_graph(
         warnings=inventory.warnings,
         cross_module_data_available=bool(services_by_name),
     )
+    with Store(repo_root, readonly=True) as store:
+        graph_facts = store.all_graph_facts()
     return _MicroserviceGraphData(
         services_by_name,
         edges,
@@ -1495,6 +1498,7 @@ def _load_microservice_graph(
         result,
         inventory.kafka_dto_definitions,
         inventory.openapi_contracts,
+        graph_facts,
     )
 
 
@@ -1506,7 +1510,7 @@ def _load_ai_graph(path: Path) -> _MicroserviceGraphData:
         raise typer.Exit(code=2) from exc
     result = render_graph_json(list(services), edges, [], warnings=issues, cross_module_data_available=True)
     return _MicroserviceGraphData(
-        services, edges, collections, {}, [], [], [], issues, [], False, result, None, None
+        services, edges, collections, {}, [], [], [], issues, [], False, result, None, None, []
     )
 
 
@@ -1719,6 +1723,7 @@ def export_microservices_cmd(
                 kafka_dto_definitions=graph_data.kafka_dto_definitions,
                 openapi_contracts=graph_data.openapi_contracts,
                 apm_overlay=overlay,
+                graph_facts=graph_data.graph_facts,
             ),
             encoding="utf-8",
         )

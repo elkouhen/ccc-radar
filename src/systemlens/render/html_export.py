@@ -18,7 +18,7 @@ from systemlens.graph import (
     external_microservice_names,
     resolve_rest_target_service,
 )
-from systemlens.models import ExtractionDiagnostic, Finding, MessageEndpoint
+from systemlens.models import ExtractionDiagnostic, Finding, GraphFact, MessageEndpoint
 from systemlens.modules import (
     DiscoveredModule,
     ModuleDependency,
@@ -489,6 +489,7 @@ def render_graph_html(
     kafka_dto_definitions: list[dict[str, object]] | None = None,
     openapi_contracts: list[dict[str, object]] | None = None,
     apm_overlay: dict[str, object] | None = None,
+    graph_facts: list[GraphFact] | None = None,
 ) -> str:
     """Render an interactive Sigma.js graph as a self-contained HTML document.
 
@@ -752,6 +753,22 @@ def render_graph_html(
         }
         for service, collection, identity in _mongodb_collection_nodes(collections_by_service)
     ]
+    known_node_ids = {str(node["id"]) for node in nodes}
+    for fact in graph_facts or []:
+        if fact.fact_type == "node" and fact.name is not None:
+            node_id = f"{fact.kind}:{fact.name}"
+            if node_id not in known_node_ids:
+                node = {
+                    "id": node_id, "kind": fact.kind, "name": fact.name,
+                    "label": fact.name, "width": 190, "height": 42,
+                }
+                known_node_ids.add(node_id)
+                nodes.append(node)
+            node = next(item for item in nodes if item["id"] == node_id)
+            if fact.technology:
+                node["technology"] = fact.technology
+            if fact.metadata:
+                node["metadata"] = fact.metadata
     links: list[dict[str, object]] = []
     for source_kind, source_name, target_kind, target_name, label, kind in _visual_graph_edges(edges):
         confidence, provenance = _visual_link_evidence(
@@ -775,6 +792,33 @@ def render_graph_html(
                 consumed_message_types_by_relation.get((target_name, source_name), set())
             )
         links.append(link)
+    for fact in graph_facts or []:
+        if fact.fact_type != "edge":
+            continue
+        if not all((fact.source_kind, fact.source_name, fact.target_kind, fact.target_name)):
+            continue
+        source_id = f"{fact.source_kind}:{fact.source_name}"
+        target_id = f"{fact.target_kind}:{fact.target_name}"
+        for node_id, node_kind, node_name in (
+            (source_id, fact.source_kind, fact.source_name),
+            (target_id, fact.target_kind, fact.target_name),
+        ):
+            if node_id not in known_node_ids:
+                nodes.append({
+                    "id": node_id, "kind": node_kind, "name": node_name,
+                    "label": node_name, "width": 190, "height": 42,
+                })
+                known_node_ids.add(node_id)
+        links.append({
+            "source": source_id, "target": target_id,
+            "kind": f"mcp_{fact.kind}",
+            "direction": "outgoing",
+            "label": fact.relation or fact.kind,
+            "confidence": fact.confidence,
+            "provenance": "MCP graph enrichment",
+            **({"technology": fact.technology} if fact.technology else {}),
+            **({"metadata": fact.metadata} if fact.metadata else {}),
+        })
     links += [
         {
             "source": f"{source_kind}:{source_name}",
@@ -834,10 +878,11 @@ def render_graph_html(
         for kind in ("microservice", "kafka_topic", "mongodb_collection")
     }
     for node in nodes:
-        # Kafka topics need a slightly larger footprint than collections: the
-        # force layout can zoom out to keep labels apart, and their circular
-        # connectivity outline must remain readable at that fitted scale.
-        base_size = 17 if node["kind"] == "microservice" else 15 if node["kind"] == "kafka_topic" else 14
+        # Geometry is intentionally uniform: complexity is encoded by color,
+        # not by node size, so shape and visual weight remain comparable.
+        # The card must leave enough room for a centered name and its corner
+        # technology marker. This value is shared by every node kind.
+        base_size = 50
         if node["kind"] not in complexity_rankings_by_kind:
             node["color"] = "#64748b"
             node["size"] = base_size
@@ -861,7 +906,37 @@ def render_graph_html(
         # node label carry a dependency count.
         node["label"] = str(node["name"])
         node["color"] = {"low": "#2563eb", "medium": "#d97706", "high": "#dc2626"}[level]
-        node["size"] = base_size + {"low": 0, "medium": 2, "high": 4}[level]
+        node["size"] = base_size
+    # A workspace may contain structural directories such as ``services`` or
+    # ``libs`` whose children are the actual projects. Keep these containers
+    # separate from architecture relations: they are visual ownership/grouping
+    # hints, not inferred runtime dependencies.
+    service_node_ids = {f"microservice:{name}" for name in ordered_services}
+    modules_by_parent: dict[Path, list[str]] = {}
+    for module in all_modules:
+        identity = module_identity(module)
+        node_id = f"microservice:{identity}"
+        if node_id not in service_node_ids:
+            continue
+        modules_by_parent.setdefault(module.path.resolve().parent, []).append(node_id)
+    project_groups = [
+        {
+            "name": parent.name,
+            "children": sorted(children),
+        }
+        for parent, children in sorted(modules_by_parent.items(), key=lambda item: str(item[0]))
+        if len(children) >= 2
+    ]
+    service_ids = set(service_node_ids)
+    for group in project_groups:
+        project_ids = set(group["children"])
+        resource_ids = {
+            str(link["target"])
+            for link in links
+            if str(link["source"]) in project_ids
+            and str(link["target"]) not in service_ids
+        }
+        group["children"] = sorted(project_ids | resource_ids)
     if kafka_dto_definitions is None:
         kafka_dtos, project_dto_definitions = kafka_dto_views(endpoints_by_service)
     else:
@@ -880,6 +955,7 @@ def render_graph_html(
         {
             "nodes": nodes,
             "links": links,
+            "groups": project_groups,
             "build_dependencies": _module_dependency_view(build_modules, module_dependencies),
             "kafka_dtos": kafka_dtos,
             "project_dto_definitions": project_dto_definitions,

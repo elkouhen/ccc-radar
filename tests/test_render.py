@@ -153,7 +153,8 @@ enum PaymentStatus { AUTHORIZED, DECLINED }
     assert "labelGridCellSize: 160" in document
     assert "labelRenderedSizeThreshold: 10" in document
     assert "Connectivité relative :" in document
-    assert "Collections use the same visual grammar as microservices and" in document
+    assert "const visualNodeKind = node" in document
+    assert 'labelAlignment: "center"' in document
     assert "legend-resource-mark collection" in document
     assert 'class="brand-mark">SL</span>' in document
     assert "grid-template-columns: repeat(4, minmax(0, 1fr))" in document
@@ -463,7 +464,7 @@ def test_graph_html_colours_topics_and_mongodb_collections_by_connectivity() -> 
         "tier_end": 1,
     }
     assert topic["color"] == "#2563eb"
-    assert topic["size"] == 15
+    assert topic["size"] == 50
     assert topic["label"] == "orders.created"
     assert collection["complexity"] == {
         "score": 1,
@@ -485,9 +486,8 @@ def test_graph_html_colours_topics_and_mongodb_collections_by_connectivity() -> 
         {"orders": [producer], "payments": [consumer]},
         [GraphEdge("kafka", "orders", "payments", producer, consumer)],
     )
-    assert "Topics keep a neutral interior" in document
-    assert "connectivity is encoded only by the" in document
-    assert "float border = smoothstep(.33, .42, shape);" in document
+    assert "float bar1" in document
+    assert "vec2 bounds = vec2(.46, .34);" in document
     assert "gl_FragColor = vec4(v_color.rgb, v_color.a * alpha);" not in document
     assert "kafka_topic: createNodeProgram(KAFKA_TOPIC_FRAGMENT_SHADER)" in document
 
