@@ -206,7 +206,6 @@ def test_graph_html_uses_persisted_openapi_specs() -> None:
         "openapi": "3.0.0", "paths": {}
     }
 
-
 def test_graph_html_deduplicates_repository_and_module_relative_openapi_paths() -> None:
     module = DiscoveredModule(
         name="products", path=Path("/workspace/products"), build_system="maven", version=None,
@@ -660,22 +659,3 @@ def test_graph_html_microservice_complexity_counts_distinct_direct_clients() -> 
     assert nodes["microservice:payments"]["complexity"]["breakdown"] == {
         "http": 1, "kafka": 1, "mongodb": 0
     }
-
-
-def test_graph_html_embeds_the_apm_overlay_when_provided() -> None:
-    overlay = {
-        "schema_version": "apm-microservice-overlay-v1",
-        "nodes": {"microservice:orders": {"average_ms": 42.0, "match": "matched"}},
-        "edges": {},
-        "unresolved": [],
-    }
-
-    graph_data = _html_graph_data(render_graph_html({"orders": []}, [], apm_overlay=overlay))
-
-    assert graph_data["apm_overlay"] == overlay
-
-
-def test_graph_html_apm_overlay_defaults_to_none() -> None:
-    graph_data = _html_graph_data(render_graph_html({"orders": []}, []))
-
-    assert graph_data["apm_overlay"] is None

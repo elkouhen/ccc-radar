@@ -1,0 +1,1 @@
+[{"id": "orphan-kafka-consumer", "severity": "WARNING", "title": "Consumer Kafka sans producer d\u00e9tect\u00e9", "evidence": "order-service consomme `orders` (order-service/src/main/java/pl/piomin/order/OrderApp.java:90) sans producer inter-service index\u00e9.", "services": ["order-service"], "confidence": "high"}]

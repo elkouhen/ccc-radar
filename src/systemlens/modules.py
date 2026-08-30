@@ -392,7 +392,7 @@ def _mongo_entity_class_literal(invocation, source: bytes) -> str | None:
 def _invocation_receiver_and_operation(invocation, source: bytes) -> tuple[str, str] | None:
     """Extract a direct Java call receiver and its operation from the AST."""
     receiver, operation, _arguments = java_parser.invocation_parts(invocation, source)
-    if receiver is None or receiver.type not in {"identifier", "field_access"}:
+    if receiver is None:
         return None
     receiver_text = _node_text(source, receiver)
     return receiver_text.rsplit(".", 1)[-1], operation

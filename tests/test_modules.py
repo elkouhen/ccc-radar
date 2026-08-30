@@ -45,7 +45,6 @@ def test_microservice_html_export_uses_the_explicit_root_path(
     cli.export_microservices_cmd(
         workspace=None, html=tmp_path / "architecture.html", c4=None,
         root_path=Path("/exported/repository"), json_output=False,
-        apm_overlay=False,
     )
 
     assert captured["args"][9] == Path("/exported/repository")
@@ -71,7 +70,6 @@ def test_microservice_html_export_defaults_root_path_to_the_current_directory(
     cli.export_microservices_cmd(
         workspace=None, html=tmp_path / "architecture.html", c4=None,
         root_path=None, json_output=False,
-        apm_overlay=False,
     )
 
     assert captured["args"][9] == Path.cwd()
@@ -315,6 +313,35 @@ class OrdersController {
     assert [(item.role, item.mechanism, item.method, item.topic) for item in child.kafka_methods] == [
         ("receive", "spring-kafka-listener", "consume", "orders.created"),
         ("send", "spring-kafka-template", "consume", "orders.validated"),
+    ]
+
+
+def test_kafka_module_inventory_counts_chained_kafka_streams_to(tmp_path: Path) -> None:
+    (tmp_path / "pom.xml").write_text(
+        "<project xmlns=\"http://maven.apache.org/POM/4.0.0\">"
+        "<modelVersion>4.0.0</modelVersion><artifactId>orders</artifactId>"
+        "<version>1.0.0</version></project>"
+    )
+    source = tmp_path / "src" / "main" / "java" / "OrderApp.java"
+    source.parent.mkdir(parents=True)
+    source.write_text(
+        """import org.apache.kafka.streams.StreamsBuilder;
+import org.apache.kafka.streams.kstream.KStream;
+class OrderApp {
+  KStream<String, String> flow(StreamsBuilder builder) {
+    KStream<String, String> stream = builder.stream(\"orders.in\");
+    return stream.filter((key, value) -> true).to(\"orders.out\");
+  }
+}
+""",
+        encoding="utf-8",
+    )
+
+    module = discover_modules(tmp_path)[0]
+
+    assert [(item.role, item.mechanism, item.method, item.topic) for item in module.kafka_methods] == [
+        ("receive", "kafka-streams", "flow", "orders.in"),
+        ("send", "kafka-streams", "flow", "orders.out"),
     ]
 
 

@@ -20,4 +20,3 @@ Supported commands and behavior are documented in
 - `spring-boot-project-example.md`
 - `spring-petclinic-microservices.md`
 - `spring-petclinic-rest.md`
-- `systemlens-complex-example.html` — interactive visual example generated from the `../plateforme-aggree` architecture specification.

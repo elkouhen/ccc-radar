@@ -50,6 +50,29 @@ def test_ast_extractors_find_rest_and_kafka_facts() -> None:
     assert any(endpoint.role == "consume" and endpoint.message_type for endpoint in kafka)
 
 
+def test_kafka_template_send_is_detected_when_receiver_has_generic_name(tmp_path: Path) -> None:
+    source = tmp_path / "src" / "main" / "java" / "com" / "example" / "Publisher.java"
+    source.parent.mkdir(parents=True)
+    source.write_text(
+        """package com.example;
+import org.springframework.kafka.core.KafkaTemplate;
+class Publisher {
+  private KafkaTemplate<String, OrderCreated> template;
+  void publish(OrderCreated event) { template.send(\"orders.created\", event); }
+}
+record OrderCreated(String id) {}
+""",
+        encoding="utf-8",
+    )
+
+    endpoints = infer_kafka_endpoints(tmp_path)
+
+    assert [
+        (endpoint.role, endpoint.topic, endpoint.message_type, endpoint.framework)
+        for endpoint in endpoints
+    ] == [("produce", "orders.created", "OrderCreated", "spring-kafka")]
+
+
 def test_strategy1_recognizes_envoyer_message_kafka_method_family_as_producers(tmp_path: Path) -> None:
     source = tmp_path / "src" / "main" / "java" / "com" / "example" / "Publisher.java"
     source.parent.mkdir(parents=True)

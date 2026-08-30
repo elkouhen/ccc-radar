@@ -33,6 +33,22 @@ _BARE_TOPIC_VAR_RE = re.compile(
 # le topic suit directement `.to(`, contrairement au premier littéral
 # quelconque du snippet (qui peut appartenir à un `.peek(...)` chaîné avant).
 _KAFKA_STREAMS_TO_RE = re.compile(r'\.to\(\s*"([^"]*)"\s*(\+)?')
+_KAFKA_TEMPLATE_DECLARATION_RE = re.compile(
+    r"\bKafkaTemplate(?:\s*<[^;{}]+>)?\s+([A-Za-z_]\w*)\b"
+)
+
+
+def _kafka_template_receivers(source_text: str) -> set[str]:
+    """Return locally declared KafkaTemplate variable names.
+
+    A field or constructor parameter is commonly named ``template`` or
+    ``producer`` rather than ``kafkaTemplate``.  Inferring the receiver from
+    its declaration keeps the detection precise without treating every
+    ``send`` call in a Kafka-enabled class as a Kafka publication.
+    """
+    return set(_KAFKA_TEMPLATE_DECLARATION_RE.findall(source_text))
+
+
 def _resolve_topic_expression(
     expr: str, repo_root: Path, source_path: str
 ) -> tuple[str, bool]:
@@ -358,6 +374,7 @@ def infer_kafka_endpoints(repo_root: Path, files: list[str] | None = None) -> li
             continue
         source, root = parsed
         source_text = source.decode("utf-8", errors="replace")
+        kafka_template_receivers = _kafka_template_receivers(source_text)
         has_kafka_streams = "KStream" in source_text or "StreamsBuilder" in source_text
         has_kafka_consumer = "KafkaConsumer" in source_text
         has_stream_bridge = "StreamBridge" in source_text
@@ -400,7 +417,14 @@ def infer_kafka_endpoints(repo_root: Path, files: list[str] | None = None) -> li
             if node.type == "method_invocation":
                 object_node, method_name, args = java_parser.invocation_parts(node, source)
                 receiver = _invocation_receiver(source, object_node)
-                if method_name in {"send", "sendDefault"} and receiver and receiver.lower().endswith("kafkatemplate"):
+                if (
+                    method_name in {"send", "sendDefault"}
+                    and receiver
+                    and (
+                        receiver.lower().endswith("kafkatemplate")
+                        or receiver.rsplit(".", 1)[-1] in kafka_template_receivers
+                    )
+                ):
                     if len(args) >= 2:
                         topic, dynamic = _kafka_topic_from_value(args[0], source, repo_root, rel_path)
                         add(node, "produce", "spring-kafka", topic, dynamic,
