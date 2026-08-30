@@ -41,82 +41,10 @@ directory as its only document root, has no application or write routes, and
 binds to loopback by default. It is intentionally separate from `systemlens
 web`, whose only route is the in-memory architecture projection.
 
-### Elastic APM digest adapter
-
-`apm.py` is deliberately outside the indexing pipeline and SQLite model. The
-explicit `systemlens apm` commands use the Python standard library HTTPS client
-with an Elasticsearch API key to perform only `POST .../_search` requests.
-Credentials come from one-off flags or environment variables, are not persisted,
-and are not included in errors or digest JSON. `apm doctor` uses the same
-read query, so it does not require Elasticsearch `monitor` privileges.
-
-The adapter queries only the non-overlapping one-minute Elastic APM and
-compatible OpenTelemetry service-destination, service-transaction, and
-transaction metric streams with a composite aggregation over
-`service_destination` metrics. It pages at most `max_buckets` aggregate
-buckets, combines success/failure outcomes by source, target, and target type,
-then ranks relations by call volume. It retains only the prefix that fits both
-the relation and serialized-byte limits. The resulting `apm-digest-v1` payload
-contains its time window, metric field used, aggregate relations, and explicit
-coverage/truncation metadata. It contains no raw span, trace, log, request, or
-source data and is not merged with a snapshot.
-
-### Elastic APM microservice overlay
-
-The overlay is computed by the HTML export path (`render/html_export.py`)
-when `--apm-overlay` is set, reusing `apm.py`'s existing bounded
-`service_destination` reader/aggregator for edges and its existing bounded
-`service_transaction` composite-bucket reader for node average latency. No new Elasticsearch query shape is introduced; the overlay
-only combines the two existing aggregate result sets with the already-indexed
-microservice name list held in memory for that export.
-
-Correlation is a pure, delivery-layer function over
-`(observed_name, indexed_names)` that never touches `store.py` or
-`architecture_relations`:
-
-1. Normalize both sides (case-fold, collapse `-`, `_`, `.` separators).
-2. An exact normalized equality is `matched`.
-3. Otherwise, an indexed name is a candidate when one normalized string
-   contains the other; its score is the containment ratio (matched length /
-   longer string length). The highest-scoring candidate is used; a strict tie
-   between the top score across two or more candidates makes the observation
-   `ambiguous` instead.
-4. No candidate at all is `unmapped`.
-
-Only `matched` and singular `heuristic` results contribute a node/edge
-enrichment record; `ambiguous` and `unmapped` results are collected into a
-separate list rendered as the side-panel section, each retaining every tied
-candidate name for `ambiguous` entries. This mirrors the existing future
-Kubernetes correlation rule below (exact-first, single-candidate-only
-containment fallback) but is deliberately looser: it accepts a genuinely
-single best-scoring containment candidate as `heuristic` rather than leaving
-it unresolved, because this join is visual, opt-in, and never persisted (see
-ADR-16). A future SL-010 alias-based correlation adapter remains the
-conservative, exact-alias-only mechanism for any persisted or MCP-exposed
-join; when both exist, an explicit alias always takes precedence over this
-overlay's heuristic containment result for the same name.
-
-Because two or more distinct observed names can each resolve to the same
-indexed node or edge (exactly or heuristically), attachment is resolved in
-priority passes rather than a single overwrite-prone pass: exact `matched`
-claims are attached first, then `heuristic` claims fill only still-unclaimed
-nodes/edges, and any observation that would otherwise silently overwrite an
-already-attached target is instead routed to the unresolved list (`ambiguous`
-for a losing node claim, `dependency` role for a losing edge claim whose two
-ends both resolved).
-
-The enrichment record carries, per matched node, `average_ms` from
-`transaction.duration.summary`; per matched edge, `calls`, `failure_calls`,
-and `error_rate` from `service_destination`, identical in shape to the
-`apm-digest-v1` relation fields. It is embedded in the exported HTML's
-in-memory graph model only; it is not written to SQLite, not part of
-`ArchitectureSnapshot`, and not reachable from any MCP tool.
-
 S3 support requires a separate conservative Java extractor for explicit AWS SDK
 v1/v2 operations and configured bucket names, with dynamic bucket expressions
 preserved as unresolved evidence. Kafka, MongoDB, S3, and Kubernetes runtime
-signals require source-specific aggregate adapters; they cannot be synthesized
-from `service_destination` metrics when their telemetry is absent.
+signals require source-specific adapters and conservative evidence handling.
 
 Future Kubernetes correlation must first use the current exact workload/service
 name match. Its only fallback is a normalized token-sequence containment check
@@ -146,12 +74,14 @@ route, topic, and source presentation details and do not re-resolve targets or
 rescan source.
 
 `GraphFact` is the separate enrichment layer for facts supplied by an AI or
-user through MCP. It supports typed nodes and edges, origin, confidence,
-optional relative evidence and a note. The additive `graph_facts` table is not
-cleared by indexing. Source-derived relations remain owned by the indexer and
-cannot be removed through MCP; `architecture_graph` merges both layers using
-the generic dependency node/edge shape, preserving API and MongoDB
-associations.
+user through MCP. It supports typed nodes and edges, origin, namespace, status,
+confidence, pass/revision metadata, optional relative evidence and a note. The
+`graph_facts` table is not cleared by indexing. `import_graph_facts` validates
+and upserts a manifest by `(namespace, fact_type, manifest_id)`; complete
+snapshots can remove stale facts only inside their namespace. Source-derived
+relations remain owned by the indexer and cannot be removed through MCP.
+`architecture_graph` merges both layers using the generic dependency node/edge
+shape, preserving API and MongoDB associations.
 
 `AnalysisProfile` carries persisted extraction choices with the loaded
 inventory, currently the `default` or `strategy1` topic convention. CLI, MCP,
@@ -231,10 +161,12 @@ The read-only `--graph FILE` export path accepts the versioned
 `systemlens-ai-graph-v1` manifest described in [AI-GRAPH.md](AI-GRAPH.md).
 The adapter validates node IDs, kinds, relation endpoints, relative evidence
 paths and ambiguity status before projecting safe claims onto the existing
-HTML graph model. It never writes the manifest to SQLite. Confirmed and
-proposed claims become visual relations; ambiguous and unresolved claims are
-quality issues. This keeps AI-generated convention analysis separate from
-persisted source evidence while still making its reasoning inspectable.
+HTML graph model. It does not modify source-derived tables. The explicit
+`import-facts`/`import_graph_facts` path validates the same manifest and writes
+only the separate enrichment layer. Confirmed and proposed claims become
+visual relations; ambiguous and unresolved claims are quality issues. This
+keeps AI-generated convention analysis separate from persisted source evidence
+while still making its reasoning inspectable.
 
 HTML and JSON graph exports only consume the loaded architecture snapshot.
 They do not reopen OpenAPI documents or recursively parse Java DTO sources at

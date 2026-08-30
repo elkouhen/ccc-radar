@@ -32,6 +32,7 @@ class DependencyNode(TypedDict):
     external: bool
     technology: NotRequired[str]
     metadata: NotRequired[dict[str, object]]
+    status: NotRequired[str]
 
 
 class DependencyEdge(TypedDict):
@@ -42,6 +43,7 @@ class DependencyEdge(TypedDict):
     confidence: str
     technology: NotRequired[str]
     metadata: NotRequired[dict[str, object]]
+    status: NotRequired[str]
 
 
 class DependencyGraphResult(TypedDict):

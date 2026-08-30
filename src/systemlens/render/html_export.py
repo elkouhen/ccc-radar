@@ -488,7 +488,6 @@ def render_graph_html(
     diagnostics: list[ExtractionDiagnostic] | None = None,
     kafka_dto_definitions: list[dict[str, object]] | None = None,
     openapi_contracts: list[dict[str, object]] | None = None,
-    apm_overlay: dict[str, object] | None = None,
     graph_facts: list[GraphFact] | None = None,
 ) -> str:
     """Render an interactive Sigma.js graph as a self-contained HTML document.
@@ -761,6 +760,7 @@ def render_graph_html(
                 node = {
                     "id": node_id, "kind": fact.kind, "name": fact.name,
                     "label": fact.name, "width": 190, "height": 42,
+                    "status": fact.status,
                 }
                 known_node_ids.add(node_id)
                 nodes.append(node)
@@ -792,6 +792,10 @@ def render_graph_html(
                 consumed_message_types_by_relation.get((target_name, source_name), set())
             )
         links.append(link)
+    link_keys = {
+        (str(link["source"]), str(link["target"]), str(link["kind"]), str(link["label"]))
+        for link in links
+    }
     for fact in graph_facts or []:
         if fact.fact_type != "edge":
             continue
@@ -809,16 +813,21 @@ def render_graph_html(
                     "label": node_name, "width": 190, "height": 42,
                 })
                 known_node_ids.add(node_id)
-        links.append({
+        link = {
             "source": source_id, "target": target_id,
             "kind": f"mcp_{fact.kind}",
             "direction": "outgoing",
             "label": fact.relation or fact.kind,
             "confidence": fact.confidence,
+            "status": fact.status,
             "provenance": "MCP graph enrichment",
             **({"technology": fact.technology} if fact.technology else {}),
             **({"metadata": fact.metadata} if fact.metadata else {}),
-        })
+        }
+        link_key = (source_id, target_id, str(link["kind"]), str(link["label"]))
+        if link_key not in link_keys:
+            links.append(link)
+            link_keys.add(link_key)
     links += [
         {
             "source": f"{source_kind}:{source_name}",
@@ -969,7 +978,6 @@ def render_graph_html(
                 root_path,
                 diagnostics,
             ),
-            "apm_overlay": apm_overlay,
         },
         ensure_ascii=False,
     ).replace("</", "<\\/")

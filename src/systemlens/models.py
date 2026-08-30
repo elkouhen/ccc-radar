@@ -137,6 +137,10 @@ class GraphFact:
     note: str | None = None
     technology: str | None = None
     metadata: dict[str, object] | None = None
+    namespace: str = "manual"
+    status: str = "confirmed"
+    pass_id: str | None = None
+    source_revision: str | None = None
 
 
 @dataclass(frozen=True)

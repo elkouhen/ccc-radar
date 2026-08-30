@@ -3,7 +3,6 @@ import os
 import sys
 import time
 from dataclasses import dataclass
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal, Optional, cast
 
@@ -11,18 +10,7 @@ import click
 import typer
 
 from systemlens import __version__
-from systemlens.apm import (
-    ApmError,
-    ApmHttpError,
-    ElasticApmClient,
-    compact_json as compact_apm_json,
-    doctor as apm_doctor,
-    export_curl_command,
-    export_digest,
-    load_settings as load_apm_settings,
-)
-from systemlens.apm_overlay import build_microservice_overlay
-from systemlens.ai_graph import AiGraphError, load_ai_graph
+from systemlens.ai_graph import AiGraphError, load_ai_graph, load_fact_manifest
 from systemlens.architecture import (
     analyze as analyze_architecture,
     build_catalog,
@@ -43,7 +31,6 @@ from systemlens.config import ConfigError, init_config, load_config
 from systemlens.flow import resolve_topic
 from systemlens.graph import (
     GraphEdge,
-    external_microservice_names,
     find_outbound_calls_in_consumers,
     graph_edges_from_relations,
 )
@@ -75,6 +62,7 @@ from systemlens.render import (
 )
 from systemlens.paths import config_path, db_path
 from systemlens.store import Store, StoreError
+from systemlens.mcp_server import import_graph_facts as import_graph_facts_mcp
 from systemlens.workspace import (
     discover_maven_services,
     load_federation,
@@ -94,13 +82,6 @@ export_app = typer.Typer(
         "Exporter les graphes de dépendances d'architecture.\n\n"
         "Exemples : `systemlens export microservices --html graph.html`, "
         "`systemlens export modules --html modules.html`."
-    )
-)
-apm_app = typer.Typer(
-    help=(
-        "Vérifier l'accès Elastic APM et produire des synthèses bornées, sans traces brutes.\n\n"
-        "Exemples : `systemlens apm doctor --json`, "
-        "`systemlens apm export --since 1h --out apm-digest.json`."
     )
 )
 topics_app = typer.Typer(
@@ -128,7 +109,6 @@ analyze_microservices_app = typer.Typer(
     help="Analyser les relations entre microservices.\n\nExemples : `systemlens analyze microservices impact orders`, `systemlens analyze microservices path orders payments`."
 )
 app.add_typer(export_app, name="export")
-app.add_typer(apm_app, name="apm")
 app.add_typer(topics_app, name="topics")
 app.add_typer(dtos_app, name="dtos")
 app.add_typer(apis_app, name="apis")
@@ -1096,205 +1076,6 @@ def doctor_cmd(json_output: bool = typer.Option(False, "--json")) -> None:
         raise typer.Exit(code=2)
 
 
-@apm_app.command("doctor")
-def apm_doctor_cmd(
-    endpoint: Optional[str] = typer.Option(  # noqa: UP007
-        None,
-        "--endpoint",
-        help="URL Elasticsearch. Sinon SYSTEMLENS_ELASTICSEARCH_URL.",
-    ),
-    api_key: Optional[str] = typer.Option(  # noqa: UP007
-        None,
-        "--api-key",
-        help="Clé d'API Elasticsearch en lecture seule. Sinon SYSTEMLENS_ELASTICSEARCH_API_KEY.",
-    ),
-    insecure: bool = typer.Option(
-        False,
-        "--insecure",
-        help="Accepte un certificat TLS auto-signé (réduit la sécurité de la connexion).",
-    ),
-    json_output: bool = typer.Option(
-        False, "--json", help="Retourne le diagnostic en JSON."
-    ),
-) -> None:
-    """Vérifie la configuration et l'accès lecture Elastic APM, sans rien écrire.
-
-    Ne jamais transmettre une clé dans la sortie ou dans un export.
-    """
-    try:
-        result = apm_doctor(load_apm_settings(endpoint, api_key, insecure_tls=insecure))
-    except ApmError as exc:
-        result = {"status": "error", "detail": str(exc), "read_access": "error"}
-    if json_output:
-        typer.echo(json.dumps(result))
-    else:
-        marker = "✓" if result.get("status") == "ok" else "✗"
-        typer.echo(
-            f"{marker} Elastic APM: {result.get('detail', result['read_access'])}"
-        )
-        if result.get("status") == "ok":
-            count = result.get("service_destination_documents")
-            if isinstance(count, int):
-                typer.echo(f"  Documents service_destination : {count}")
-    if result.get("status") != "ok":
-        raise typer.Exit(code=2)
-
-
-def _apm_export_failure_advice(error: ApmError) -> list[str]:
-    """Return safe, actionable diagnostics without revealing credentials."""
-    advice = [
-        "Diagnostic lecture seule : exécutez `systemlens apm doctor` avec la même configuration.",
-    ]
-    if isinstance(error, ApmHttpError):
-        if error.status_code in {401, 403}:
-            advice.append(
-                "Vérifiez que la clé API a les droits de lecture sur les métriques APM."
-            )
-        elif error.status_code == 429:
-            advice.extend(
-                [
-                    "La requête a été refusée par le cluster (limitation ou capacité insuffisante).",
-                    "Si Elasticsearch mentionne un flood-stage watermark, exécutez dans Kibana Dev Tools :",
-                    "  GET _cluster/health",
-                    "  GET _cat/allocation?v",
-                    "  GET _cluster/settings?include_defaults=true&filter_path=**watermark",
-                ]
-            )
-        elif error.status_code >= 500:
-            advice.append(
-                "Le cluster a signalé une erreur serveur ; vérifiez son état et les journaux Elasticsearch."
-            )
-    elif "inaccessible" in str(error):
-        advice.append(
-            "Vérifiez la résolution DNS, le réseau, le certificat TLS et la disponibilité du cluster."
-        )
-    return advice
-
-
-def _print_apm_failed_request_curl(client: ElasticApmClient) -> bool:
-    """Print a reproducible request while keeping endpoint and key secret."""
-    command = client.last_request_curl()
-    if command is None:
-        return False
-    typer.echo(
-        "Requête curl équivalente (utilise SYSTEMLENS_ELASTICSEARCH_URL et "
-        "SYSTEMLENS_ELASTICSEARCH_API_KEY) :",
-        err=True,
-    )
-    typer.echo(command, err=True)
-    return True
-
-
-@apm_app.command("export")
-def apm_export_cmd(
-    since: str = typer.Option("1h", "--since", help="Fenêtre : 15m, 1h, 7d, etc."),
-    environment: Optional[str] = typer.Option(  # noqa: UP007
-        None, "--environment", help="Filtre exact service.environment (optionnel)."
-    ),
-    endpoint: Optional[str] = typer.Option(  # noqa: UP007
-        None,
-        "--endpoint",
-        help="URL Elasticsearch. Sinon SYSTEMLENS_ELASTICSEARCH_URL.",
-    ),
-    api_key: Optional[str] = typer.Option(  # noqa: UP007
-        None,
-        "--api-key",
-        help="Clé d'API Elasticsearch en lecture seule. Sinon SYSTEMLENS_ELASTICSEARCH_API_KEY.",
-    ),
-    insecure: bool = typer.Option(
-        False,
-        "--insecure",
-        help="Accepte un certificat TLS auto-signé (réduit la sécurité de la connexion).",
-    ),
-    max_relations: int = typer.Option(
-        80,
-        "--max-relations",
-        min=1,
-        max=10_000,
-        help="Relations maximum dans le digest.",
-    ),
-    max_bytes: int = typer.Option(
-        50_000, "--max-bytes", min=1_024, max=1_000_000, help="Taille JSON maximale."
-    ),
-    max_buckets: int = typer.Option(
-        5_000,
-        "--max-buckets",
-        min=1,
-        max=100_000,
-        help="Agrégats Elastic maximum lus avant troncature.",
-    ),
-    export_curl: bool = typer.Option(
-        False,
-        "--export-curl",
-        help="En cas d'échec, affiche le curl reproductible de la première requête APM.",
-    ),
-    out: Optional[Path] = typer.Option(  # noqa: UP007
-        None, "--out", help="Écrit le digest JSON dans ce fichier; stdout par défaut."
-    ),
-) -> None:
-    """Exporte des agrégats APM bornés pour une analyse externe telle que Pi.
-
-    Les traces, logs, en-têtes et identifiants de requêtes ne sont jamais exportés.
-    """
-    now = datetime.now(UTC)
-    client: ElasticApmClient | None = None
-    try:
-        settings = load_apm_settings(endpoint, api_key, insecure_tls=insecure)
-        client = ElasticApmClient(settings)
-        digest = export_digest(
-            client,
-            since=since,
-            environment=environment,
-            max_relations=max_relations,
-            max_bytes=max_bytes,
-            max_buckets=max_buckets,
-            now=now,
-        )
-        serialized = compact_apm_json(digest)
-    except ApmError as exc:
-        typer.echo(f"Échec de l'export APM : {exc}", err=True)
-        request_curl_printed = (
-            _print_apm_failed_request_curl(client) if client is not None else False
-        )
-        for line in _apm_export_failure_advice(exc):
-            typer.echo(line, err=True)
-        if export_curl and not request_curl_printed:
-            typer.echo(
-                "Requête curl reproductible (première page ; utilise les variables "
-                "SYSTEMLENS_ELASTICSEARCH_URL et SYSTEMLENS_ELASTICSEARCH_API_KEY) :",
-                err=True,
-            )
-            try:
-                typer.echo(
-                    export_curl_command(
-                        since=since,
-                        environment=environment,
-                        max_buckets=max_buckets,
-                        insecure_tls=insecure,
-                        now=now,
-                    ),
-                    err=True,
-                )
-            except ApmError:
-                # The original error already explains invalid CLI input.
-                pass
-        raise typer.Exit(code=2) from exc
-
-    if out is None:
-        typer.echo(serialized)
-        return
-    try:
-        out.write_text(serialized + "\n", encoding="utf-8")
-    except OSError as exc:
-        typer.echo(f"Impossible d'écrire le digest APM : {exc}", err=True)
-        raise typer.Exit(code=1) from exc
-    coverage = digest["coverage"]
-    exported = coverage["relations_exported"] if isinstance(coverage, dict) else "?"
-    typer.echo(
-        f"Digest APM écrit : {out} ({exported} relations, {len(serialized.encode('utf-8'))} octets)."
-    )
-
-
 @app.command()
 def init() -> None:
     """Initialise la configuration .systemlens/config.yml du projet.
@@ -1505,12 +1286,21 @@ def _load_microservice_graph(
 def _load_ai_graph(path: Path) -> _MicroserviceGraphData:
     try:
         services, edges, collections, issues = load_ai_graph(path)
-    except AiGraphError as exc:
-        typer.echo(f"Manifeste de graphe IA invalide : {exc}", err=True)
-        raise typer.Exit(code=2) from exc
+        graph_facts: list[GraphFact] = []
+    except AiGraphError:
+        try:
+            graph_facts, _namespace, _complete = load_fact_manifest(path)
+        except AiGraphError as exc:
+            typer.echo(f"Manifeste de graphe IA invalide : {exc}", err=True)
+            raise typer.Exit(code=2) from exc
+        services, edges, collections, issues = {}, [], {}, [
+            f"{fact.id}: {fact.note or 'relation non résolue'}"
+            for fact in graph_facts
+            if fact.status in {"ambiguous", "unresolved"}
+        ]
     result = render_graph_json(list(services), edges, [], warnings=issues, cross_module_data_available=True)
     return _MicroserviceGraphData(
-        services, edges, collections, {}, [], [], [], issues, [], False, result, None, None, []
+        services, edges, collections, {}, [], [], [], issues, [], False, result, None, None, graph_facts
     )
 
 
@@ -1610,55 +1400,12 @@ def export_microservices_cmd(
     json_output: bool = typer.Option(
         False, "--json", help="Écrire le graphe structuré sur la sortie standard."
     ),
-    apm_overlay: bool = typer.Option(
-        False,
-        "--apm-overlay",
-        help="Superposer des agrégats APM bornés (HTML uniquement). Nécessite un accès réseau.",
-    ),
-    apm_since: str = typer.Option(
-        "1h", "--since", help="Fenêtre APM : 15m, 1h, 7d, etc. (avec --apm-overlay)."
-    ),
-    apm_environment: Optional[str] = typer.Option(  # noqa: UP007
-        None,
-        "--environment",
-        help="Filtre exact service.environment APM (avec --apm-overlay).",
-    ),
-    apm_endpoint: Optional[str] = typer.Option(  # noqa: UP007
-        None,
-        "--endpoint",
-        help="URL Elasticsearch. Sinon SYSTEMLENS_ELASTICSEARCH_URL (avec --apm-overlay).",
-    ),
-    apm_api_key: Optional[str] = typer.Option(  # noqa: UP007
-        None,
-        "--api-key",
-        help="Clé d'API Elasticsearch en lecture seule (avec --apm-overlay).",
-    ),
-    apm_insecure: bool = typer.Option(
-        False,
-        "--insecure",
-        help="Accepte un certificat TLS auto-signé (avec --apm-overlay).",
-    ),
-    apm_max_relations: int = typer.Option(
-        80,
-        "--max-relations",
-        min=1,
-        max=10_000,
-        help="Relations APM maximum superposées (avec --apm-overlay).",
-    ),
-    apm_max_buckets: int = typer.Option(
-        2_000,
-        "--max-buckets",
-        min=1,
-        max=100_000,
-        help="Agrégats Elastic maximum lus avant troncature (avec --apm-overlay).",
-    ),
 ) -> None:
     """Exporter les dépendances microservices, topics Kafka et collections MongoDB.
 
     Exemples : `systemlens export microservices --html graph.html`,
     `systemlens export microservices --c4 architecture-likec4`,
-    `systemlens export microservices --json`,
-    `systemlens export microservices --html graph.html --apm-overlay --since 1h`.
+    `systemlens export microservices --json`.
     """
     # Direct Python callers (including embedding applications and tests) may
     # omit newly added Typer options; Typer otherwise leaves an OptionInfo
@@ -1674,37 +1421,13 @@ def export_microservices_cmd(
             "`--c4` attend un répertoire de projet, pas un fichier `.c4`.", err=True
         )
         raise typer.Exit(code=2)
-    if apm_overlay and html is None:
-        typer.echo("`--apm-overlay` nécessite `--html`.", err=True)
-        raise typer.Exit(code=2)
-    if graph is not None and (workspace is not None or apm_overlay):
-        typer.echo("`--graph` ne peut pas être combiné avec `--workspace` ou `--apm-overlay`.", err=True)
+    if graph is not None and workspace is not None:
+        typer.echo("`--graph` ne peut pas être combiné avec `--workspace`.", err=True)
         raise typer.Exit(code=2)
     graph_data = _load_ai_graph(graph) if graph is not None else _load_microservice_graph(Path.cwd(), workspace, include_mongodb=True)
     if json_output:
         typer.echo(json.dumps(graph_data.result))
         return
-    overlay: dict[str, object] | None = None
-    if apm_overlay:
-        indexed_service_names = sorted(
-            set(graph_data.services_by_name)
-            | external_microservice_names(graph_data.edges)
-        )
-        try:
-            settings = load_apm_settings(
-                apm_endpoint, apm_api_key, insecure_tls=apm_insecure
-            )
-            overlay = build_microservice_overlay(
-                ElasticApmClient(settings),
-                since=apm_since,
-                environment=apm_environment,
-                indexed_service_names=indexed_service_names,
-                max_relations=apm_max_relations,
-                max_buckets=apm_max_buckets,
-            )
-        except ApmError as exc:
-            typer.echo(str(exc), err=True)
-            raise typer.Exit(code=2) from exc
     if html is not None:
         html.write_text(
             render_graph_html(
@@ -1722,8 +1445,7 @@ def export_microservices_cmd(
                 diagnostics=graph_data.diagnostics,
                 kafka_dto_definitions=graph_data.kafka_dto_definitions,
                 openapi_contracts=graph_data.openapi_contracts,
-                apm_overlay=overlay,
-                graph_facts=graph_data.graph_facts,
+                graph_facts=getattr(graph_data, "graph_facts", []),
             ),
             encoding="utf-8",
         )
@@ -2617,6 +2339,23 @@ def _selected_indexed_module(name: str, repo_root: Path):
         typer.echo(f"Module ambigu : {name} ({paths})", err=True)
         raise typer.Exit(code=2)
     return matches[0]
+
+
+@app.command(name="import-facts")
+def import_facts_cmd(
+    manifest_path: Path = typer.Argument(..., help="Manifeste JSON systemlens-ai-graph-v1."),
+    namespace: Optional[str] = typer.Option(None, "--namespace", help="Namespace de faits à réconcilier."),
+    complete: bool = typer.Option(False, "--complete", help="Supprimer les faits obsolètes du namespace."),
+) -> None:
+    """Valider et réconcilier un manifeste JSON dans la base locale."""
+    try:
+        result = import_graph_facts_mcp(
+            manifest_path.as_posix(), namespace=namespace, complete=complete
+        )
+    except (ValueError, RuntimeError) as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=2) from exc
+    typer.echo(json.dumps(result, ensure_ascii=False))
 
 
 @app.command(name="mcp")

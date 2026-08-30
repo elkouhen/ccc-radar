@@ -34,6 +34,14 @@ generate an interactive export:
 systemlens export microservices --html architecture.html
 ```
 
+For iterative AI enrichment, validate and replace facts in the separate local
+enrichment layer:
+
+```bash
+systemlens import-facts architecture.ai-graph.pass-001.json \
+  --namespace ai-architecture
+```
+
 Use `systemlens microservices`, `systemlens topics`, `systemlens apis`, and
 `systemlens analyze audit` for terminal-oriented exploration.
 
@@ -76,96 +84,6 @@ documented Strategy1 Kafka and REST conventions.
 
 Dynamic paths and topic values are retained as dynamic facts; the tool does not
 guess a concrete dependency.
-
-## Elastic APM digest for external AI agents (for example, Pi)
-
-When read-only Elasticsearch access is available, SystemLens can export a
-small runtime-behaviour digest for an external agent such as Pi, a
-CLI-based coding-agent tool that can be pointed at a local file. It reads aggregated Elastic
-APM `service_destination` metrics, never raw spans, logs, request headers, or
-source code. It does not modify the local index.
-
-Set credentials in your shell rather than putting them in a command history:
-
-```bash
-export SYSTEMLENS_ELASTICSEARCH_URL=https://elastic.example
-# Raw Elasticsearch id:secret API keys are accepted and encoded by SystemLens.
-export SYSTEMLENS_ELASTICSEARCH_API_KEY=...
-systemlens apm doctor --json
-systemlens apm export --since 1h --environment production --out apm-digest.json
-pi -p @apm-digest.json "Analyse the service dependencies, error rates and latency hotspots."
-```
-
-`SYSTEMLENS_ELASTICSEARCH_URL` and `SYSTEMLENS_ELASTICSEARCH_API_KEY` take
-precedence. For compatibility with Elastic tooling, SystemLens also accepts
-`ELASTICSEARCH_URL` and `ELASTICSEARCH_API_KEY`; this lets a shell session that
-has sourced an Elastic credentials loader run SystemLens without copying those
-values.
-
-The export defaults to 80 relations and 50 KB. Its `coverage` object states
-when either the Elasticsearch aggregation or the output budget truncated the
-result, so Pi can distinguish absence from incomplete coverage.
-
-### Inspect the source aggregation
-
-To validate the input data independently, query the same read-only aggregate
-that `systemlens apm export` consumes. Keep the API key in the environment; do
-not paste it into the command or a report. Supply a trusted CA with `--cacert`.
-For a disposable local POC with a self-signed ingress certificate only, replace
-that option with `--insecure`.
-
-```bash
-curl --fail --silent --show-error \
-  --cacert /path/to/elasticsearch-ca.pem \
-  --header "Authorization: ApiKey ${SYSTEMLENS_ELASTICSEARCH_API_KEY:?set the API key}" \
-  --header 'Content-Type: application/json' \
-  --request POST \
-  --data '{
-    "size": 0,
-    "track_total_hits": false,
-    "query": {
-      "bool": {
-        "filter": [
-          {"term": {"metricset.name": "service_destination"}},
-          {"range": {"@timestamp": {"gte": "now-1h", "lt": "now"}}}
-        ]
-      }
-    },
-    "aggs": {
-      "relations": {
-        "composite": {
-          "size": 1000,
-          "sources": [
-            {"source": {"terms": {"field": "service.name"}}},
-            {"target": {"terms": {"field": "service.target.name"}}},
-            {"target_type": {"terms": {"field": "service.target.type", "missing_bucket": true}}},
-            {"outcome": {"terms": {"field": "event.outcome", "missing_bucket": true}}}
-          ]
-        },
-        "aggs": {
-          "calls": {"sum": {"field": "span.destination.service.response_time.count"}},
-          "duration_us": {"sum": {"field": "span.destination.service.response_time.sum.us"}}
-        }
-      }
-    }
-  }' \
-  "${SYSTEMLENS_ELASTICSEARCH_URL}/metrics-apm.service_destination.1m-*/_search"
-```
-
-The response contains aggregate source/destination buckets only. The CLI reads
-both Elastic APM and compatible OpenTelemetry runtime data streams; the curl
-example remains the Elastic APM-only projection. A zero bucket
-count means no observed outgoing destination metrics in the selected window;
-it does not prove that a static dependency is absent.
-
-For Kibana **Dev Tools → Console**, paste and execute the standalone
-[service-destination request](docs/apm-service-destination-query.http). Adjust
-the `@timestamp` range or add a `service.environment` term filter as needed.
-
-For Elastic Stack Monitoring, an importable Kibana dashboard for a primary
-Elasticsearch cluster is available in
-[`docs/kibana-primary-cluster-dashboard.ndjson`](docs/kibana-primary-cluster-dashboard.ndjson).
-See [its import guide](docs/KIBANA-PRIMARY-CLUSTER-DASHBOARD.md).
 
 ## MCP
 

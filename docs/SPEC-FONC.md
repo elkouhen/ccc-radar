@@ -3,9 +3,7 @@
 `systemlens` builds a local architecture inventory from Java/Spring source ASTs.
 The inventory commands operate on the current repository unless an explicit
 workspace root is accepted. There is no external code-analysis process in this
-workflow. The separate, opt-in `apm` command group reads configured Elastic APM
-metric aggregates and neither indexes source nor writes the inventory.
-
+workflow. 
 ## Configuration
 
 `systemlens init` creates `.systemlens/config.yml`:
@@ -15,13 +13,6 @@ include: ["**/*"]
 exclude: [".git/**", ".venv/**", "node_modules/**", ".systemlens/**"]
 min_severity: INFO
 ```
-
-For Elastic APM commands, explicit `--endpoint` and `--api-key` values take
-precedence over `SYSTEMLENS_ELASTICSEARCH_URL` and
-`SYSTEMLENS_ELASTICSEARCH_API_KEY`. When the SystemLens-specific variables are
-absent, the compatible `ELASTICSEARCH_URL` and `ELASTICSEARCH_API_KEY` shell
-variables are accepted. No credential is written to the SystemLens
-configuration or SQLite index.
 
 This is a breaking rename from `cccr`, `archlens`, and `codeatlas`: SystemLens
 does not read an existing `.cccr/`, `.archlens/`, or `.codeatlas/` directory.
@@ -40,9 +31,8 @@ but does not alter AST endpoint extraction.
 | `systemlens init` | Creates `.systemlens/config.yml`; it never overwrites an existing file. |
 | `systemlens doctor [--json]` | Read-only check of configuration, local AST readiness and index state. |
 | `systemlens version` | Prints the installed `systemlens` package version. |
-| `systemlens apm doctor [--endpoint URL] [--api-key KEY] [--insecure] [--json]` | Read-only validation of Elasticsearch access to the APM metrics. It reports only whether the endpoint and key are configured and their source (`flag` or `env`); it never prints the URL or key. `--insecure` explicitly accepts a self-signed TLS certificate. |
-| `systemlens apm export [--since DURATION] [--environment NAME] [--endpoint URL] [--api-key KEY] [--insecure] [--max-relations N] [--max-bytes N] [--max-buckets N] [--export-curl] [--out FILE]` | Reads `service_destination` aggregates from Elasticsearch and emits compact JSON to stdout, or writes it to `FILE`. It does not export raw spans, logs, headers, identifiers, or source content. A failed export preserves the safe HTTP/access error and prints read-only diagnostic guidance; HTTP 429 guidance includes Kibana Dev Tools commands for cluster health, disk allocation, and watermark settings, never the endpoint or API key. `--insecure` explicitly accepts a self-signed TLS certificate; `--export-curl` includes curl's equivalent `--insecure` flag and prints a reproducible curl command for the export's first APM query, using environment-variable references rather than credential values. |
 | `systemlens index [MANIFEST]... [--full] [--topic-strategy default\|strategy1] [--manifest FILE]... [--kubernetes] [--kubernetes-namespace NAME]` | Incrementally extracts and persists architecture facts. `--kubernetes` queries the active `kubectl` context for Deployments and StatefulSets; `--kubernetes-namespace` restricts it to one namespace. |
+| `systemlens import-facts FILE [--namespace NAME] [--complete]` | Validates and transactionally upserts an AI fact manifest into the separate enrichment layer. `--complete` removes stale facts only within the selected namespace. |
 | `systemlens microservices`, `topics`, `apis`, `dtos`, `mongodb`, `modules` | Browse the indexed catalog; `microservices`, `topics` and `mongodb` list the corresponding architecture objects directly, each with a `kind` and `name`, and support the documented list/show/neighbors actions and JSON output where applicable. |
 | `systemlens microservices topics\|apis\|mongodb\|properties\|openapi NAME [--root DIR] [--json]` | Follow one linked object kind from a single named microservice. |
 | `systemlens microservices implementation KIND ID [--root DIR] [--json]` | Jump to the source implementation of one identified integration. |
@@ -55,7 +45,7 @@ but does not alter AST endpoint extraction.
 | `systemlens analyze microservices impact NAME [--root DIR] [--json]` | Lists direct and transitive impact paths. |
 | `systemlens analyze microservices path FROM TO [--root DIR] [--json] [--max-depth N] [--limit N]` | Lists bounded paths between services. |
 | `systemlens analyze request-reply [--root DIR] [--json]` | Lists Strategy1 Kafka request/reply candidates. |
-| `systemlens export microservices (--html FILE \| --c4 DIRECTORY \| --json) [--graph FILE] [--root-path DIRECTORY] [--apm-overlay --since DURATION --environment NAME --endpoint URL --api-key KEY --insecure --max-relations N --max-buckets N]` | Exports the microservice, API, data-schema and message-channel topology. Persisted MCP graph facts are included in the HTML export. `--graph FILE` reads a validated `systemlens-ai-graph-v1` manifest produced by an AI when deterministic source conventions are too complex; confirmed/proposed claims are displayed and ambiguous/unresolved claims remain in the quality panel. `--root-path` provides the local source root for HTML VS Code links. `--apm-overlay` (HTML only) additionally queries bounded Elastic APM aggregates and overlays them on the graph; `--insecure` explicitly accepts a self-signed TLS certificate; see "Elastic APM microservice overlay". |
+| `systemlens export microservices (--html FILE | --c4 DIRECTORY | --json) [--graph FILE] [--root-path DIRECTORY]` | Exports the microservice, API, data-schema and message-channel topology. Persisted MCP graph facts are included in the HTML export. `--graph FILE` reads a validated `systemlens-ai-graph-v1` manifest; `--root-path` provides the local source root for HTML source links. |
 | `systemlens export modules --html FILE` | Exports the Maven/Gradle build-dependency view. |
 | `systemlens export request-reply --html FILE` | Exports Strategy1 Kafka request/reply candidates. |
 | `systemlens web [--host HOST] [--port PORT]` | Starts the local Python web application at `http://127.0.0.1:8765/` by default. Its home page links to Architecture. Architecture renders the persisted snapshot for each request, excluding test-fixture microservices and every relation attached to them; when no index exists, it offers an explicit local button that creates the default configuration when needed and indexes the repository. The default loopback host prevents network exposure unless the user explicitly changes `--host`. |
@@ -246,6 +236,7 @@ index-then-enrich workflow. It no longer mirrors every read-only CLI command:
 | `index_repository` | Index or refresh the current repository; preserves graph enrichment facts. |
 | `graph_fact_exists` | Check a semantic node/edge fact before proposing it. |
 | `add_graph_fact` | Add an AI/user node or edge assertion with confidence and optional relative evidence; rejects semantic duplicates. |
+| `import_graph_facts` | Validate and atomically upsert a `systemlens-ai-graph-v1` manifest into one enrichment namespace, optionally removing stale facts for a complete snapshot. |
 | `remove_graph_fact` | Remove an assertion previously added through MCP; never removes extracted source facts. |
 | `list_graph_facts` | List the persisted enrichment layer. |
 | `architecture_graph` | Return the complete generic dependency graph (services, APIs, topics, data schemas and external resources) merged with persisted enrichment facts. |
@@ -255,8 +246,14 @@ facts are stored separately in `graph_facts`, survive reindexing, and are never
 treated as source evidence. Nodes require `fact_type=node`, `kind` and `name`;
 edges require source/target kinds and names plus `relation`. Evidence paths are
 relative to the indexed repository and may not escape it.
-Call `graph_fact_exists` before `add_graph_fact`; insertion is also atomic and
-rejects a duplicate if another agent adds it concurrently.
+`add_graph_fact` remains an additive single-fact API and rejects duplicates.
+For iterative analysis, use `import_graph_facts`: it reconciles by the
+manifest namespace and stable node/edge id, replacing the complete stored
+value for an existing AI fact. A partial manifest never removes facts; a
+manifest with `mode=complete` (or an explicit `complete=true`) removes stale
+facts only from that namespace. Source-derived facts are stored separately and
+are never overwritten. The import is transactional and returns inserted,
+updated and removed counts.
 For generic middleware, use `kind=data_schema` or `kind=message_channel`, set
 `technology` to the concrete implementation, and put provider-specific facts
 such as database/schema/table, exchange/queue or partition in `metadata`.
@@ -266,82 +263,3 @@ such as database/schema/table, exchange/queue or partition in `metadata`.
 The inventory is static. Reflection, arbitrary string construction, runtime
 routing and undeclared external contracts can remain unresolved. Consumers must
 use `topic_dynamic`, confidence and source evidence when interpreting the graph.
-
-## Elastic APM digest
-
-`apm export` is an explicit read-only integration for a configured Elasticsearch
-endpoint. It accepts `--since` as a positive `s`, `m`, `h`, or `d` duration
-(default `1h`) and an optional exact `service.environment` filter. Command-line
-connection values take precedence over `SYSTEMLENS_ELASTICSEARCH_URL` and
-`SYSTEMLENS_ELASTICSEARCH_API_KEY`. An endpoint must be an absolute HTTP(S) URL.
-
-The command queries the Elastic APM metric streams and the compatible
-OpenTelemetry metric streams (`metrics-service_destination.1m.otel-*`,
-`metrics-service_transaction.1m.otel-*`, and `metrics-transaction.1m.otel-*`)
-with
-`metricset.name=service_destination`. It aggregates source service, destination
-service, destination type, outcome, call count, failure count, error rate, and
-average latency. It first uses `service.target.name`, then retries the legacy
-`span.destination.service.resource` field only when the first query is empty.
-
-The JSON contract has schema version `apm-digest-v1`, a UTC `window`, optional
-`environment`, ordered `relations`, and `coverage`. `coverage` reports the
-number of relations seen and exported plus each truncation reason. Output is
-bounded by `--max-relations` (80 by default), `--max-bytes` (50,000 by default),
-and a protective Elasticsearch `--max-buckets` read limit (5,000 by default).
-No digest result is persisted in SQLite, surfaced through MCP, or merged into
-an architecture HTML export.
-
-## Elastic APM microservice overlay
-
-`export microservices --html FILE --apm-overlay` decorates the static
-microservice graph with the same bounded, read-only APM aggregates as
-`apm export`, using the same `--since` (default `1h`),
-`--environment`, connection, and result-limit flags — except `--max-buckets`,
-which defaults to 2,000 for the overlay versus 5,000 for `apm export`, because
-the overlay reads two aggregate queries per export. It is opt-in and requires
-network access; without `--apm-overlay` the export behaves exactly as before,
-fully offline.
-
-The overlay reads `service_destination` for edge call volume and error rate,
-and `service_transaction` for node average latency. Every observed service
-name is correlated to an indexed microservice name: an exact,
-case/separator-normalized match is **matched**; otherwise a normalized
-substring containment (either direction) is accepted as a **heuristic** match
-against the single best-scoring indexed candidate; a tie between
-equally-scored candidates is **ambiguous**; no candidate at all is
-**unmapped**. Only `matched` and unambiguous `heuristic` observations are
-drawn on the graph. A heuristic match is visually distinguished from an exact
-match (for example a dashed badge outline) so a viewer never mistakes a guess
-for a confirmed identity.
-
-A matched microservice node shows its average observed transaction latency as
-a separate badge/ring from its existing static-connectivity outline, so
-runtime latency is never confused with static relation count. A matched edge
-between two indexed microservices shows call volume and error rate; call
-volume uses its own low/medium/high tercile, computed only across overlaid
-edges, independent of the static complexity terciles.
-
-`ambiguous` and `unmapped` observations never appear on the graph. They are
-listed in a dedicated side panel section, each with its observed name, role
-(`service` for a node-level observation, `source`/`destination` for an
-edge-level observation whose corresponding node did not resolve, or
-`dependency` for an edge whose two ends both resolved but that lost a
-conflicting claim on an already-attached edge), call volume/error rate, and —
-for `ambiguous` entries — every tied candidate name. This keeps their absence
-from the graph distinguishable from a genuinely idle service.
-
-A zero-observation window (no matching aggregate at all) is reported in the
-same panel as "no APM activity observed in this window", never silently, and
-never as evidence that a static dependency is absent.
-
-The overlay is computed only in memory at export time. It is never persisted
-to `.systemlens/findings.db`, merged into `architecture_relations`, exposed
-through MCP, or considered by `analyze audit`, `analyze microservices impact`,
-or `analyze microservices path`, all of which remain purely static.
-
-For a future Kubernetes workload correlation, an exact workload/service name
-match remains preferred. A normalized, token-bounded inclusion (for example,
-`orders` in `orders-api-v2`) may be used only as a fallback when it identifies
-one indexed service. A broad substring match, or a workload containing two or
-more candidate service names, is unresolved and must be exposed in coverage.

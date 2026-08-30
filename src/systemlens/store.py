@@ -21,7 +21,7 @@ from systemlens.modules import (
 from systemlens.kubernetes import KubernetesWorkload
 from systemlens.paths import db_path
 
-SCHEMA_VERSION = "25"
+SCHEMA_VERSION = "26"
 SEVERITY_ORDER = ["INFO", "WARNING", "ERROR"]
 _COUNTABLE_DIMENSIONS = ("rule_id", "severity")
 _SQLITE_BIND_LIMIT = 900
@@ -308,6 +308,10 @@ class Store:
                 note TEXT,
                 technology TEXT,
                 metadata TEXT NOT NULL DEFAULT '{}'
+                ,namespace TEXT NOT NULL DEFAULT 'manual'
+                ,status TEXT NOT NULL DEFAULT 'confirmed'
+                ,pass_id TEXT
+                ,source_revision TEXT
             );
             CREATE INDEX IF NOT EXISTS idx_graph_facts_type ON graph_facts(fact_type);
             """
@@ -370,6 +374,15 @@ class Store:
             self.conn.execute("ALTER TABLE graph_facts ADD COLUMN technology TEXT")
         if "metadata" not in cols:
             self.conn.execute("ALTER TABLE graph_facts ADD COLUMN metadata TEXT NOT NULL DEFAULT '{}'")
+        if "namespace" not in cols:
+            self.conn.execute("ALTER TABLE graph_facts ADD COLUMN namespace TEXT NOT NULL DEFAULT 'manual'")
+        if "status" not in cols:
+            self.conn.execute("ALTER TABLE graph_facts ADD COLUMN status TEXT NOT NULL DEFAULT 'confirmed'")
+        if "pass_id" not in cols:
+            self.conn.execute("ALTER TABLE graph_facts ADD COLUMN pass_id TEXT")
+        if "source_revision" not in cols:
+            self.conn.execute("ALTER TABLE graph_facts ADD COLUMN source_revision TEXT")
+        self.conn.execute("CREATE INDEX IF NOT EXISTS idx_graph_facts_namespace ON graph_facts(namespace)")
 
     # -- meta --
 
@@ -568,20 +581,24 @@ class Store:
         self.conn.execute(
             """INSERT INTO graph_facts
             (id, fact_type, kind, name, source_kind, source_name, target_kind,
-             target_name, relation, origin, confidence, evidence_path,
-             evidence_line, note, technology, metadata)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            target_name, relation, origin, confidence, evidence_path,
+             evidence_line, note, technology, metadata, namespace, status,
+             pass_id, source_revision)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET fact_type=excluded.fact_type,
             kind=excluded.kind, name=excluded.name, source_kind=excluded.source_kind,
             source_name=excluded.source_name, target_kind=excluded.target_kind,
             target_name=excluded.target_name, relation=excluded.relation,
             origin=excluded.origin, confidence=excluded.confidence,
             evidence_path=excluded.evidence_path, evidence_line=excluded.evidence_line,
-            note=excluded.note, technology=excluded.technology, metadata=excluded.metadata""",
+            note=excluded.note, technology=excluded.technology, metadata=excluded.metadata,
+            namespace=excluded.namespace, status=excluded.status,
+            pass_id=excluded.pass_id, source_revision=excluded.source_revision""",
             (fact.id, fact.fact_type, fact.kind, fact.name, fact.source_kind,
              fact.source_name, fact.target_kind, fact.target_name, fact.relation,
              fact.origin, fact.confidence, fact.evidence_path, fact.evidence_line,
-             fact.note, fact.technology, json.dumps(fact.metadata or {})),
+             fact.note, fact.technology, json.dumps(fact.metadata or {}), fact.namespace,
+             fact.status, fact.pass_id, fact.source_revision),
         )
 
     def insert_graph_fact(self, fact: GraphFact) -> bool:
@@ -613,6 +630,25 @@ class Store:
     def all_graph_facts(self) -> list[GraphFact]:
         rows = self.conn.execute("SELECT * FROM graph_facts ORDER BY id").fetchall()
         return [GraphFact(**{**dict(row), "metadata": json.loads(row["metadata"])}) for row in rows]
+
+    def graph_facts_by_namespace(self, namespace: str) -> list[GraphFact]:
+        rows = self.conn.execute(
+            "SELECT * FROM graph_facts WHERE namespace = ? ORDER BY id", (namespace,)
+        ).fetchall()
+        return [GraphFact(**{**dict(row), "metadata": json.loads(row["metadata"])}) for row in rows]
+
+    def delete_graph_facts_not_in(self, namespace: str, fact_ids: set[str]) -> int:
+        """Remove stale enrichment facts from one complete manifest namespace."""
+        if fact_ids:
+            placeholders = ", ".join("?" for _ in fact_ids)
+            params: list[object] = [namespace, *sorted(fact_ids)]
+            cur = self.conn.execute(
+                f"DELETE FROM graph_facts WHERE namespace = ? AND id NOT IN ({placeholders})",
+                params,
+            )
+        else:
+            cur = self.conn.execute("DELETE FROM graph_facts WHERE namespace = ?", (namespace,))
+        return cur.rowcount
 
     # -- extraction diagnostics --
 
