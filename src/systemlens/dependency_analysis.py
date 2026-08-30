@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TypedDict
+from typing import NotRequired, TypedDict
 
 from systemlens.audit import assess_architecture, render_audit_json
 from systemlens.graph import (
@@ -30,6 +30,8 @@ class DependencyNode(TypedDict):
     name: str
     service: str | None
     external: bool
+    technology: NotRequired[str]
+    metadata: NotRequired[dict[str, object]]
 
 
 class DependencyEdge(TypedDict):
@@ -38,6 +40,8 @@ class DependencyEdge(TypedDict):
     kind: str
     label: str
     confidence: str
+    technology: NotRequired[str]
+    metadata: NotRequired[dict[str, object]]
 
 
 class DependencyGraphResult(TypedDict):

@@ -145,6 +145,14 @@ from those persisted relations; adapters may use indexed endpoints only to add
 route, topic, and source presentation details and do not re-resolve targets or
 rescan source.
 
+`GraphFact` is the separate enrichment layer for facts supplied by an AI or
+user through MCP. It supports typed nodes and edges, origin, confidence,
+optional relative evidence and a note. The additive `graph_facts` table is not
+cleared by indexing. Source-derived relations remain owned by the indexer and
+cannot be removed through MCP; `architecture_graph` merges both layers using
+the generic dependency node/edge shape, preserving API and MongoDB
+associations.
+
 `AnalysisProfile` carries persisted extraction choices with the loaded
 inventory, currently the `default` or `strategy1` topic convention. CLI, MCP,
 export, graph, and audit adapters consume this profile. A workspace federation

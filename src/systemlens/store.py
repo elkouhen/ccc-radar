@@ -7,7 +7,7 @@ from pathlib import Path
 from types import TracebackType
 from typing import Any
 
-from systemlens.models import ArchitectureRelation, ExtractionDiagnostic, Finding, MessageEndpoint
+from systemlens.models import ArchitectureRelation, ExtractionDiagnostic, Finding, GraphFact, MessageEndpoint
 from systemlens.modules import (
     BlockingPoint,
     DiscoveredModule,
@@ -21,7 +21,7 @@ from systemlens.modules import (
 from systemlens.kubernetes import KubernetesWorkload
 from systemlens.paths import db_path
 
-SCHEMA_VERSION = "23"
+SCHEMA_VERSION = "25"
 SEVERITY_ORDER = ["INFO", "WARNING", "ERROR"]
 _COUNTABLE_DIMENSIONS = ("rule_id", "severity")
 _SQLITE_BIND_LIMIT = 900
@@ -291,12 +291,32 @@ class Store:
                 spec TEXT NOT NULL,
                 PRIMARY KEY (module, path)
             );
+            CREATE TABLE IF NOT EXISTS graph_facts (
+                id TEXT PRIMARY KEY,
+                fact_type TEXT NOT NULL,
+                kind TEXT NOT NULL,
+                name TEXT,
+                source_kind TEXT,
+                source_name TEXT,
+                target_kind TEXT,
+                target_name TEXT,
+                relation TEXT,
+                origin TEXT NOT NULL,
+                confidence TEXT NOT NULL,
+                evidence_path TEXT,
+                evidence_line INTEGER,
+                note TEXT,
+                technology TEXT,
+                metadata TEXT NOT NULL DEFAULT '{}'
+            );
+            CREATE INDEX IF NOT EXISTS idx_graph_facts_type ON graph_facts(fact_type);
             """
         )
         self._migrate_module_columns()
         self._migrate_endpoint_message_type()
         self._migrate_module_architecture_columns()
         self._migrate_module_identity()
+        self._migrate_graph_fact_columns()
         if self.get_meta("schema_version") != SCHEMA_VERSION:
             self.set_meta("schema_version", SCHEMA_VERSION)
         self.conn.commit()
@@ -343,6 +363,13 @@ class Store:
         cols = {row["name"] for row in self.conn.execute("PRAGMA table_info(endpoints)")}
         if "message_type" not in cols:
             self.conn.execute("ALTER TABLE endpoints ADD COLUMN message_type TEXT")
+
+    def _migrate_graph_fact_columns(self) -> None:
+        cols = {row["name"] for row in self.conn.execute("PRAGMA table_info(graph_facts)")}
+        if "technology" not in cols:
+            self.conn.execute("ALTER TABLE graph_facts ADD COLUMN technology TEXT")
+        if "metadata" not in cols:
+            self.conn.execute("ALTER TABLE graph_facts ADD COLUMN metadata TEXT NOT NULL DEFAULT '{}'")
 
     # -- meta --
 
@@ -534,6 +561,58 @@ class Store:
             )
             for row in rows
         ]
+
+    # -- AI/user graph facts --
+
+    def upsert_graph_fact(self, fact: GraphFact) -> None:
+        self.conn.execute(
+            """INSERT INTO graph_facts
+            (id, fact_type, kind, name, source_kind, source_name, target_kind,
+             target_name, relation, origin, confidence, evidence_path,
+             evidence_line, note, technology, metadata)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET fact_type=excluded.fact_type,
+            kind=excluded.kind, name=excluded.name, source_kind=excluded.source_kind,
+            source_name=excluded.source_name, target_kind=excluded.target_kind,
+            target_name=excluded.target_name, relation=excluded.relation,
+            origin=excluded.origin, confidence=excluded.confidence,
+            evidence_path=excluded.evidence_path, evidence_line=excluded.evidence_line,
+            note=excluded.note, technology=excluded.technology, metadata=excluded.metadata""",
+            (fact.id, fact.fact_type, fact.kind, fact.name, fact.source_kind,
+             fact.source_name, fact.target_kind, fact.target_name, fact.relation,
+             fact.origin, fact.confidence, fact.evidence_path, fact.evidence_line,
+             fact.note, fact.technology, json.dumps(fact.metadata or {})),
+        )
+
+    def insert_graph_fact(self, fact: GraphFact) -> bool:
+        """Insert one enrichment fact without replacing an existing assertion."""
+        before = self.conn.total_changes
+        self.conn.execute(
+            """INSERT OR IGNORE INTO graph_facts
+            (id, fact_type, kind, name, source_kind, source_name, target_kind,
+             target_name, relation, origin, confidence, evidence_path,
+             evidence_line, note, technology, metadata)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (fact.id, fact.fact_type, fact.kind, fact.name, fact.source_kind,
+             fact.source_name, fact.target_kind, fact.target_name, fact.relation,
+             fact.origin, fact.confidence, fact.evidence_path, fact.evidence_line,
+             fact.note, fact.technology, json.dumps(fact.metadata or {})),
+        )
+        return self.conn.total_changes > before
+
+    def graph_fact_by_id(self, fact_id: str) -> GraphFact | None:
+        row = self.conn.execute("SELECT * FROM graph_facts WHERE id = ?", (fact_id,)).fetchone()
+        if row is None:
+            return None
+        return GraphFact(**{**dict(row), "metadata": json.loads(row["metadata"])})
+
+    def delete_graph_fact(self, fact_id: str) -> bool:
+        cur = self.conn.execute("DELETE FROM graph_facts WHERE id = ?", (fact_id,))
+        return cur.rowcount > 0
+
+    def all_graph_facts(self) -> list[GraphFact]:
+        rows = self.conn.execute("SELECT * FROM graph_facts ORDER BY id").fetchall()
+        return [GraphFact(**{**dict(row), "metadata": json.loads(row["metadata"])}) for row in rows]
 
     # -- extraction diagnostics --
 

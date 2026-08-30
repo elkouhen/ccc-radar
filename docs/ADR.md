@@ -430,3 +430,13 @@ exported or persisted.
 local and distributed aggregate workloads. A missing distributed waterfall no
 longer implies a missing transaction workload; the separate Distributed traces
 view continues to state when no multi-service exemplar is available.
+## ADR-23 — MCP control in two phases with a graph enrichment layer
+
+The MCP exposes `index_repository`, followed by dedicated operations to add,
+inspect and remove graph facts. Added facts are persisted in `graph_facts`,
+separately from relations derived from source code.
+
+This separation lets an AI complete conventions that cannot be extracted
+deterministically, while ensuring reindexing preserves enrichment and MCP
+deletion never destroys source evidence. `architecture_graph` merges both
+layers for reading. Added evidence paths remain relative to the repository.

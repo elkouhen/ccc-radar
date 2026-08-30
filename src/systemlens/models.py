@@ -118,6 +118,28 @@ class ArchitectureRelation:
 
 
 @dataclass(frozen=True)
+class GraphFact:
+    """A user/AI-supplied graph fact kept separately from code extraction."""
+
+    id: str
+    fact_type: str  # node | edge
+    kind: str
+    name: str | None
+    source_kind: str | None
+    source_name: str | None
+    target_kind: str | None
+    target_name: str | None
+    relation: str | None
+    origin: str
+    confidence: str
+    evidence_path: str | None = None
+    evidence_line: int | None = None
+    note: str | None = None
+    technology: str | None = None
+    metadata: dict[str, object] | None = None
+
+
+@dataclass(frozen=True)
 class ExtractionDiagnostic:
     """A safe, indexed record of one extractor failure or limitation."""
 

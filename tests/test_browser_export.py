@@ -136,6 +136,8 @@ def test_html_export_resources_are_usable_in_a_constrained_browser_viewport(tmp_
         assert graph.get_attribute("data-relation-count") == "2"
         page.locator("#relation-kafka").check()
         assert graph.get_attribute("data-relation-count") == "4"
+        page.locator("#layout-elk").click()
+        page.locator("#layout-status").filter(has_text="vue architecturale").wait_for(state="visible")
 
         page.get_by_role("tab", name="Kafka").click()
         page.locator("#kafka-panel").wait_for(state="visible")

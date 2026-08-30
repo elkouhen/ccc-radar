@@ -1,56 +1,26 @@
+"""MCP surface for the index-then-enrich architecture workflow."""
+
+import hashlib
 from pathlib import Path
-from typing import cast
 
 from mcp.server.fastmcp import FastMCP
 
-from systemlens.config import load_config
 from systemlens.architecture_inventory import load_architecture_inventory
-from systemlens.architecture import (
-    analyze as analyze_architecture,
-    build_catalog,
-    find_microservice_paths,
-    inventory_coverage,
-    list_objects,
-    neighbors,
-    normalize_kind,
-    request_reply_patterns,
-    show_object,
-    trace_topic_flows,
-)
-from systemlens.audit import assess_architecture, render_audit_json
+from systemlens.config import load_config
 from systemlens.dependency_analysis import (
-    DependencyAuditResult,
+    DependencyEdge,
     DependencyGraphResult,
-    audit_dependency_graph as run_dependency_audit,
+    DependencyNode,
     build_dependency_graph,
 )
-from systemlens.flow import group_endpoints_by_module_for_flow, trace_flow
-from systemlens.graph import (
-    find_outbound_calls_in_consumers,
-    graph_edges_from_relations,
-)
 from systemlens.indexer import IndexReport, index_repo
-from systemlens.inventory_freshness import endpoint_inventory_warning
+from systemlens.models import GraphFact
 from systemlens.paths import db_path
-from systemlens.render import (
-    EndpointHit,
-    FlowResultInfo,
-    GraphResult,
-    ModuleSummary,
-    WorkspaceResult,
-    render_endpoints_json,
-    render_flow_json,
-    render_graph_json,
-    render_modules_list_json,
-    render_workspace_json,
-)
 from systemlens.store import Store
-from systemlens.workspace import (
-    discover_maven_services,
-    load_federation,
-)
 
 mcp = FastMCP("systemlens")
+_FACT_TYPES = {"node", "edge"}
+_CONFIDENCES = {"high", "medium", "low", "unknown"}
 
 
 def _repo_root() -> Path:
@@ -59,312 +29,173 @@ def _repo_root() -> Path:
 
 def _require_index(repo_root: Path) -> None:
     if not db_path(repo_root).is_file():
-        raise RuntimeError("Index absent. Lancez d'abord: systemlens index")
+        raise RuntimeError("Index absent. Lancez d'abord index_repository.")
 
 
-def _current_repo_endpoint_warning(store: Store) -> str | None:
-    return endpoint_inventory_warning(
-        store.get_meta("endpoint_inventory_signature"),
-        scope="ce projet",
-        inventory_indexed=store.get_meta("endpoint_inventory_indexed") == "1",
+def _validate_path(path: str | None) -> str | None:
+    if path is None:
+        return None
+    candidate = Path(path)
+    if candidate.is_absolute() or ".." in candidate.parts:
+        raise ValueError("evidence_path doit être relatif au projet, sans '..'.")
+    return candidate.as_posix()
+
+
+def _fact_id(*values: str | None) -> str:
+    return hashlib.sha256("|".join(value or "" for value in values).encode()).hexdigest()[:16]
+
+
+def _make_fact(
+    fact_type: str, kind: str, name: str | None = None,
+    source_kind: str | None = None, source_name: str | None = None,
+    target_kind: str | None = None, target_name: str | None = None,
+    relation: str | None = None, confidence: str = "medium",
+    evidence_path: str | None = None, evidence_line: int | None = None,
+    note: str | None = None, technology: str | None = None,
+    metadata: dict[str, object] | None = None,
+) -> GraphFact:
+    if fact_type not in _FACT_TYPES:
+        raise ValueError("fact_type doit être 'node' ou 'edge'.")
+    if not kind.strip():
+        raise ValueError("kind ne peut pas être vide.")
+    if confidence not in _CONFIDENCES:
+        raise ValueError(f"confidence doit être l'une de {sorted(_CONFIDENCES)}.")
+    if fact_type == "node" and not name:
+        raise ValueError("name est requis pour un nœud.")
+    if fact_type == "edge" and not all((source_kind, source_name, target_kind, target_name, relation)):
+        raise ValueError("Une arête requiert les champs source, target et relation.")
+    if fact_type == "node" and any((source_kind, source_name, target_kind, target_name, relation)):
+        raise ValueError("Les champs source/target/relation sont réservés aux arêtes.")
+    if evidence_line is not None and evidence_line < 1:
+        raise ValueError("evidence_line doit être supérieur ou égal à 1.")
+    fact_id = _fact_id(fact_type, kind, name, source_kind, source_name,
+                       target_kind, target_name, relation)
+    return GraphFact(
+        id=fact_id, fact_type=fact_type, kind=kind.strip(), name=name,
+        source_kind=source_kind, source_name=source_name,
+        target_kind=target_kind, target_name=target_name, relation=relation,
+        origin="mcp", confidence=confidence, evidence_path=_validate_path(evidence_path),
+        evidence_line=evidence_line, note=note, technology=technology,
+        metadata=metadata or {},
     )
-
-
-def _dependency_inventory(workspace_root: str | None):
-    """Load runtime services and module metadata for graph-oriented MCP tools."""
-    inventory = load_architecture_inventory(
-        _repo_root(), Path(workspace_root) if workspace_root else None
-    )
-    return inventory
-
-
-def _architecture_catalog(workspace_root: str | None):
-    inventory = load_architecture_inventory(
-        _repo_root(), Path(workspace_root) if workspace_root else None
-    )
-    return build_catalog(
-        inventory.modules, inventory.endpoints, inventory.relations, strategy1=inventory.strategy1
-    ), inventory
 
 
 @mcp.tool()
-def architecture_catalog(
-    kind: str,
-    action: str = "list",
-    name: str | None = None,
-    target: str | None = None,
-    workspace_root: str | None = None,
-    max_depth: int = 12,
-    limit: int = 50,
-) -> object:
-    """Navigation MCP équivalente aux commandes CLI `microservices`, `topics`,
-    `dtos`, `apis` et `mongodb`.
-
-    `kind` accepte microservice, module, topic, dto, api, collection ou endpoint.
-    `action` accepte list, show, neighbors; topic accepte aussi producers,
-    consumers, trace; dto producers/consumers; api providers/consumers;
-    collection services; microservice path, calls, dependencies, impact,
-    external-apis et orphan-integrations. `name` est l'objet concerné et
-    `target` est la destination d'un path.
-    """
-    normalized_kind = normalize_kind(kind)
-    if normalized_kind is None:
-        raise ValueError(f"Type d'architecture inconnu : {kind}")
-    catalog, _inventory = _architecture_catalog(workspace_root)
-    action = action.casefold()
-    if action == "list":
-        return {"kind": normalized_kind, "items": list_objects(catalog, normalized_kind)}
-    result: object
-    if action == "show":
-        if name is None:
-            raise ValueError("`name` est requis pour l'action show.")
-        result = show_object(catalog, normalized_kind, name)
-    elif action == "neighbors":
-        if name is None:
-            raise ValueError("`name` est requis pour l'action neighbors.")
-        result = neighbors(catalog, normalized_kind, name)
-    elif normalized_kind == "topic" and action in {"producers", "consumers"}:
-        result = analyze_architecture(catalog, action, name)
-    elif normalized_kind == "topic" and action == "trace" and name is not None:
-        result = trace_topic_flows(catalog, name, max_depth=max_depth, limit=limit)
-    elif normalized_kind == "dto" and action in {"producers", "consumers"} and name is not None:
-        summary = show_object(catalog, "dto", name)
-        key = "producer_microservices" if action == "producers" else "consumer_microservices"
-        result = {"query": action, "dto": name, "microservices": summary[key]} if summary else None
-    elif normalized_kind == "api" and action in {"providers", "consumers"} and name is not None:
-        summary = show_object(catalog, "api", name)
-        result = {"query": action, "api": name, "microservices": summary[action]} if summary else None
-    elif normalized_kind == "collection" and action == "services" and name is not None:
-        summary = show_object(catalog, "collection", name)
-        result = {"query": action, "collection": name, "microservices": summary["modules"]} if summary else None
-    elif normalized_kind == "microservice" and action == "path" and name and target:
-        result = find_microservice_paths(catalog, name, target, max_depth=max_depth, limit=limit)
-    elif normalized_kind == "microservice" and action in {"calls", "dependencies", "impact", "external-apis", "orphan-integrations"}:
-        result = analyze_architecture(catalog, action, name)
-    else:
-        raise ValueError(f"Action {action!r} incompatible avec {normalized_kind!r}.")
-    if result is None:
-        raise ValueError(f"Objet d'architecture introuvable : {name or target or kind}")
-    return result
-
-
-@mcp.tool()
-def architecture_audit(workspace_root: str | None = None) -> list[dict[str, object]]:
-    """Équivalent structuré de `systemlens analyze audit [--workspace ROOT]`."""
-    inventory = load_architecture_inventory(
-        _repo_root(), Path(workspace_root) if workspace_root else None
-    )
-    risks = assess_architecture(
-        inventory.endpoints_by_service,
-        graph_edges_from_relations(inventory.relations, inventory.endpoints_by_service),
-        modules=inventory.modules,
-        endpoints_by_module=inventory.endpoints_by_module,
-    )
-    return render_audit_json(risks)
-
-
-@mcp.tool()
-def architecture_coverage() -> dict[str, object]:
-    """Équivalent structuré de `systemlens analyze coverage --json` du projet courant."""
+def index_repository(topic_strategy: str = "default", full: bool = False) -> IndexReport:
+    """Indexe le répertoire courant avant tout enrichissement du graphe."""
+    if topic_strategy not in {"default", "strategy1"}:
+        raise ValueError("topic_strategy doit être 'default' ou 'strategy1'.")
     repo_root = _repo_root()
-    _require_index(repo_root)
-    with Store(repo_root, readonly=True) as store:
-        catalog = build_catalog(
-            store.all_modules(),
-            store.all_endpoints(),
-            store.all_architecture_relations(),
-            strategy1=store.get_meta("topic_strategy") == "strategy1",
-        )
-        return inventory_coverage(catalog, list(catalog.relations))
+    with Store(repo_root) as store:
+        return index_repo(repo_root, load_config(repo_root), store,
+                          full=full, topic_strategy=topic_strategy)
 
 
-@mcp.tool()
-def list_request_reply_patterns() -> dict[str, object]:
-    """List Kafka request/reply candidates from the Strategy1 topic convention.
-
-    Equivalent to `systemlens analyze request-reply --json`. It matches
-    `retour_<request-topic>` only when the request topic is indexed too.
-    """
-    repo_root = _repo_root()
-    _require_index(repo_root)
-    with Store(repo_root, readonly=True) as store:
-        catalog = build_catalog(
-            store.all_modules(),
-            store.all_endpoints(),
-            store.all_architecture_relations(),
-            strategy1=store.get_meta("topic_strategy") == "strategy1",
-        )
-        return request_reply_patterns(catalog)
-
-
-@mcp.tool()
 def reindex_architecture() -> IndexReport:
-    """Met à jour l'index AST après modification de fichiers."""
+    """Compatibility helper for Python callers; not exposed as an MCP tool."""
     repo_root = _repo_root()
-    config = load_config(repo_root)
     with Store(repo_root) as store:
-        topic_strategy = store.get_meta("topic_strategy") or "default"
-        if topic_strategy not in {"default", "strategy1"}:
-            raise RuntimeError(f"Stratégie Kafka inconnue dans l'index : {topic_strategy!r}")
-        report = index_repo(repo_root, config, store, topic_strategy=topic_strategy)
-        store.set_meta("index_engine", "manual")
-        return report
+        strategy = store.get_meta("topic_strategy") or "default"
+        return index_repo(repo_root, load_config(repo_root), store,
+                          topic_strategy=strategy)
 
 
 @mcp.tool()
-def list_endpoints(
-    system: str | None = None,
-    role: str | None = None,
-    topic: str | None = None,
-    path_glob: str | None = None,
-) -> list[EndpointHit]:
-    """Liste les endpoints REST/Kafka indexés (BACKLOG-10 K1, BACKLOG-11 A1),
-    filtrable par système (rest/kafka), rôle (serve/call/produce/consume),
-    topic exact ou motif de chemin. Utiliser pour explorer l'inventaire des
-    échanges entre services avant d'appeler `graph`.
-    """
+def graph_fact_exists(
+    fact_type: str, kind: str, name: str | None = None,
+    source_kind: str | None = None, source_name: str | None = None,
+    target_kind: str | None = None, target_name: str | None = None,
+    relation: str | None = None,
+) -> dict[str, object]:
+    """Check whether the same semantic enrichment fact is already present."""
     repo_root = _repo_root()
     _require_index(repo_root)
-    with Store(repo_root) as store:
-        endpoints = store.all_endpoints(
-            system=system, role=role, topic=topic, path_glob=path_glob
-        )
-    return render_endpoints_json(endpoints)
+    fact = _make_fact(fact_type, kind, name, source_kind, source_name,
+                      target_kind, target_name, relation)
+    with Store(repo_root, readonly=True) as store:
+        existing = store.graph_fact_by_id(fact.id)
+    return {"exists": existing is not None, "id": fact.id,
+            "fact": dict(existing.__dict__) if existing else None}
 
 
 @mcp.tool()
-def graph(workspace_root: str | None = None) -> GraphResult:
-    """Graphe dérivé des endpoints indexés : nœuds = microservices + topics
-    Kafka ; arêtes = appel HTTP, production Kafka, consommation Kafka, plus
-    points de blocage probables (BACKLOG-10 K12) : appels REST synchrones
-    dans un handler de consommation Kafka du projet courant. Utiliser pour
-    visualiser la topologie distribuée ET localiser les endroits
-    susceptibles de causer un verrouillage intermittent. Sans
-    `workspace_root`, si l'index couvre un répertoire multi-modules Maven ou
-    Gradle (`systemlens index` lancé au parent, BACKLOG-13/15), les endpoints attribués à
-    un module sont automatiquement groupés pour rapporter de vraies arêtes
-    inter-modules. Avec `workspace_root`, fédère en plus les autres
-    microservices indexés séparément (BACKLOG-11 A2, lecture seule) —
-    sinon `services`/`nodes`/`edges` restent vides, voir `note`.
-    """
-    inventory = load_architecture_inventory(
-        _repo_root(), Path(workspace_root) if workspace_root else None
-    )
-    outbound_calls = find_outbound_calls_in_consumers(inventory.endpoints)
-    edges = graph_edges_from_relations(inventory.relations, inventory.endpoints_by_service)
-    return render_graph_json(
-        list(inventory.endpoints_by_service),
-        edges,
-        outbound_calls,
-        warnings=inventory.warnings,
-        cross_module_data_available=workspace_root is not None or bool(inventory.endpoints_by_service),
-    )
-
-
-@mcp.tool()
-def dependency_graph(workspace_root: str | None = None) -> DependencyGraphResult:
-    """Retourne la topologie de dépendances statique exploitable par un agent.
-
-    Les nœuds sont les microservices, topics Kafka, collections MongoDB
-    (scopées par microservice) et APIs HTTP externes. Les relations indiquent
-    appels HTTP internes/externes, publications et consommations Kafka avec les
-    types Java connus, ainsi que lectures/écritures MongoDB. Utiliser avant un
-    audit ou pour reconstruire une dépendance service -> topic -> stockage.
-    Avec `workspace_root`, fédère les services déjà indexés séparément.
-    """
-    inventory = _dependency_inventory(workspace_root)
-    return build_dependency_graph(
-        inventory.endpoints_by_service,
-        inventory.modules_by_service,
-        warnings=inventory.warnings,
-        relations=inventory.relations,
-        strategy1=inventory.strategy1,
-    )
-
-
-@mcp.tool()
-def audit_dependency_graph(workspace_root: str | None = None) -> DependencyAuditResult:
-    """Audite le graphe de dépendances statique pour les mauvaises pratiques.
-
-    Retourne la topologie analysée, les risques déjà détectés (orphans Kafka,
-    cibles dynamiques, incompatibilités de DTO, cycles HTTP synchrones et
-    activités runtime de bibliothèques), les cycles événementiels entre
-    microservices et les appels HTTP synchrones depuis un consumer Kafka.
-    Les résultats sont des signaux statiques avec un niveau de confiance, pas
-    des traces d'exécution. Avec `workspace_root`, fédère les services indexés.
-    """
-    inventory = _dependency_inventory(workspace_root)
-    return run_dependency_audit(
-        inventory.endpoints_by_service,
-        inventory.modules_by_service,
-        warnings=inventory.warnings,
-        relations=inventory.relations,
-        strategy1=inventory.strategy1,
-    )
-
-
-@mcp.tool()
-def list_workspace_services(root: str) -> WorkspaceResult:
-    """Découvre les services fédérables sous `root` (BACKLOG-11 A2) :
-    modules Maven runtime/shared et microservices Gradle Spring Boot.
-    Lit en lecture seule les projets déjà indexés (`systemlens index`) pour
-    compter endpoints/findings par service — n'écrit jamais dans leurs
-    bases. Utiliser avant `graph` pour vérifier quels services d'un
-    répertoire multi-services sont prêts à être fédérés.
-    """
-    services = discover_maven_services(Path(root))
-    federation = load_federation(services)
-    return render_workspace_json(services, federation)
-
-
-@mcp.tool()
-def list_modules() -> list[ModuleSummary]:
-    """Liste tous les modules indexés avec leurs collections/opérations Mongo
-    et leurs contrats OpenAPI déclarés. Utiliser pour établir le périmètre
-    applicatif avant un audit de données ou d'API.
-    """
+def add_graph_fact(
+    fact_type: str, kind: str, name: str | None = None,
+    source_kind: str | None = None, source_name: str | None = None,
+    target_kind: str | None = None, target_name: str | None = None,
+    relation: str | None = None, confidence: str = "medium",
+    evidence_path: str | None = None, evidence_line: int | None = None,
+    note: str | None = None, technology: str | None = None,
+    metadata: dict[str, object] | None = None,
+) -> dict[str, object]:
+    """Add one assertion; reject an existing semantic duplicate."""
     repo_root = _repo_root()
     _require_index(repo_root)
+    fact = _make_fact(fact_type, kind, name, source_kind, source_name,
+                      target_kind, target_name, relation, confidence,
+                      evidence_path, evidence_line, note, technology, metadata)
     with Store(repo_root) as store:
-        return render_modules_list_json(store.all_modules())
-
-
-@mcp.tool()
-def trace_message_flow(query: str, workspace_root: str | None = None) -> FlowResultInfo:
-    """Résout `query` en topic Kafka ou route REST (nom exact, sinon
-    sous-chaîne non ambiguë parmi les endpoints indexés, BACKLOG-10 K5) et
-    liste tous ses sites (producteurs/consommateurs Kafka, ou
-    serveurs/appelants REST) avec leurs preuves de source.
-    Utiliser pour comprendre qui produit/consomme un topic donné, ou qui
-    appelle une route donnée, avant de plonger dans le code. Sans
-    `workspace_root`, ne cherche que dans le projet courant — chaque site
-    est attribué à son module Maven ou service Gradle si l'index couvre un
-    répertoire multi-modules (BACKLOG-13/15) ; avec, fédère en plus les autres
-    microservices indexés séparément (BACKLOG-11 A2, lecture seule) pour un
-    flux qui traverse plusieurs services. Requête sans correspondance, ou
-    ambiguë, lève une erreur explicite plutôt que de deviner un topic au
-    hasard.
-    """
-    repo_root = _repo_root()
-
-    if workspace_root is None:
-        _require_index(repo_root)
-        with Store(repo_root) as store:
-            endpoints = store.all_endpoints()
-            endpoints_by_service: dict[str | None, list] = group_endpoints_by_module_for_flow(
-                endpoints
+        if not store.insert_graph_fact(fact):
+            raise ValueError(
+                f"Le fait existe déjà (id={fact.id}). Utilisez graph_fact_exists "
+                "ou remove_graph_fact avant de proposer une nouvelle assertion."
             )
-            warnings = []
-            repo_warning = _current_repo_endpoint_warning(store)
-            if repo_warning is not None:
-                warnings.append(repo_warning)
-            result = trace_flow(query, endpoints_by_service, warnings)
-        return render_flow_json(result)
+    return dict(fact.__dict__)
 
-    services = discover_maven_services(Path(workspace_root))
-    federation = load_federation(services)
-    endpoints_by_service = cast(
-        "dict[str | None, list]", dict(federation.endpoints_by_service)
+
+@mcp.tool()
+def remove_graph_fact(fact_id: str) -> dict[str, object]:
+    """Supprime une assertion MCP, jamais un fait extrait du code."""
+    repo_root = _repo_root()
+    _require_index(repo_root)
+    with Store(repo_root) as store:
+        removed = store.delete_graph_fact(fact_id)
+    return {"id": fact_id, "removed": removed}
+
+
+@mcp.tool()
+def list_graph_facts() -> list[dict[str, object]]:
+    """Liste les faits ajoutés par MCP, séparément des faits du code."""
+    repo_root = _repo_root()
+    _require_index(repo_root)
+    with Store(repo_root, readonly=True) as store:
+        return [dict(fact.__dict__) for fact in store.all_graph_facts()]
+
+
+@mcp.tool()
+def architecture_graph() -> DependencyGraphResult:
+    """Return the complete generic graph, including APIs and data resources."""
+    repo_root = _repo_root()
+    inventory = load_architecture_inventory(repo_root)
+    result = build_dependency_graph(
+        inventory.endpoints_by_service, inventory.modules_by_service,
+        warnings=inventory.warnings, relations=inventory.relations,
+        strategy1=inventory.strategy1,
     )
-    result = trace_flow(query, endpoints_by_service, federation.warnings)
-    return render_flow_json(result)
+    with Store(repo_root, readonly=True) as store:
+        facts = store.all_graph_facts()
+    node_keys = {(node["kind"], node["name"]) for node in result["nodes"]}
+    for fact in facts:
+        if fact.fact_type == "node" and fact.name is not None:
+            if (fact.kind, fact.name) not in node_keys:
+                node: DependencyNode = {"id": f"{fact.kind}:{fact.name}", "kind": fact.kind,
+                        "name": fact.name, "service": None, "external": False}
+                if fact.technology:
+                    node["technology"] = fact.technology
+                if fact.metadata:
+                    node["metadata"] = fact.metadata
+                result["nodes"].append(node)
+                node_keys.add((fact.kind, fact.name))
+        elif fact.fact_type == "edge":
+            assert fact.source_kind and fact.source_name and fact.target_kind and fact.target_name
+            source = f"{fact.source_kind}:{fact.source_name}"
+            target = f"{fact.target_kind}:{fact.target_name}"
+            edge: DependencyEdge = {"source": source, "target": target, "kind": fact.kind,
+                    "label": fact.relation or "", "confidence": fact.confidence}
+            if fact.technology:
+                edge["technology"] = fact.technology
+            if fact.metadata:
+                edge["metadata"] = fact.metadata
+            result["edges"].append(edge)
+    result["summary"]["relations"] = len(result["edges"])
+    return result

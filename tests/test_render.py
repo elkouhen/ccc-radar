@@ -146,6 +146,10 @@ enum PaymentStatus { AUTHORIZED, DECLINED }
     assert "const isolatedNodeIds = new Set(" in document
     assert "function layoutIsolatedNodes(nodes, connectedNodes)" in document
     assert "...layoutIsolatedNodes(isolatedNodes, positionedConnectedNodes)" in document
+    assert 'id="layout-elk"' in document
+    assert 'src="https://cdn.jsdelivr.net/npm/elkjs@0.12.0/lib/elk.bundled.js"' in document
+    assert '"elk.algorithm": "layered"' in document
+    assert "async function applyElkLayout(libraries)" in document
     assert "labelGridCellSize: 160" in document
     assert "labelRenderedSizeThreshold: 10" in document
     assert "Connectivité relative :" in document
@@ -675,4 +679,3 @@ def test_graph_html_apm_overlay_defaults_to_none() -> None:
     graph_data = _html_graph_data(render_graph_html({"orders": []}, []))
 
     assert graph_data["apm_overlay"] is None
-

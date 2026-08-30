@@ -26,8 +26,9 @@ systemlens doctor
 systemlens index
 ```
 
-Start `systemlens mcp` and let the agent query the catalog, graph, coverage and
-trace tools before an edit. For human review, generate an interactive export:
+Start `systemlens mcp` and let the agent index the repository, enrich the graph
+with repository-specific facts, then read the merged graph. For human review,
+generate an interactive export:
 
 ```bash
 systemlens export microservices --html architecture.html
@@ -187,11 +188,12 @@ For example, register it in an MCP client configuration as:
 }
 ```
 
-The main tools are `list_endpoints`, `architecture_catalog`, `graph`,
-`dependency_graph`, `audit_dependency_graph`, `architecture_audit`,
-`architecture_coverage`, `trace_message_flow`, `list_modules`,
-`list_workspace_services`, `list_request_reply_patterns`, and
-`reindex_architecture`.
+The MCP control surface is `index_repository`, `graph_fact_exists`, `add_graph_fact`,
+`remove_graph_fact`, `list_graph_facts`, and `architecture_graph`. Indexing
+creates source-derived facts; graph facts add an explicit, persistent
+enrichment layer without modifying or deleting source evidence.
+Use `data_schema` and `message_channel` node kinds with a `technology` field
+to enrich graphs with SQL, Redis, RabbitMQ, SQS or other middleware facts.
 
 ## Documentation
 

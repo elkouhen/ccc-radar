@@ -102,6 +102,11 @@ Kafka message. It shows the indexed payload-type identity, message topic, and
 producer and consumer services. When the matching Java type is indexed, its
 inspector also shows its source, declared fields, enum values, and conservative
 recursive project-type navigation.
+The architecture vocabulary is extensible: a `data_schema` node represents a
+persisted data resource or contract (MongoDB collection, SQL table, Redis
+keyspace or object-store dataset), while a `message_channel` node represents
+a messaging channel (Kafka, RabbitMQ, SQS or a webhook stream). The concrete
+technology is carried as metadata.
 The export uses a responsive workspace layout with eight navigation tabs:
 Explorer, Paths, OpenAPI, Kafka, Mongo, Request/reply, Build, and
 Quality. It includes compact architecture counters, task-oriented starting
@@ -114,7 +119,10 @@ toolbar. The selected theme is stored only in browser local storage and does
 not affect persisted inventory facts or exported architecture data.
 Its initial view foregrounds task-oriented entry points (Kafka topic, service
 dependencies, service-to-service path and Kafka messages). Relation/resource
-filters and graph layouts are available as advanced controls. Dedicated
+filters and graph layouts are available as advanced controls. The graph offers
+grouped, airy, balanced, and architectural layouts; the architectural layout
+uses ELK.js to arrange resources in a deterministic left-to-right layered view.
+It also provides dedicated
 OpenAPI, Kafka, Mongo, Request/reply, and Build views keep their domain
 inventories separate. Changing a relation-type filter rebuilds and relayouts
 the graph from only the selected dependency types; excluded relations do not
@@ -230,25 +238,28 @@ local implementation detail, not a contract for direct SQL writes.
 
 ## MCP
 
-The MCP server exposes the same indexed architecture. Its primary tools are:
+The MCP server exposes a deliberately small control surface for the
+index-then-enrich workflow. It no longer mirrors every read-only CLI command:
 
 | Tool | Purpose |
 |---|---|
-| `list_endpoints` | Filter raw REST/Kafka facts. |
-| `architecture_catalog` | List, show and navigate services, modules, topics, DTOs, APIs and collections. |
-| `architecture_audit` | Return the structured equivalent of `systemlens analyze audit`. |
-| `architecture_coverage` | Return inventory coverage and unresolved integration counts. |
-| `graph` | Return an inter-service topology. |
-| `dependency_graph` | Return typed HTTP, Kafka, MongoDB and external API relations. |
-| `audit_dependency_graph` | Return static topology risks. |
-| `trace_message_flow` | Trace a topic or route through its source sites. |
-| `list_modules` | Return the persisted module inventory. |
-| `list_workspace_services` | Discover and load a multi-service Maven/Gradle workspace read-only. |
-| `list_request_reply_patterns` | Return Strategy1 Kafka request/reply candidates. |
-| `reindex_architecture` | Incrementally refresh AST facts after a source change. |
+| `index_repository` | Index or refresh the current repository; preserves graph enrichment facts. |
+| `graph_fact_exists` | Check a semantic node/edge fact before proposing it. |
+| `add_graph_fact` | Add an AI/user node or edge assertion with confidence and optional relative evidence; rejects semantic duplicates. |
+| `remove_graph_fact` | Remove an assertion previously added through MCP; never removes extracted source facts. |
+| `list_graph_facts` | List the persisted enrichment layer. |
+| `architecture_graph` | Return the complete generic dependency graph (services, APIs, topics, data schemas and external resources) merged with persisted enrichment facts. |
 
-MCP tools require an existing index where they query persisted facts. Errors are
-returned through the standard MCP tool-error path.
+Only `index_repository` creates or refreshes source-derived facts. Enrichment
+facts are stored separately in `graph_facts`, survive reindexing, and are never
+treated as source evidence. Nodes require `fact_type=node`, `kind` and `name`;
+edges require source/target kinds and names plus `relation`. Evidence paths are
+relative to the indexed repository and may not escape it.
+Call `graph_fact_exists` before `add_graph_fact`; insertion is also atomic and
+rejects a duplicate if another agent adds it concurrently.
+For generic middleware, use `kind=data_schema` or `kind=message_channel`, set
+`technology` to the concrete implementation, and put provider-specific facts
+such as database/schema/table, exchange/queue or partition in `metadata`.
 
 ## Boundaries
 

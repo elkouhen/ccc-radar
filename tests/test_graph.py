@@ -381,7 +381,8 @@ def test_no_graph_table_in_sqlite_schema(tmp_path: Path) -> None:
             for row in store.conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
         }
 
-    assert not any("graph" in name or "cycle" in name for name in tables)
+    assert "graph_facts" in tables
+    assert not any("cycle" in name for name in tables)
 
 
 def test_group_endpoints_by_module_groups_by_maven_module() -> None:

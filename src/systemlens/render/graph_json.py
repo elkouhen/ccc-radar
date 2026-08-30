@@ -18,6 +18,8 @@ class GraphNodeInfo(TypedDict):
     kind: str  # "microservice" | "kafka_topic"
     external: NotRequired[bool]
     shape: NotRequired[str]
+    technology: NotRequired[str]
+    metadata: NotRequired[dict[str, object]]
 
 
 class OutboundCallHit(TypedDict):
@@ -37,6 +39,8 @@ class GraphEdgeInfo(TypedDict):
     label: str
     from_site: GraphSite | None
     to_site: GraphSite | None
+    technology: NotRequired[str]
+    metadata: NotRequired[dict[str, object]]
 
 
 class GraphResult(TypedDict):
@@ -221,7 +225,6 @@ def render_graph_text(result: GraphResult) -> str:
     if result["note"]:
         lines.append(result["note"])
     return "\n".join(lines)
-
 
 
 
