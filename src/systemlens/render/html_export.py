@@ -855,11 +855,8 @@ def render_graph_html(
     service_architecture = {
         str(node["name"]): {
             "layer": node.get("layer", "unknown"),
+            "namespace": node.get("project_namespace"),
             "namespace_path": node.get("project_namespace_path"),
-            "namespace": (
-                (node.get("runtime_namespaces") or [])
-                + (node.get("fact_namespaces") or [])
-            )[0] if (node.get("runtime_namespaces") or []) + (node.get("fact_namespaces") or []) else None,
         }
         for node in nodes
         if node.get("kind") == "microservice"

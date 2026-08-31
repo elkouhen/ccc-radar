@@ -187,15 +187,12 @@ Every layout switch MUST refit the camera to the resulting graph; it MUST NOT
 apply an additional automatic zoom-out that makes the layout unnecessarily
 small.
 
-The details panel MUST display the architectural namespace (the cluster
-grouping such as `clusterA` or `clusterB`) for microservices and resources
-(topics, collections, and enriched resources), separately from Kubernetes
-namespaces and fact namespaces. A resource MUST use the namespace of its
-producing or owning microservice, with `ROOT` as the fallback.
-The same panel MUST display the resolved software layer and the cluster path;
-for a resource, both values MUST be inherited from its producing or owning
-microservice. The cluster path MUST be the slash-separated path of cluster
+The details panel MUST display the resolved software layer and the cluster
+path for microservices and resources (topics, collections, and enriched
+resources). The cluster path MUST be the slash-separated path of cluster
 directories, such as `cluster1/cluster2`, without a structural-group prefix.
+For a resource modified in writing, the path MUST be inherited from its
+producing or owning microservice.
 
 ### Rules for the namespace-cluster rendering
 

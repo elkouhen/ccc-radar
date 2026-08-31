@@ -239,16 +239,13 @@ enum PaymentStatus { AUTHORIZED, DECLINED }
     assert "labelRenderedSizeThreshold: 10" in document
     assert "Connectivité relative :" in document
     assert "const visualNodeKind = node" in document
-    assert "Namespace architectural : ${node.project_namespace}" in document
-    assert "Namespace architectural : ${architecturalNamespace === \"root\" ? \"ROOT\" : architecturalNamespace}" in document
-    assert 'appendList("Namespace architectural", [architecturalNamespace === "root" ? "ROOT" : architecturalNamespace], architectureGroup)' in document
+    assert "Namespace architectural" not in document
     assert "function clusterPathForNode(node)" in document
     assert "function architectureLayerForNode(node)" in document
     assert "Chemin des clusters : ${clusterPath}" in document
     assert "Chemin des clusters : ${clusterPathForNode(id)}" in document
     assert "project_namespace_path" in document
     assert "architecture_namespace_path" in document
-    assert 'appendList("Namespace architectural", node.project_namespace ? [node.project_namespace] : [], architectureGroup)' in document
     assert 'labelAlignment: "center"' in document
     assert "legend-resource-mark collection" in document
     assert 'class="brand-mark">SL</span>' in document
@@ -777,5 +774,5 @@ def test_graph_html_keeps_kafka_topic_in_producer_namespace_cluster() -> None:
     topic = next(node for node in graph_data["nodes"] if node["kind"] == "kafka_topic")
     producer_node = next(node for node in graph_data["nodes"] if node["name"] == "orders")
     assert producer_node["project_namespace"] == "PORTAIL"
-    assert "architecture_namespace" not in topic
+    assert topic["architecture_namespace"] == producer_node["project_namespace"]
     assert all(topic["id"] not in group["children"] for group in graph_data["groups"])
