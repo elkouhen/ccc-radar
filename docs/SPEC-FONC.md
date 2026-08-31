@@ -128,7 +128,10 @@ The three primary views are presented as a single view selector; placement
 strategies are secondary controls. The graph viewport reserves the space used
 by the navigation panel and refits the camera to that available area after a
 view or window-size change. In the layers and namespaces views, relations are
-visually subdued and Kafka/MongoDB resources use larger, distinct cards.
+visually subdued. In every view, microservice, Kafka topic, message channel,
+MongoDB collection, data schema, and equivalent resource cards share the same
+rendered width, height, and scale. Their semantic differences are conveyed by
+icon, border, and color.
 For the graph export, a namespace is the parent directory containing one or
 more projects/modules; Kubernetes namespaces are retained as metadata only.
 Projects located directly at the indexed repository root are assigned to the
@@ -177,6 +180,8 @@ The HTML architecture view MUST preserve these visual invariants:
 - Microservices, Kafka topics, message channels, MongoDB collections, data
   schemas and other rendered resources MUST NOT overlap. Placement MUST keep a
   positive horizontal and vertical gap greater than the projected card size.
+- Microservice and resource cards MUST use one shared rendered width, height,
+  and scale in every view. Type-specific styling MUST NOT change card geometry.
 - Layer and namespace bounds MUST be recomputed after filtering, zooming,
   camera updates and layout changes so containers continue to contain their
   visible children.
