@@ -88,6 +88,7 @@ class SystemLensWebApplication:
             None,
             self.root,
             request_reply_strategy1=inventory.strategy1,
+            strategy1=inventory.strategy1,
             diagnostics=inventory.diagnostics,
             kafka_dto_definitions=inventory.kafka_dto_definitions,
             openapi_contracts=inventory.openapi_contracts,

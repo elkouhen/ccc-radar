@@ -5,17 +5,19 @@ from pathlib import Path
 
 from systemlens.models import MessageEndpoint
 from systemlens.modules import DiscoveredModule, ModuleDependency, module_identity
+from systemlens.render.namespaces import project_namespace
 
 _SOFTWARE_LAYERS_HTML_TEMPLATE = (
     Path(__file__).parent / "assets" / "software_layers.html"
 ).read_text(encoding="utf-8")
 
 # Render order is top-to-bottom. Persistence is deliberately the lowest layer.
-_LAYER_ORDER = ("api", "application", "infrastructure", "shared", "module", "domain", "persistence")
+_LAYER_ORDER = ("api", "application", "orchestration", "infrastructure", "shared", "module", "domain", "persistence")
 _LAYER_LABELS = {
     "application": "Application",
     "domain": "Domain",
     "api": "API / contracts",
+    "orchestration": "Orchestration",
     "infrastructure": "Infrastructure",
     "shared": "Shared",
     "module": "Other modules",
@@ -25,6 +27,7 @@ _LAYER_COLORS = {
     "application": "#2563eb",
     "domain": "#7c3aed",
     "api": "#0891b2",
+    "orchestration": "#9333ea",
     "infrastructure": "#d97706",
     "shared": "#64748b",
     "module": "#475569",
@@ -32,15 +35,25 @@ _LAYER_COLORS = {
 }
 
 
-def software_layer(module: DiscoveredModule) -> str:
+def software_layer(
+    module: DiscoveredModule,
+    *,
+    strategy1: bool = False,
+    root_path: Path | None = None,
+) -> str:
     """Classify a module conservatively for the dedicated layer view.
 
-    ``domain-*`` is intentionally checked first. A domain module can contain
-    executable code, but its name is still the strongest available layer
-    signal and should not make it look like an application deployment.
+    Strategy1 adds repository-specific conventions: the ``PORTAIL`` project
+    namespace identifies API modules and the ``DOMAIN-*`` name identifies
+    Domain modules. Without Strategy1, these names remain ordinary module
+    names and do not alter the portable default classification.
     """
     name = module.name.casefold()
-    if name.startswith("domain-"):
+    if strategy1 and project_namespace(module, root_path).casefold() == "portail":
+        return "api"
+    if strategy1 and project_namespace(module, root_path).casefold() == "cycle-de-vie":
+        return "orchestration"
+    if strategy1 and name.startswith("domain-"):
         return "domain"
     if name.startswith(("persistence-", "repository-", "storage-", "data-")) or name.endswith(("-persistence", "-repository", "-storage", "-data")):
         return "persistence"
@@ -59,24 +72,29 @@ def render_software_layers_html(
     modules: list[DiscoveredModule],
     dependencies: list[ModuleDependency],
     endpoints: list[MessageEndpoint],
+    *,
+    strategy1: bool = False,
+    root_path: Path | None = None,
 ) -> str:
     """Render modules in explicit software-layer columns."""
-    ordered_modules = sorted(modules, key=lambda item: (software_layer(item), module_identity(item)))
+    ordered_modules = sorted(
+        modules,
+        key=lambda item: (
+            software_layer(item, strategy1=strategy1, root_path=root_path),
+            module_identity(item),
+        ),
+    )
     layer_positions = {layer: index for index, layer in enumerate(_LAYER_ORDER)}
     by_layer: dict[str, list[DiscoveredModule]] = {layer: [] for layer in _LAYER_ORDER}
     for module in ordered_modules:
-        by_layer[software_layer(module)].append(module)
+        by_layer[software_layer(module, strategy1=strategy1, root_path=root_path)].append(module)
 
     positions: dict[str, tuple[float, float]] = {}
     namespace_groups: list[dict[str, object]] = []
     for layer, items in by_layer.items():
         by_namespace: dict[str, list[DiscoveredModule]] = {}
         for module in items:
-            namespaces = [
-                workload.namespace for workload in module.kubernetes_workloads
-                if workload.namespace
-            ] or ["unassigned"]
-            by_namespace.setdefault(namespaces[0], []).append(module)
+            by_namespace.setdefault(project_namespace(module, root_path), []).append(module)
         namespace_cursor = 0
         for namespace, namespace_modules in sorted(by_namespace.items()):
             start = namespace_cursor
@@ -101,7 +119,7 @@ def render_software_layers_html(
     nodes = []
     for module in ordered_modules:
         identity = module_identity(module)
-        layer = software_layer(module)
+        layer = software_layer(module, strategy1=strategy1, root_path=root_path)
         module_endpoints = endpoints_by_module.get(identity, [])
         nodes.append({
             "id": identity,

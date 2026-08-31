@@ -1084,7 +1084,7 @@
       // Preserve the architectural reading after the force calculation:
       // each software layer occupies a horizontal row, with domain at the
       // bottom. Resources without a layer follow the services they connect.
-      const layerOrder = ["api", "application", "infrastructure", "shared", "module", "domain", "persistence"];
+      const layerOrder = ["api", "application", "orchestration", "infrastructure", "shared", "module", "domain", "persistence"];
       const cardSpacingX = 4.0;
       const cardSpacingY = 2.6;
       const nodesByLayer = new Map(layerOrder.map(layer => [layer, []]));
@@ -1253,7 +1253,7 @@
         // actual graph geometry, while cards use a deterministic screen grid
         // with five columns and a measured gap, so their HTML rectangles do
         // not overlap even when the graph is dense.
-        const layerOrder = ["api", "application", "infrastructure", "shared", "module", "domain", "persistence"];
+        const layerOrder = ["api", "application", "orchestration", "infrastructure", "shared", "module", "domain", "persistence"];
         if (!layeredView) {
           overlayLayoutApplied = false;
         } else if (clusteredView || layeredClusterView) {
@@ -1338,7 +1338,7 @@
           graphGroupsOverlay.replaceChildren();
         } else {
         graphLayersOverlay.replaceChildren();
-        const layerColors = { api: "#0891b2", application: "#2563eb", infrastructure: "#d97706", shared: "#64748b", module: "#475569", domain: "#7c3aed", persistence: "#0f766e" };
+        const layerColors = { api: "#0891b2", application: "#2563eb", orchestration: "#9333ea", infrastructure: "#d97706", shared: "#64748b", module: "#475569", domain: "#7c3aed", persistence: "#0f766e" };
         const visibleServices = [...nodePoints.entries()]
           .map(([id, point]) => ({ id, point, node: nodeDataById.get(id) }))
           .filter(item => item.node?.kind === "microservice" && item.node.layer);
@@ -1730,7 +1730,7 @@
       });
     }
     function packLayeredClusterGraphPositions() {
-      const layerOrder = ["api", "application", "infrastructure", "shared", "module", "domain", "persistence"];
+      const layerOrder = ["api", "application", "orchestration", "infrastructure", "shared", "module", "domain", "persistence"];
       const groupsByLayer = new Map(layerOrder.map(layer => [layer, new Map()]));
       const layerForNode = node => {
         const data = nodeDataById.get(node);
@@ -1883,7 +1883,7 @@
       }
     }
     async function applyElkLayout(libraries) {
-      const layerOrder = ["api", "application", "infrastructure", "shared", "module", "domain", "persistence"];
+      const layerOrder = ["api", "application", "orchestration", "infrastructure", "shared", "module", "domain", "persistence"];
       const groups = new Map(layerOrder.map(layer => [layer, new Map()]));
       const layerForNode = node => {
         const data = nodeDataById.get(node);

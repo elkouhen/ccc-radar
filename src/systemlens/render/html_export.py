@@ -491,6 +491,7 @@ def render_graph_html(
     kafka_dto_definitions: list[dict[str, object]] | None = None,
     openapi_contracts: list[dict[str, object]] | None = None,
     graph_facts: list[GraphFact] | None = None,
+    strategy1: bool = False,
 ) -> str:
     """Render an interactive Sigma.js graph as a self-contained HTML document.
 
@@ -637,7 +638,7 @@ def render_graph_html(
         contract_resources: dict[str, set[str]] = {}
         contract_owner_identity: dict[str, str] = {}
         module = module_details.get(name)
-        module_layer = software_layer(module) if module else "unknown"
+        module_layer = software_layer(module, strategy1=strategy1, root_path=root_path) if module else "unknown"
         module_namespaces = sorted({
             workload.namespace
             for workload in (module.kubernetes_workloads if module else ())
@@ -695,6 +696,7 @@ def render_graph_html(
                     "application": "#2563eb",
                     "domain": "#7c3aed",
                     "api": "#0891b2",
+                    "orchestration": "#9333ea",
                     "infrastructure": "#d97706",
                     "shared": "#64748b",
                     "module": "#475569",
@@ -825,7 +827,8 @@ def render_graph_html(
                         node["color"] = {
                             "application": "#2563eb",
                             "domain": "#7c3aed",
-                            "api": "#0891b2",
+                    "api": "#0891b2",
+                    "orchestration": "#9333ea",
                             "infrastructure": "#d97706",
                             "shared": "#64748b",
                             "module": "#475569",

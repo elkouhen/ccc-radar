@@ -1447,6 +1447,7 @@ def export_microservices_cmd(
                 None,
                 root_path or Path.cwd(),
                 request_reply_strategy1=graph_data.strategy1,
+                strategy1=graph_data.strategy1,
                 diagnostics=graph_data.diagnostics,
                 kafka_dto_definitions=graph_data.kafka_dto_definitions,
                 openapi_contracts=graph_data.openapi_contracts,
@@ -1537,9 +1538,9 @@ def export_layers_cmd(
 ) -> None:
     """Exporter une vue dédiée des couches logicielles des modules.
 
-    Les modules ``domain-*`` sont classés dans la couche Domain. Les autres
-    couches sont déduites de préfixes/suffixes explicites et du statut
-    applicatif indexé.
+    Avec Strategy1, le namespace projet ``PORTAIL`` classe les modules
+    dans API et le préfixe ``DOMAIN-*`` dans Domain. Sans Strategy1, les
+    conventions restent désactivées.
 
     Exemple : `systemlens export layers --html layers.html`.
     """
@@ -1558,11 +1559,14 @@ def export_layers_cmd(
             modules = store.all_modules()
             dependencies = store.all_module_dependencies()
             endpoints = store.all_endpoints()
+            strategy1 = store.get_meta("topic_strategy") == "strategy1"
     except StoreError as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=2) from exc
     html.write_text(
-        render_software_layers_html(modules, dependencies, endpoints), encoding="utf-8"
+        render_software_layers_html(
+            modules, dependencies, endpoints, strategy1=strategy1, root_path=repo_root
+        ), encoding="utf-8"
     )
     domain_count = sum(module.name.casefold().startswith("domain-") for module in modules)
     typer.echo(

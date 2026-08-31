@@ -146,7 +146,7 @@ directly from outside the package.
 | `html_export.py` | Interactive Sigma.js HTML export (`systemlens export microservices --html`); builds the JSON payload injected into `assets/graph.html` |
 | `likec4_export.py` | LikeC4 project export (`--c4`) and the request/reply HTML fragment |
 | `module_graph.py` | Endpoint/module/workspace/flow rendering, plus the module-dependency HTML export (`assets/module_graph.html`) |
-| `software_layers.py` | Dedicated software-layer rendering (`systemlens export layers`) with deterministic `domain-*` classification and `assets/software_layers.html` |
+| `software_layers.py` | Dedicated software-layer rendering (`systemlens export layers`) with Strategy1 `PORTAIL`/`DOMAIN-*` classification and `assets/software_layers.html` |
 | `_graph_view_helpers.py` | Low-level helpers (VS Code deep links, MongoDB/REST visual edges) shared by `html_export.py` and `likec4_export.py` |
 | `assets/graph.html`, `assets/module_graph.html` | Static HTML/CSS/JS templates, injected with `.replace("__..._DATA__", json_payload)`; kept as plain HTML files rather than Python string constants |
 

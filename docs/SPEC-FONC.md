@@ -47,7 +47,7 @@ but does not alter AST endpoint extraction.
 | `systemlens analyze request-reply [--root DIR] [--json]` | Lists Strategy1 Kafka request/reply candidates. |
 | `systemlens export microservices (--html FILE | --c4 DIRECTORY | --json) [--graph FILE] [--root-path DIRECTORY]` | Exports the deployable microservice, API, data-schema and message-channel topology. Non-deployable indexed modules (libraries and aggregators without an application entry point) are excluded from this view and remain available to `export modules` and `export layers`. Persisted MCP graph facts are included in the HTML export. `--graph FILE` reads a validated `systemlens-ai-graph-v1` manifest; `--root-path` provides the local source root for HTML source links. |
 | `systemlens export modules --html FILE` | Exports the Maven/Gradle build-dependency view. |
-| `systemlens export layers --html FILE` | Exports a dedicated software-layer view. Modules named `domain-*` are rendered in the Domain layer, alongside Application, API/contracts, Infrastructure, Shared and other module layers. |
+| `systemlens export layers --html FILE` | Exports a dedicated software-layer view. With the persisted Strategy1 profile, modules in project namespace `PORTAIL` are rendered in API/contracts and modules named `DOMAIN-*` in Domain; without Strategy1 these repository-specific conventions are disabled. |
 | `systemlens export namespaces --html FILE` | Exports a namespace view where each parent directory containing projects is shown as a container containing its indexed modules. Kubernetes namespaces remain secondary module metadata and do not define these containers. |
 | `systemlens export request-reply --html FILE` | Exports Strategy1 Kafka request/reply candidates. |
 | `systemlens web [--host HOST] [--port PORT]` | Starts the local Python web application at `http://127.0.0.1:8765/` by default. Its home page links to Architecture. Architecture renders the persisted snapshot for each request, excluding test-fixture microservices and every relation attached to them; when no index exists, it offers an explicit local button that creates the default configuration when needed and indexes the repository. The default loopback host prevents network exposure unless the user explicitly changes `--host`. |
@@ -116,9 +116,10 @@ grouped, airy, balanced, and architectural layouts; the architectural layout
 uses ELK.js compound nodes to arrange resources in a deterministic hierarchy:
 software layers are stacked vertically, namespaces are nested inside their
 layer, and services/resources are placed inside each namespace without
-overlap. The canonical order is `api`, `application`, `infrastructure`,
-`shared`, `module`, `domain`, then `persistence`; `persistence` is always the
-lowest layer.
+overlap. The canonical order is `api`, `application`, `orchestration`,
+`infrastructure`, `shared`, `module`, `domain`, then `persistence`;
+`persistence` is always the lowest layer. In Strategy1, the `CYCLE-DE-VIE`
+project namespace is rendered in the Orchestration layer.
 For the graph export, a namespace is the parent directory containing one or
 more projects/modules; Kubernetes namespaces are retained as metadata only.
 Projects located directly at the indexed repository root are assigned to the
@@ -155,7 +156,7 @@ The HTML architecture view MUST preserve these visual invariants:
   last band ends immediately below its lowest visible namespace content.
 - Layers MUST be stacked vertically in the canonical order above, with the
   Persistence layer at the bottom.
-- Each Kubernetes or fact namespace MUST be represented by a bounded rectangle
+- Each visible project or fact namespace MUST be represented by a bounded rectangle
   fully contained inside its owning layer, including its header and padding.
 - A namespace MAY use several rows. The default placement uses at most five
   boxes per row; additional boxes wrap onto subsequent rows.

@@ -1,3 +1,4 @@
+from dataclasses import replace
 from pathlib import Path
 
 from systemlens.models import MessageEndpoint
@@ -17,8 +18,21 @@ def _module(name: str, *, starts_application: bool = False) -> DiscoveredModule:
     )
 
 
-def test_domain_prefix_has_priority_over_application_classification() -> None:
-    assert software_layer(_module("domain-orders", starts_application=True)) == "domain"
+def test_strategy1_layer_conventions_are_opt_in() -> None:
+    domain = _module("domain-orders", starts_application=True)
+    portail = replace(
+        _module("portal-service", starts_application=True),
+        path=Path("/workspace/PORTAIL/portal-service"),
+    )
+    cycle = replace(
+        _module("lifecycle-service", starts_application=True),
+        path=Path("/workspace/CYCLE-DE-VIE/lifecycle-service"),
+    )
+    assert software_layer(domain) == "application"
+    assert software_layer(domain, strategy1=True) == "domain"
+    assert software_layer(portail) == "application"
+    assert software_layer(portail, strategy1=True) == "api"
+    assert software_layer(cycle, strategy1=True) == "orchestration"
     assert software_layer(_module("orders-service", starts_application=True)) == "application"
     assert software_layer(_module("orders-api")) == "api"
     assert software_layer(_module("orders-repository")) == "persistence"
@@ -42,12 +56,13 @@ def test_software_layers_render_contains_layer_metadata_and_dependencies() -> No
         snippet="@GetMapping(\"/orders\")",
         module="orders-service",
         qualified_name="OrdersController",
-    )])
+    )], strategy1=True)
     assert '"layer": "domain"' in html
+    assert '"layer": "orchestration"' not in html
     assert '"name": "domain-orders"' in html
     assert '"source": "orders-service"' in html
     assert '"namespace_groups"' in html
-    assert '"y": -5' in html
+    assert '"y": -6' in html
     assert "Software layers" in html
 
 

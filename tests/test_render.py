@@ -99,6 +99,7 @@ def test_microservice_graph_exposes_software_layers_and_namespaces() -> None:
     graph_data = _html_graph_data(render_graph_html(
         {"domain-orders": []}, [], modules_by_service={"domain-orders": module},
         graph_facts=[fact],
+        strategy1=True,
     ))
     node = next(item for item in graph_data["nodes"] if item["name"] == "domain-orders")
     assert node["layer"] == "domain"
@@ -204,6 +205,7 @@ enum PaymentStatus { AUTHORIZED, DECLINED }
     assert "async function applyElkLayout(libraries)" in document
     assert "function packLayeredClusterGraphPositions()" in document
     assert '"persistence"]' in document
+    assert '"orchestration"' in document
     assert "layeredClusterView = layout === \"elk\"" in document
     assert "packLayeredClusterGraphPositions();" in document
     assert "function namespaceForNode(node)" in document

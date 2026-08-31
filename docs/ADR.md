@@ -63,7 +63,11 @@ index and reports incomplete or stale sources as warnings.
 project-specific naming conventions.
 
 **Decision:** Keep these in `--topic-strategy strategy1`, separate from the
-default AST extractor.
+default AST extractor. Strategy1 also enables the repository-specific layer
+conventions: project namespace `PORTAIL` identifies API modules, project
+namespace `CYCLE-DE-VIE` identifies Orchestration modules, and the `DOMAIN-*`
+module prefix identifies Domain modules. A project namespace is a parent
+directory containing projects, not a Kubernetes namespace.
 
 **Consequences:** Default indexing remains framework-oriented and portable;
 Strategy1 facts are explicitly identified as convention-derived.
