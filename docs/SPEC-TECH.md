@@ -283,6 +283,9 @@ its evidence is intended for a human or an AI to assess a conservative rule.
 ## Graph layout algorithms
 
 The HTML renderer keeps graph coordinates as the source of truth for layout.
+After force-based placement, the graph view runs a projected-card collision pass
+against the HTML card envelope; this covers residual diagonal intersections that
+Sigma's compact node-radius no-overlap pass cannot detect.
 The namespace-cluster packer places microservices in a first sub-layer and
 resources in a second sub-layer on separated grids, then
 packs namespace rectangles with positive margins that include the complete

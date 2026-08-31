@@ -1213,6 +1213,8 @@
         return node.kind;
       };
       layoutNodes.forEach(node => network.addNode(node.id, {
+        // The readable geometry is rendered by the HTML card overlay; Sigma
+        // keeps its compact node marker underneath it.
         label: "", x: node.x, y: node.y, size: 2.5, color: node.color,
         type: node.external ? "external_microservice"
           : ["microservice", "kafka_topic", "mongodb_collection"].includes(node.kind)
@@ -2206,6 +2208,56 @@
         button.setAttribute("aria-pressed", String(active));
       });
     }
+    function resolveGraphCardOverlaps() {
+      if (!renderer || !network || layeredView) return;
+      const cardWidth = 110 * .4;
+      const cardHeight = 70 * .4;
+      const gap = 4;
+      const ids = [...network.nodes()];
+      for (let pass = 0; pass < 8; pass += 1) {
+        const points = new Map(ids.map(id => {
+          const attributes = network.getNodeAttributes(id);
+          const point = renderer.graphToViewport({ x: attributes.x, y: attributes.y });
+          return [id, { x: point.x, y: point.y, graphX: attributes.x, graphY: attributes.y }];
+        }));
+        let changed = false;
+        for (let leftIndex = 0; leftIndex < ids.length; leftIndex += 1) {
+          for (let rightIndex = leftIndex + 1; rightIndex < ids.length; rightIndex += 1) {
+            const leftId = ids[leftIndex];
+            const rightId = ids[rightIndex];
+            const left = points.get(leftId);
+            const right = points.get(rightId);
+            if (!left || !right) continue;
+            const overlapX = cardWidth + gap - Math.abs(right.x - left.x);
+            const overlapY = cardHeight + gap - Math.abs(right.y - left.y);
+            if (overlapX <= 0 || overlapY <= 0) continue;
+            const moveAlongX = overlapX <= overlapY;
+            const direction = moveAlongX
+              ? (right.x >= left.x ? 1 : -1)
+              : (right.y >= left.y ? 1 : -1);
+            const leftPoint = renderer.viewportToGraph({
+              x: left.x + (moveAlongX ? -direction * overlapX / 2 : 0),
+              y: left.y + (moveAlongX ? 0 : -direction * overlapY / 2),
+            });
+            const rightPoint = renderer.viewportToGraph({
+              x: right.x + (moveAlongX ? direction * overlapX / 2 : 0),
+              y: right.y + (moveAlongX ? 0 : direction * overlapY / 2),
+            });
+            network.setNodeAttribute(leftId, "x", leftPoint.x);
+            network.setNodeAttribute(leftId, "y", leftPoint.y);
+            network.setNodeAttribute(rightId, "x", rightPoint.x);
+            network.setNodeAttribute(rightId, "y", rightPoint.y);
+            left.x += moveAlongX ? -direction * overlapX / 2 : 0;
+            left.y += moveAlongX ? 0 : -direction * overlapY / 2;
+            right.x += moveAlongX ? direction * overlapX / 2 : 0;
+            right.y += moveAlongX ? 0 : direction * overlapY / 2;
+            changed = true;
+          }
+        }
+        if (!changed) break;
+      }
+    }
+
     async function applyLayout(layout) {
       const request = ++layoutRequest;
       activeLayout = layout;
@@ -2271,10 +2323,10 @@
             },
           });
         }
-        if (layout === "noverlap" || layout === "forceatlas2-noverlap") {
+        if (["noverlap", "forceatlas2", "forceatlas2-noverlap"].includes(layout)) {
           libraries.noverlap.assign(network, {
             maxIterations: 160,
-            settings: { expansion: 1.1, gridSize: 20, margin: 4, ratio: 1.3, speed: 3 },
+            settings: { expansion: 1.2, gridSize: 20, margin: 14, ratio: 1.3, speed: 3 },
           });
         }
       } catch (error) {
@@ -2287,6 +2339,15 @@
       if (request !== layoutRequest) return;
       renderer.refresh();
       renderer.getCamera().animatedReset({ duration: 260 });
+      // Sigma's noverlap solver works with Sigma node radii, while the
+      // readable labels are larger HTML rectangles. Resolve any residual
+      // collision using the actual projected card envelope after the camera
+      // has fitted the layout.
+      if (!layeredView) {
+        await new Promise(resolve => setTimeout(resolve, 300));
+        resolveGraphCardOverlaps();
+        renderer.refresh();
+      }
       layoutStatus.textContent = `${label} actif.`;
     }
     const nodesByNormalizedName = new Map();

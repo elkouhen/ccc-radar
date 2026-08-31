@@ -184,7 +184,9 @@ def test_html_export_resources_are_usable_in_a_constrained_browser_viewport(tmp_
             }"""
         )
         assert graph.get_attribute("data-relation-count") == "4"
+        page.locator("#layout-status").filter(has_text="vue graphe").wait_for(state="visible")
         card_size = _assert_architecture_cards_have_uniform_size(page)
+        _assert_architecture_cards_do_not_overlap(page)
         assert "1 ressource isolée" in page.locator("#graph-summary").inner_text()
         assert page.locator("#inventory-status").inner_text() == "Inventaire : aucun fait non résolu"
         assert page.locator("#node-suggestions option").count() == 5
