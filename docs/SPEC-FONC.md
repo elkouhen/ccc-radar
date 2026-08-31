@@ -144,6 +144,9 @@ Releasing a pan MUST stop the camera immediately; no inertial continuation is
 allowed.
 Automatic collision protection MUST NOT zoom the camera during a pan; it may
 only constrain an explicit zoom-out operation.
+In the namespace view, zooming out is disabled because it can make the fixed
+minimum envelope of small clusters overlap; panning and zooming in remain
+available.
 For the graph export, a namespace is the parent directory containing one or
 more projects/modules; Kubernetes namespaces are retained as metadata only.
 Projects located directly at the indexed repository root are assigned to the

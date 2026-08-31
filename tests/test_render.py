@@ -253,8 +253,15 @@ enum PaymentStatus { AUTHORIZED, DECLINED }
     assert "enableCameraPanning: false" in document
     assert "inertiaDuration: 0" in document
     assert "inertiaRatio: 0" in document
-    assert "const cameraZoomedOut = lastCameraRatio !== null" in document
+    assert "const cameraZoomedOut = lastSafeCameraState !== null" in document
     assert "if (cameraZoomedOut && requiredZoomIn > 1.001" in document
+    assert "let lastSafeCameraState = null" in document
+    assert "const clusterBoundsOverlap =" in document
+    assert "renderedClusterRects" in document
+    assert "renderer.getCamera().setState(lastSafeCameraState)" in document
+    assert "zoomOutButton.disabled = clusteredView" in document
+    assert "if (clusteredView) return;" in document
+    assert "blockClusterZoomOut" in document
     assert "Connectivité relative :" in document
     assert "const visualNodeKind = node" in document
     assert "Namespace architectural" not in document

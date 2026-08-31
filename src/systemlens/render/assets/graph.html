@@ -866,6 +866,7 @@
     }
     let network;
     let renderer;
+    let refreshNodeLabels = null;
     let initialNodePositions = new Map();
     const layoutLibraries = Promise.all([
       import("https://esm.sh/graphology-layout-forceatlas2@0.10.1"),
@@ -1188,7 +1189,7 @@
     let layeredClusterView = false;
     let clusterLayoutPositions = new Map();
     let cameraFitAdjusting = false;
-    let lastCameraRatio = null;
+    let lastSafeCameraState = null;
     let graphPanCleanup = null;
     let activeLayout = "forceatlas2-noverlap";
     function rebuildGraph() {
@@ -1281,7 +1282,7 @@
           return data;
         },
       });
-      const refreshNodeLabels = () => {
+      refreshNodeLabels = () => {
         const nodePoints = new Map();
         const graphPointToViewport = graphPoint => {
           return renderer.graphToViewport(graphPoint);
@@ -1307,9 +1308,11 @@
         // two projected card envelopes intersect, clamp the camera instead
         // of shrinking the cards or changing the layout unexpectedly.
         const cameraRatio = renderer.getCamera().getState().ratio;
-        const cameraZoomedOut = lastCameraRatio !== null
-          && cameraRatio > lastCameraRatio + 0.0001;
-        lastCameraRatio = cameraRatio;
+        // Compare with the last fully validated state. A collision pass may
+        // return early while correcting cards; comparing with the immediately
+        // previous frame would lose the fact that the user zoomed out.
+        const cameraZoomedOut = lastSafeCameraState !== null
+          && cameraRatio > lastSafeCameraState.ratio + 0.0001;
         const cardWidth = 110 * .4;
         const cardHeight = 70 * .4;
         const cardGap = 4;
@@ -1576,11 +1579,15 @@
             minY = Math.min(...group.points.map(point => point.y)) - cardHalfHeight - 24;
             maxY = Math.max(...group.points.map(point => point.y)) + cardHalfHeight + 10;
           }
-          namespaceBounds.set(`${group.layer}:${group.namespace}`, { minX, maxX, minY, maxY });
+          const renderedWidth = Math.max(clusteredView || layeredClusterView ? 92 : 150, maxX - minX);
+          const renderedHeight = Math.max(clusteredView || layeredClusterView ? 0 : 92, maxY - minY);
+          namespaceBounds.set(`${group.layer}:${group.namespace}`, {
+            minX, maxX: minX + renderedWidth, minY, maxY: minY + renderedHeight,
+          });
           const box = document.createElement("div"); box.className = "graph-namespace-group";
           box.style.left = `${minX}px`; box.style.top = `${minY}px`;
-          box.style.width = `${Math.max(clusteredView || layeredClusterView ? 0 : 150, maxX - minX)}px`;
-          box.style.height = `${Math.max(clusteredView || layeredClusterView ? 0 : 92, maxY - minY)}px`;
+          box.style.width = `${renderedWidth}px`;
+          box.style.height = `${renderedHeight}px`;
           box.style.setProperty("--namespace-accent", layerColors[group.layer] || "#64748b");
           const title = document.createElement("span"); title.className = "graph-namespace-title";
           title.textContent = group.namespace === "root" ? "ROOT" : group.namespace;
@@ -1605,6 +1612,23 @@
           }
           graphLayersOverlay.append(box);
         });
+        // Validate the rectangles after CSS has applied their minimum sizes.
+        // Graph-space envelopes alone miss small clusters whose rendered box
+        // is widened by CSS, especially after a zoom-out.
+        const renderedClusterRects = [...graphGroupsOverlay.querySelectorAll(".graph-namespace-group")]
+          .map(element => element.getBoundingClientRect());
+        const clusterBoundsOverlap = renderedClusterRects.some((left, leftIndex, rects) => (
+          rects.some((right, rightIndex) => leftIndex !== rightIndex
+            && left.right > right.left && right.right > left.left
+            && left.bottom > right.top && right.bottom > left.top)
+        ));
+        if (cameraZoomedOut && clusterBoundsOverlap && lastSafeCameraState && !cameraFitAdjusting) {
+          cameraFitAdjusting = true;
+          renderer.getCamera().setState(lastSafeCameraState);
+          setTimeout(() => { cameraFitAdjusting = false; }, 120);
+          return;
+        }
+        lastSafeCameraState = { ...renderer.getCamera().getState() };
         if (!showProjectGroups.checked) return;
         const namespaceGroupEntries = [...namespaces.entries()];
         (graphData.groups || []).forEach(group => {
@@ -1771,7 +1795,7 @@
       };
       renderer.on("afterRender", scheduleNodeLabelRefresh);
       renderer.getCamera().on("updated", scheduleNodeLabelRefresh);
-      refreshNodeLabels();
+      refreshNodeLabels?.();
       renderer.on("enterNode", ({ node }) => { hoveredId = node; refreshNodeLabels(); });
       renderer.on("leaveNode", () => { hoveredId = null; refreshNodeLabels(); });
       renderer.on("clickNode", ({ node }) => selectNode(node));
@@ -1812,8 +1836,15 @@
         window.addEventListener("pointercancel", finishGraphPan, true);
       };
       graphCanvas.addEventListener("pointerdown", startGraphPan, true);
+      const blockClusterZoomOut = event => {
+        if (!clusteredView || event.deltaY <= 0) return;
+        event.preventDefault();
+        event.stopImmediatePropagation();
+      };
+      graphCanvas.addEventListener("wheel", blockClusterZoomOut, true);
       graphPanCleanup = () => {
         graphCanvas.removeEventListener("pointerdown", startGraphPan, true);
+        graphCanvas.removeEventListener("wheel", blockClusterZoomOut, true);
         window.removeEventListener("pointermove", moveGraphPan, true);
         window.removeEventListener("pointerup", finishGraphPan, true);
         window.removeEventListener("pointercancel", finishGraphPan, true);
@@ -2034,8 +2065,10 @@
       const nodeGapY = 700;
       const clusterPaddingX = 120;
       const clusterPaddingY = 100;
-      const clusterGapX = 260;
-      const clusterGapY = 220;
+      // Keep enough graph-space distance for the fixed minimum envelope of a
+      // small cluster to remain separate after several zoom-out steps.
+      const clusterGapX = 3000;
+      const clusterGapY = 3000;
       const packedGroups = groups.map(([namespace, nodes]) => {
         const orderedNodes = [...nodes].sort((left, right) => {
           const leftPosition = clusterLayoutPositions.get(left);
@@ -2439,7 +2472,7 @@
     async function applyLayout(layout) {
       const request = ++layoutRequest;
       activeLayout = layout;
-      lastCameraRatio = null;
+      lastSafeCameraState = null;
       const label = layoutLabels.get(layout);
       const nextLayeredView = ["elk", "cluster"].includes(layout);
       const switchingView = layeredView !== nextLayeredView || clusteredView !== (layout === "cluster");
@@ -2456,6 +2489,11 @@
       clusteredView = layout === "cluster";
       layeredClusterView = layout === "elk";
       overlayLayoutApplied = false;
+      const zoomOutButton = document.getElementById("zoom-out");
+      zoomOutButton.disabled = clusteredView;
+      zoomOutButton.title = clusteredView
+        ? "Le dézoom est désactivé dans la vue namespaces pour préserver la séparation des clusters"
+        : "Dézoomer";
       const nextView = !layeredView ? "couches" : !clusteredView ? "clusters" : "graphe";
       const nextViewLabel = {
         couches: "Afficher le rendu en couches",
@@ -2495,7 +2533,12 @@
           packLayeredClusterGraphPositions();
         }
         if (layout === "cluster") {
-          await applyFcoseClusterLayout();
+          // The deterministic packer is the source of truth for this view:
+          // it sizes namespaces from their two sub-layers and reserves sibling
+          // gaps before projection. fCoSE can block the browser main thread
+          // on large compound graphs, which prevents the fallback and leaves
+          // partially packed cluster envelopes on screen.
+          packClusterGraphPositions();
         }
         if (layout === "forceatlas2" || layout === "forceatlas2-noverlap") {
           libraries.forceAtlas2.assign(network, {
@@ -2542,7 +2585,7 @@
       const cameraState = layoutCamera.getState();
       layoutCamera.setState({ ...cameraState, ratio: cameraState.ratio * .8 });
       await new Promise(resolve => setTimeout(resolve, 80));
-      refreshNodeLabels();
+      refreshNodeLabels?.();
       layoutStatus.textContent = `${label} actif.`;
     }
     const nodesByNormalizedName = new Map();
@@ -3948,6 +3991,7 @@
       setTimeout(() => refreshNodeLabels?.(), 240);
     });
     document.getElementById("zoom-out").addEventListener("click", () => {
+      if (clusteredView) return;
       const renderer = activeRenderer();
       renderer.getCamera().animatedUnzoom({ duration: 180 });
       setTimeout(() => refreshNodeLabels?.(), 240);

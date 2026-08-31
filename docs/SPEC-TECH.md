@@ -302,8 +302,11 @@ The namespace-cluster packer places microservices in a first sub-layer and
 resources in a second sub-layer on separated grids, then
 packs namespace rectangles with positive margins that include the complete
 projected card/title envelope, not only the node-grid dimensions. Container geometry is kept
-in graph coordinates until it is projected to the viewport. When project or
-other parent groups are enabled, their bounds are the union of the already
+in graph coordinates until it is projected to the viewport. The cluster view
+uses this deterministic packing as its source of truth; it does
+not wait for a compound force layout that could block the browser before the
+non-overlap fallback runs. When project or other parent groups are enabled,
+their bounds are the union of the already
 projected child namespace bounds plus title/padding margins; node-grid gaps are
 calibrated with generous graph-space margins for the shared 110×70 card at the
 common 0.4 display scale and a dedicated vertical separation between the two
