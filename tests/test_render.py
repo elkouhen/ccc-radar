@@ -242,6 +242,12 @@ enum PaymentStatus { AUTHORIZED, DECLINED }
     assert "Namespace architectural : ${node.project_namespace}" in document
     assert "Namespace architectural : ${architecturalNamespace === \"root\" ? \"ROOT\" : architecturalNamespace}" in document
     assert 'appendList("Namespace architectural", [architecturalNamespace === "root" ? "ROOT" : architecturalNamespace], architectureGroup)' in document
+    assert "function clusterPathForNode(node)" in document
+    assert "function architectureLayerForNode(node)" in document
+    assert "Chemin des clusters : ${clusterPath}" in document
+    assert "Chemin des clusters : ${clusterPathForNode(id)}" in document
+    assert "project_namespace_path" in document
+    assert "architecture_namespace_path" in document
     assert 'appendList("Namespace architectural", node.project_namespace ? [node.project_namespace] : [], architectureGroup)' in document
     assert 'labelAlignment: "center"' in document
     assert "legend-resource-mark collection" in document

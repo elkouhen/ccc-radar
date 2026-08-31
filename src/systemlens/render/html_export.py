@@ -25,7 +25,7 @@ from systemlens.modules import (
     MongoPersistenceClass,
     module_identity,
 )
-from systemlens.render.namespaces import project_namespace
+from systemlens.render.namespaces import project_namespace, project_namespace_path
 from systemlens.render.software_layers import software_layer
 from systemlens.render._graph_view_helpers import (
     _endpoint_vscode_uri,
@@ -706,6 +706,7 @@ def render_graph_html(
                 "fact_namespaces": sorted(fact_namespaces_by_service.get(name, set())),
                 **({"architecture_namespace": module_namespaces[0]} if module_namespaces else {}),
                 **({"project_namespace": project_namespace(module, root_path)} if module else {}),
+                **({"project_namespace_path": project_namespace_path(module, root_path)} if module else {}),
                 "architecture_layer": module_layer,
                 "kafka_endpoints": [
                     {
@@ -854,6 +855,7 @@ def render_graph_html(
     service_architecture = {
         str(node["name"]): {
             "layer": node.get("layer", "unknown"),
+            "namespace_path": node.get("project_namespace_path"),
             "namespace": (
                 (node.get("runtime_namespaces") or [])
                 + (node.get("fact_namespaces") or [])
@@ -886,6 +888,8 @@ def render_graph_html(
         node["architecture_layer"] = owner_data["layer"]
         if owner_data["namespace"]:
             node["architecture_namespace"] = owner_data["namespace"]
+        if owner_data["namespace_path"]:
+            node["architecture_namespace_path"] = owner_data["namespace_path"]
         node["namespace_source"] = "writer"
     links: list[dict[str, object]] = []
     for source_kind, source_name, target_kind, target_name, label, kind in _visual_graph_edges(edges):

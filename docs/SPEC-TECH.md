@@ -291,7 +291,7 @@ projected child namespace bounds plus title/padding margins; this explicit
 hierarchy prevents a parent from being smaller than a nested cluster after
 zooming. Sibling rectangles remain separated, while parent/descendant
 intersection is intentional. Project groups carry their owning project
-namespace. Structural project groups contain only
+namespace and full namespace path. Structural project groups contain only
 their owning projects; resource nodes resolve their cluster
 from incoming producer edges before consulting resource metadata; this keeps
 topics and collections with their producing microservice. The layered view

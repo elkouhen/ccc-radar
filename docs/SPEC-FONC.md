@@ -192,6 +192,10 @@ grouping such as `clusterA` or `clusterB`) for microservices and resources
 (topics, collections, and enriched resources), separately from Kubernetes
 namespaces and fact namespaces. A resource MUST use the namespace of its
 producing or owning microservice, with `ROOT` as the fallback.
+The same panel MUST display the resolved software layer and the cluster path;
+for a resource, both values MUST be inherited from its producing or owning
+microservice. The cluster path MUST be the slash-separated path of cluster
+directories, such as `cluster1/cluster2`, without a structural-group prefix.
 
 ### Rules for the namespace-cluster rendering
 

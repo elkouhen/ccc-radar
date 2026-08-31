@@ -18,6 +18,18 @@ def project_namespace(module: DiscoveredModule, root_path: Path | None = None) -
     return parent.name or "root"
 
 
+def project_namespace_path(module: DiscoveredModule, root_path: Path | None = None) -> str:
+    """Return the full cluster path formed by parent directories."""
+    parent = module.path.resolve().parent
+    if root_path is None:
+        return parent.name or "root"
+    try:
+        relative_parent = parent.relative_to(root_path.resolve())
+    except ValueError:
+        return parent.name or "root"
+    return relative_parent.as_posix() or "root"
+
+
 def render_namespaces_html(
     modules: list[DiscoveredModule], root_path: Path | None = None
 ) -> str:

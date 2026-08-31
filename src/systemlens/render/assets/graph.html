@@ -1701,6 +1701,37 @@
       });
       return neighbourNamespaces[0] || "root";
     }
+    function ownerCandidatesForNode(node) {
+      const data = nodeDataById.get(node);
+      if (data?.kind === "microservice") return [node];
+      return [
+        node,
+        ...graphData.links
+          .filter(link => link.target === node)
+          .map(link => link.source)
+          .filter(candidate => nodeDataById.get(candidate)?.kind === "microservice"),
+      ];
+    }
+    function architectureLayerForNode(node) {
+      const data = nodeDataById.get(node);
+      if (data?.layer_label || data?.layer) return data.layer_label || data.layer;
+      const owner = ownerCandidatesForNode(node)
+        .map(candidate => nodeDataById.get(candidate))
+        .find(candidate => candidate?.kind === "microservice" && (candidate.layer_label || candidate.layer));
+      return owner?.layer_label || owner?.layer || "Unknown";
+    }
+    function clusterPathForNode(node) {
+      const data = nodeDataById.get(node);
+      const owner = ownerCandidatesForNode(node)
+        .map(candidate => nodeDataById.get(candidate))
+        .find(candidate => candidate?.project_namespace_path || candidate?.project_namespace);
+      const path = data?.project_namespace_path
+        || data?.architecture_namespace_path
+        || owner?.project_namespace_path
+        || owner?.architecture_namespace_path
+        || namespaceForNode(node);
+      return path === "root" ? "ROOT" : path;
+    }
     function packClusterGraphPositions() {
       const namespaceGroups = new Map();
       network.forEachNode(node => {
@@ -3235,6 +3266,10 @@
           projectNamespaceBadge.textContent = `Namespace architectural : ${node.project_namespace}`;
           meta.append(projectNamespaceBadge);
         }
+        const clusterPathBadge = document.createElement("span");
+        clusterPathBadge.className = "detail-badge";
+        clusterPathBadge.textContent = `Chemin des clusters : ${clusterPathForNode(id)}`;
+        meta.append(clusterPathBadge);
         (node.runtime_namespaces || []).forEach(namespace => {
           const namespaceBadge = document.createElement("span");
           namespaceBadge.className = "detail-badge";
@@ -3254,12 +3289,22 @@
         ].forEach(label => { const badge = document.createElement("span"); badge.className = "detail-badge"; badge.textContent = label; meta.append(badge); });
       } else {
         const architecturalNamespace = namespaceForNode(id);
+        const architectureLayer = architectureLayerForNode(id);
+        const clusterPath = clusterPathForNode(id);
+        const layerBadge = document.createElement("span");
+        layerBadge.className = "detail-badge";
+        layerBadge.textContent = `Layer : ${architectureLayer}`;
+        meta.append(layerBadge);
         if (architecturalNamespace) {
           const namespaceBadge = document.createElement("span");
           namespaceBadge.className = "detail-badge";
           namespaceBadge.textContent = `Namespace architectural : ${architecturalNamespace === "root" ? "ROOT" : architecturalNamespace}`;
           meta.append(namespaceBadge);
         }
+        const clusterPathBadge = document.createElement("span");
+        clusterPathBadge.className = "detail-badge";
+        clusterPathBadge.textContent = `Chemin des clusters : ${clusterPath}`;
+        meta.append(clusterPathBadge);
       }
       const confidenceLabels = { proved: "prouvee", inferred: "inferee", conventional: "conventionnelle" };
       ["proved", "inferred", "conventional"].forEach(confidence => {
@@ -3286,7 +3331,9 @@
         const architecturalNamespace = namespaceForNode(id);
         if (architecturalNamespace) {
           const architectureGroup = createDetailsGroup("Architecture");
+          appendList("Layer", [architectureLayerForNode(id)], architectureGroup);
           appendList("Namespace architectural", [architecturalNamespace === "root" ? "ROOT" : architecturalNamespace], architectureGroup);
+          appendList("Chemin des clusters", [clusterPathForNode(id)], architectureGroup);
           discardEmptyDetailsGroup(architectureGroup);
         }
       }
@@ -3311,6 +3358,7 @@
           const architectureGroup = createDetailsGroup("Architecture");
           appendList("Layer", [node.layer_label || "Unknown"], architectureGroup);
           appendList("Namespace architectural", node.project_namespace ? [node.project_namespace] : [], architectureGroup);
+          appendList("Chemin des clusters", [clusterPathForNode(id)], architectureGroup);
           appendList("Namespaces Kubernetes", node.runtime_namespaces || [], architectureGroup);
           appendList("Namespaces de faits", node.fact_namespaces || [], architectureGroup);
           discardEmptyDetailsGroup(architectureGroup);

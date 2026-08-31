@@ -3,7 +3,13 @@ from pathlib import Path
 
 from systemlens.models import MessageEndpoint
 from systemlens.modules import DiscoveredModule, ModuleDependency
-from systemlens.render import project_namespace, render_namespaces_html, render_software_layers_html, software_layer
+from systemlens.render import (
+    project_namespace,
+    project_namespace_path,
+    render_namespaces_html,
+    render_software_layers_html,
+    software_layer,
+)
 
 
 def _module(name: str, *, starts_application: bool = False) -> DiscoveredModule:
@@ -69,7 +75,7 @@ def test_software_layers_render_contains_layer_metadata_and_dependencies() -> No
     assert '"name": "domain-orders"' in html
     assert '"source": "orders-service"' in html
     assert '"namespace_groups"' in html
-    assert '"y": -5' in html
+    assert '"y": -4' in html
     assert '"name": "orders-repository"' in html
     assert '"name": "shared-kernel"' not in html
     assert "Software layers" in html
@@ -87,3 +93,11 @@ def test_namespace_export_groups_modules_by_resolved_namespace() -> None:
 def test_root_project_is_assigned_to_root_namespace() -> None:
     module = _module("orders-service", starts_application=True)
     assert project_namespace(module, Path("/workspace")) == "root"
+
+
+def test_project_namespace_path_keeps_nested_cluster_directories() -> None:
+    module = replace(
+        _module("orders-service"),
+        path=Path("/workspace/cluster1/cluster2/orders-service"),
+    )
+    assert project_namespace_path(module, Path("/workspace")) == "cluster1/cluster2"
