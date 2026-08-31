@@ -43,6 +43,21 @@ def _producer(message_type: str) -> MessageEndpoint:
     )
 
 
+def _assert_filtered_graph_is_valid(
+    page, previous_node_count: int | None = None, excluded_kind: str | None = None
+) -> int:
+    graph = page.locator("#graph")
+    assert graph.get_attribute("data-invalid-coordinates") == "false"
+    count = int(graph.get_attribute("data-visible-node-count") or "0")
+    assert count >= 0
+    visible_kinds = (graph.get_attribute("data-visible-node-kinds") or "").split(",")
+    if excluded_kind is not None:
+        assert excluded_kind not in visible_kinds
+    if previous_node_count is not None:
+        assert count < previous_node_count
+    return count
+
+
 @pytest.mark.slow
 def test_html_export_resources_are_usable_in_a_constrained_browser_viewport(tmp_path: Path) -> None:
     source_root = tmp_path / "orders" / "src" / "main" / "java" / "com" / "example"
@@ -138,6 +153,31 @@ def test_html_export_resources_are_usable_in_a_constrained_browser_viewport(tmp_
         assert graph.get_attribute("data-relation-count") == "4"
         page.locator("#layout-elk").click()
         page.locator("#layout-status").filter(has_text="vue architecturale").wait_for(state="visible")
+        assert not errors, errors
+        full_node_count = _assert_filtered_graph_is_valid(page)
+
+        # Changing node types must rebuild the graph and its layer overlays.
+        # The filtered graph must contain no stale card for the removed type.
+        page.locator("#node-kafka-topic").uncheck()
+        page.locator("#layout-status").filter(has_text="vue architecturale").wait_for(state="visible")
+        without_topic_count = _assert_filtered_graph_is_valid(
+            page, full_node_count, "kafka_topic"
+        )
+
+        page.locator("#node-mongodb-collection").uncheck()
+        page.locator("#layout-status").filter(has_text="vue architecturale").wait_for(state="visible")
+        _assert_filtered_graph_is_valid(page, without_topic_count, "mongodb_collection")
+
+        page.locator("#node-microservice").uncheck()
+        page.locator("#node-external-microservice").uncheck()
+        page.locator("#layout-status").filter(has_text="vue architecturale").wait_for(state="visible")
+        assert page.locator("#graph").get_attribute("data-visible-node-count") == "0"
+        assert page.locator("#graph").get_attribute("data-invalid-coordinates") == "false"
+        page.locator("#node-microservice").check()
+        page.locator("#node-external-microservice").check()
+        page.locator("#node-kafka-topic").check()
+        page.locator("#node-mongodb-collection").check()
+        page.locator("#layout-status").filter(has_text="vue architecturale").wait_for(state="visible")
 
         page.get_by_role("tab", name="Kafka").click()
         page.locator("#kafka-panel").wait_for(state="visible")
@@ -158,7 +198,7 @@ def test_html_export_resources_are_usable_in_a_constrained_browser_viewport(tmp_
         assert toolbar is not None and toolbar["y"] + toolbar["height"] <= 450
         assert dto_box is not None and dto_box["y"] + dto_box["height"] <= 450
 
-        page.get_by_role("tab", name="Persistance").click()
+        page.get_by_role("tab", name="Mongo").click()
         page.locator("#persistence-panel").wait_for(state="visible")
         mongo_filter = page.locator("#mongo-class-reference-filter")
         mongo_filter.fill("Order")
@@ -186,7 +226,9 @@ def test_html_export_resources_are_usable_in_a_constrained_browser_viewport(tmp_
         module_action = page.get_by_role("link", name="Ouvrir le module Maven dans VS Code")
         assert module_action.is_visible()
         assert module_action.get_attribute("href") == f"vscode://file/{module.path}"
-        assert page.locator("#details .details-group > summary").all_text_contents() == ["Relations", "Sources"]
+        assert page.locator("#details .details-group > summary").all_text_contents() == [
+            "Architecture", "Relations", "Sources"
+        ]
         assert page.get_by_text("Topics publies", exact=True).is_visible()
         assert page.get_by_role("button", name="orders.created", exact=True).is_visible()
         assert page.get_by_role("button", name="DTO · OrderCreated").is_visible()

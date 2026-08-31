@@ -1575,6 +1575,11 @@
       renderer.on("clickStage", reset);
       const graphCanvas = document.getElementById("graph");
       graphCanvas.dataset.relationCount = String(visibleLinks.length);
+      graphCanvas.dataset.visibleNodeCount = String(layoutNodes.length);
+      graphCanvas.dataset.visibleNodeKinds = [...new Set(layoutNodes.map(node => node.kind))].sort().join(",");
+      graphCanvas.dataset.invalidCoordinates = String(
+        layoutNodes.some(node => !Number.isFinite(node.x) || !Number.isFinite(node.y))
+      );
       graphCanvas.setAttribute("aria-label", `Graphe des interactions : ${visibleLinks.length} relations`);
       // Keep Sigma's native camera coordinate system; layout coordinates are
       // centered above so the complete vertical stack stays in view.
