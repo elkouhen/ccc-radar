@@ -136,6 +136,13 @@ def test_html_export_resources_are_usable_in_a_constrained_browser_viewport(tmp_
         assert not errors
 
         graph = page.locator("#graph")
+        assert page.evaluate(
+            """() => {
+                const graphRect = document.querySelector('#graph').getBoundingClientRect();
+                const toolbarRect = document.querySelector('.toolbar').getBoundingClientRect();
+                return graphRect.left >= toolbarRect.right;
+            }"""
+        )
         assert graph.get_attribute("data-relation-count") == "4"
         assert "1 ressource isolée" in page.locator("#graph-summary").inner_text()
         assert page.locator("#inventory-status").inner_text() == "Inventaire : aucun fait non résolu"
@@ -153,35 +160,35 @@ def test_html_export_resources_are_usable_in_a_constrained_browser_viewport(tmp_
         page.locator("#relation-kafka").check()
         assert graph.get_attribute("data-relation-count") == "4"
         page.locator("#layout-elk").click()
-        page.locator("#layout-status").filter(has_text="vue architecturale").wait_for(state="visible")
+        page.locator("#layout-status").filter(has_text="vue couches").wait_for(state="visible")
         assert not errors, errors
         full_node_count = _assert_filtered_graph_is_valid(page)
 
         # Changing node types must rebuild the graph and its layer overlays.
         # The filtered graph must contain no stale card for the removed type.
         page.locator("#node-kafka-topic").uncheck()
-        page.locator("#layout-status").filter(has_text="vue architecturale").wait_for(state="visible")
+        page.locator("#layout-status").filter(has_text="vue couches").wait_for(state="visible")
         without_topic_count = _assert_filtered_graph_is_valid(
             page, full_node_count, "kafka_topic"
         )
 
         page.locator("#node-mongodb-collection").uncheck()
-        page.locator("#layout-status").filter(has_text="vue architecturale").wait_for(state="visible")
+        page.locator("#layout-status").filter(has_text="vue couches").wait_for(state="visible")
         _assert_filtered_graph_is_valid(page, without_topic_count, "mongodb_collection")
 
         page.locator("#node-microservice").uncheck()
         page.locator("#node-external-microservice").uncheck()
-        page.locator("#layout-status").filter(has_text="vue architecturale").wait_for(state="visible")
+        page.locator("#layout-status").filter(has_text="vue couches").wait_for(state="visible")
         assert page.locator("#graph").get_attribute("data-visible-node-count") == "0"
         assert page.locator("#graph").get_attribute("data-invalid-coordinates") == "false"
         page.locator("#node-microservice").check()
         page.locator("#node-external-microservice").check()
         page.locator("#node-kafka-topic").check()
         page.locator("#node-mongodb-collection").check()
-        page.locator("#layout-status").filter(has_text="vue architecturale").wait_for(state="visible")
+        page.locator("#layout-status").filter(has_text="vue couches").wait_for(state="visible")
 
         page.locator("#layout-cluster").click()
-        page.locator("#layout-status").filter(has_text="vue clusters namespaces").wait_for(state="visible")
+        page.locator("#layout-status").filter(has_text="vue namespaces").wait_for(state="visible")
         page.wait_for_function("() => Boolean(document.querySelector('#graph').dataset.clusterLayout)")
         assert page.locator("#graph").get_attribute("data-cluster-sub-layers") == (
             "microservices-first,resources-second"

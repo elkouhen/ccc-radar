@@ -111,8 +111,9 @@ toolbar. The selected theme is stored only in browser local storage and does
 not affect persisted inventory facts or exported architecture data.
 Its initial view foregrounds task-oriented entry points (Kafka topic, service
 dependencies, service-to-service path and Kafka messages). Relation/resource
-filters and graph layouts are available as advanced controls. The graph offers
-grouped, airy, balanced, and architectural layouts; the architectural layout
+filters and placement strategies are available as advanced controls. The graph
+offers three primary views—graph, layers, and namespaces—while grouped and
+non-overlapping placement strategies remain secondary options. The layers view
 uses ELK.js compound nodes to arrange resources in a deterministic hierarchy:
 software layers are stacked vertically, namespaces are nested inside their
 layer, and services/resources are placed inside each namespace without
@@ -123,6 +124,11 @@ project namespace is rendered in the Orchestration layer.
 External microservices are rendered in a dedicated `External services` layer
 at the bottom, after the internal layer order.
 Shared libraries and other non-deployable modules are not rendered as layers.
+The three primary views are presented as a single view selector; placement
+strategies are secondary controls. The graph viewport reserves the space used
+by the navigation panel and refits the camera to that available area after a
+view or window-size change. In the layers and namespaces views, relations are
+visually subdued and Kafka/MongoDB resources use larger, distinct cards.
 For the graph export, a namespace is the parent directory containing one or
 more projects/modules; Kubernetes namespaces are retained as metadata only.
 Projects located directly at the indexed repository root are assigned to the
