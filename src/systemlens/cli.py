@@ -59,6 +59,7 @@ from systemlens.render import (
     render_module_graph_text,
     render_software_layers_html,
     render_namespaces_html,
+    project_namespace,
     render_modules_list_json,
     render_modules_list_text,
 )
@@ -1592,8 +1593,8 @@ def export_namespaces_cmd(
         raise typer.Exit(code=2)
     with Store(repo_root, readonly=True) as store:
         modules = store.all_modules()
-    html.write_text(render_namespaces_html(modules), encoding="utf-8")
-    namespace_count = len({module.path.parent.name or "root" for module in modules})
+    html.write_text(render_namespaces_html(modules, repo_root), encoding="utf-8")
+    namespace_count = len({project_namespace(module, repo_root) for module in modules})
     typer.echo(
         f"Export namespaces écrit dans {html} ({namespace_count} namespaces, {len(modules)} modules)."
     )

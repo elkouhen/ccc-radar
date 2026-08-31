@@ -25,6 +25,7 @@ from systemlens.modules import (
     MongoPersistenceClass,
     module_identity,
 )
+from systemlens.render.namespaces import project_namespace
 from systemlens.render.software_layers import software_layer
 from systemlens.render._graph_view_helpers import (
     _endpoint_vscode_uri,
@@ -703,7 +704,7 @@ def render_graph_html(
                 "runtime_namespaces": module_namespaces,
                 "fact_namespaces": sorted(fact_namespaces_by_service.get(name, set())),
                 **({"architecture_namespace": module_namespaces[0]} if module_namespaces else {}),
-                **({"project_namespace": module.path.parent.name or "root"} if module else {}),
+                **({"project_namespace": project_namespace(module, root_path)} if module else {}),
                 "architecture_layer": module_layer,
                 "kafka_endpoints": [
                     {

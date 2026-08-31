@@ -10,11 +10,21 @@ _NAMESPACE_HTML_TEMPLATE = (
 ).read_text(encoding="utf-8")
 
 
-def render_namespaces_html(modules: list[DiscoveredModule]) -> str:
+def project_namespace(module: DiscoveredModule, root_path: Path | None = None) -> str:
+    """Return the parent-project namespace, assigning root projects to root."""
+    parent = module.path.resolve().parent
+    if root_path is not None and parent == root_path.resolve():
+        return "root"
+    return parent.name or "root"
+
+
+def render_namespaces_html(
+    modules: list[DiscoveredModule], root_path: Path | None = None
+) -> str:
     """Render namespaces as containers containing their indexed modules."""
     by_namespace: dict[str, list[DiscoveredModule]] = {}
     for module in modules:
-        namespace = module.path.parent.name or "root"
+        namespace = project_namespace(module, root_path)
         by_namespace.setdefault(namespace, []).append(module)
 
     namespace_names = sorted(by_namespace)

@@ -1290,7 +1290,7 @@
               namespaces.push(...(neighbourData?.runtime_namespaces || []), ...(neighbourData?.fact_namespaces || []));
             });
           }
-          const namespace = namespaces[0] || "unassigned";
+          const namespace = namespaces[0] || "root";
           const namespacesForLayer = layerItems.get(layer);
           if (!namespacesForLayer.has(namespace)) namespacesForLayer.set(namespace, []);
           namespacesForLayer.get(namespace).push({ id, point });
@@ -1634,7 +1634,7 @@
         const neighbourData = nodeDataById.get(neighbour);
         return [...(neighbourData?.runtime_namespaces || []), ...(neighbourData?.fact_namespaces || [])];
       });
-      return neighbourNamespaces[0] || "unassigned";
+      return neighbourNamespaces[0] || "root";
     }
     function packClusterGraphPositions() {
       const namespaceGroups = new Map();

@@ -121,6 +121,8 @@ overlap. The canonical order is `api`, `application`, `infrastructure`,
 lowest layer.
 For the graph export, a namespace is the parent directory containing one or
 more projects/modules; Kubernetes namespaces are retained as metadata only.
+Projects located directly at the indexed repository root are assigned to the
+synthetic `root` namespace.
 The namespace-cluster layout is independent of the layer order and uses a
 deterministic two-level packing without ELK: fCoSE first computes the local
 compound layout of resources inside each namespace, then a deterministic
