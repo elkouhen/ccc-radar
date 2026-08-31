@@ -654,7 +654,10 @@
     </div>
   </details>
   <div id="details" class="is-empty"><div class="details-empty">Selectionnez un noeud pour isoler ses relations et afficher ses APIs.</div></div>
-  <div id="graph" aria-label="Graphe des interactions"><div id="graph-layers" aria-hidden="true"></div><div id="graph-groups" aria-hidden="true"></div><div id="graph-node-labels" aria-hidden="true"></div></div>
+  <div id="graph" aria-label="Graphe des interactions"></div>
+  <div id="graph-layers" aria-hidden="true"></div>
+  <div id="graph-groups" aria-hidden="true"></div>
+  <div id="graph-node-labels" aria-hidden="true"></div>
   <div id="dependency-graph" aria-label="Arbre des dependances entre microservices" hidden></div>
   <div id="inspector-modal" class="inspector-modal" role="dialog" aria-modal="true" aria-labelledby="inspector-title" hidden>
     <div class="inspector-dialog">
@@ -1814,14 +1817,26 @@
         const subLayers = SystemLensLayerGeometry.computeClusterSubLayers(
           microservices, resources, { nodeGapX, nodeGapY, subLayerGapY: 120, maxColumns: 5 }
         );
-        return { namespace, nodes: orderedNodes, subLayers, width: subLayers.width, height: subLayers.height };
+        // The overlay envelope is deliberately larger than the node grid:
+        // refreshNodeLabels adds 120px horizontally and 100px vertically on
+        // each side when it draws a namespace box.  Pack using that envelope,
+        // while keeping the node coordinates centered on the grid itself.
+        return {
+          namespace,
+          nodes: orderedNodes,
+          subLayers,
+          width: subLayers.width,
+          height: Math.abs(subLayers.height),
+          envelopeWidth: subLayers.width + 240,
+          envelopeHeight: Math.abs(subLayers.height) + 200,
+        };
       });
       const outerColumns = Math.min(3, Math.max(1, Math.ceil(Math.sqrt(packedGroups.length))));
       const outerRows = Math.ceil(packedGroups.length / outerColumns);
-      const outerWidth = Math.max(...packedGroups.map(group => group.width + clusterPaddingX * 2));
+      const outerWidth = Math.max(...packedGroups.map(group => group.envelopeWidth + clusterPaddingX * 2));
       const rowHeights = Array.from({ length: outerRows }, (_, row) => Math.max(
         ...packedGroups.slice(row * outerColumns, (row + 1) * outerColumns)
-          .map(group => group.height + clusterPaddingY * 2),
+          .map(group => group.envelopeHeight + clusterPaddingY * 2),
       ));
       let cursorY = 0;
       packedGroups.forEach((group, index) => {

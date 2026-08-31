@@ -200,6 +200,21 @@ def test_html_export_resources_are_usable_in_a_constrained_browser_viewport(tmp_
             ]
             if services and resources:
                 assert min(services) > max(resources)
+        assert page.locator("#graph-layers .graph-namespace-group").count() >= 1
+        assert page.locator("#graph-layers .graph-cluster-sublayer-title").count() >= 2
+        assert page.evaluate(
+            """() => {
+                const boxes = [...document.querySelectorAll('#graph-layers .graph-namespace-group')]
+                    .map(element => element.getBoundingClientRect());
+                return boxes.every((left, leftIndex) => boxes.every((right, rightIndex) => (
+                    leftIndex === rightIndex
+                    || left.right <= right.left
+                    || right.right <= left.left
+                    || left.bottom <= right.top
+                    || right.bottom <= left.top
+                )));
+            }"""
+        )
         assert page.locator("#graph").get_attribute("data-invalid-coordinates") == "false"
 
         page.get_by_role("tab", name="Kafka").click()

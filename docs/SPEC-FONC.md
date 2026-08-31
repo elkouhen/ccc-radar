@@ -225,8 +225,9 @@ The cluster view MUST preserve these visual invariants:
 - Within each namespace cluster, microservices MUST occupy the first
   sub-layer and Kafka, MongoDB, and other resources MUST occupy a second
   sub-layer below them. Empty sub-layers are omitted.
-- Namespace rectangles MUST be packed with a positive gap and MUST NOT overlap
-  each other.
+- Namespace rectangles MUST be packed with a positive gap based on their full
+  rendered envelope, including card, title, and padding margins, and MUST NOT
+  overlap each other.
 - When a second grouping level is displayed, each parent cluster MUST be the
   union of its visible child cluster rectangles plus its own title/padding
   margin. Parent bounds MUST contain the complete child boxes; the
