@@ -193,6 +193,8 @@ enum PaymentStatus { AUTHORIZED, DECLINED }
     assert "function rebuildGraph()" in document
     assert "const visibleLinks = graphData.links.filter(link => (" in document
     assert "renderer?.refresh();" in document
+    assert 'let activeLayout = "forceatlas2-noverlap"' in document
+    assert "applyLayout(activeLayout)" in document
     assert 'id="node-suggestions"' in document
     assert 'id="inventory-status"' in document
     assert "const isolatedNodeIds = new Set(" in document

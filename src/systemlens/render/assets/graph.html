@@ -1151,6 +1151,7 @@
     let clusteredView = false;
     let layeredClusterView = false;
     let clusterLayoutPositions = new Map();
+    let activeLayout = "forceatlas2-noverlap";
     function rebuildGraph() {
       const visibleLinks = graphData.links.filter(link => (
         isVisibleRelation(link.kind)
@@ -2074,6 +2075,7 @@
     }
     async function applyLayout(layout) {
       const request = ++layoutRequest;
+      activeLayout = layout;
       const label = layoutLabels.get(layout);
       const nextLayeredView = ["elk", "cluster"].includes(layout);
       const switchingView = layeredView !== nextLayeredView || clusteredView !== (layout === "cluster");
@@ -3613,11 +3615,12 @@
       if ([relationHttp, relationKafka, relationMongodb].includes(control)) {
         reset();
         rebuildGraph();
+        applyLayout(activeLayout);
         return;
       }
       reset();
-      renderer?.refresh();
-      dependencyRenderer?.refresh();
+      rebuildGraph();
+      applyLayout(activeLayout);
     }));
     openApiReferencesFilter.addEventListener("input", renderReferences);
     dtoReferencesFilter.addEventListener("input", renderReferences);
