@@ -703,6 +703,7 @@ def render_graph_html(
                 "runtime_namespaces": module_namespaces,
                 "fact_namespaces": sorted(fact_namespaces_by_service.get(name, set())),
                 **({"architecture_namespace": module_namespaces[0]} if module_namespaces else {}),
+                **({"project_namespace": module.path.parent.name or "root"} if module else {}),
                 "architecture_layer": module_layer,
                 "kafka_endpoints": [
                     {

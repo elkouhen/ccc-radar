@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SystemLens namespaces</title>
+  <style>
+    :root { color: #172033; background: #f5f7fb; font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
+    * { box-sizing: border-box; }
+    body { margin: 0; padding: 24px; }
+    header { margin: 0 auto 20px; max-width: 1180px; }
+    h1 { margin: 0 0 6px; font-size: 24px; }
+    p { margin: 0; color: #64748b; }
+    #namespace-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; max-width: 1180px; margin: 0 auto; }
+    .namespace { min-height: 120px; padding: 14px; border: 1px solid #93c5fd; border-radius: 12px; background: #eff6ff; box-shadow: 0 4px 14px rgba(15, 23, 42, .08); }
+    .namespace h2 { margin: 0 0 10px; color: #1d4f91; font-size: 15px; }
+    .parent { margin: -5px 0 10px; color: #64748b; font-size: 11px; }
+    ul { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+    li { padding: 7px 9px; border: 1px solid #dbeafe; border-radius: 7px; background: #fff; font-size: 13px; }
+    li small { display: block; margin-top: 2px; color: #64748b; font-size: 10px; }
+    .empty { color: #64748b; font-size: 13px; }
+  </style>
+</head>
+<body>
+  <header><h1>Namespace hierarchy</h1><p>Each container represents one resolved namespace and lists its indexed modules.</p></header>
+  <main id="namespace-grid"></main>
+  <script>
+    const data = __NAMESPACE_DATA__;
+    const grid = document.getElementById("namespace-grid");
+    data.namespaces.forEach(namespace => {
+      const box = document.createElement("section"); box.className = "namespace";
+      const title = document.createElement("h2"); title.textContent = namespace.name; box.append(title);
+      if (namespace.parent) { const parent = document.createElement("div"); parent.className = "parent"; parent.textContent = `Parent logique : ${namespace.parent}`; box.append(parent); }
+      const list = document.createElement("ul");
+      namespace.modules.forEach(module => { const item = document.createElement("li"); item.textContent = module.name; const meta = document.createElement("small"); meta.textContent = `${module.kind} · ${module.deployable ? "deployable" : "module"}`; item.append(meta); list.append(item); });
+      if (!namespace.modules.length) { const empty = document.createElement("div"); empty.className = "empty"; empty.textContent = "Aucun module indexé"; box.append(empty); } else box.append(list);
+      grid.append(box);
+    });
+    if (!data.namespaces.length) grid.innerHTML = '<p class="empty">No namespace found.</p>';
+  </script>
+</body>
+</html>

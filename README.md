@@ -34,6 +34,13 @@ generate an interactive export:
 systemlens export microservices --html architecture.html
 ```
 
+To inspect the resolved Kubernetes namespaces and the indexed modules attached
+to each namespace, generate the dedicated namespace view:
+
+```bash
+systemlens export namespaces --html namespaces.html
+```
+
 For iterative AI enrichment, validate and replace facts in the separate local
 enrichment layer:
 

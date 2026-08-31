@@ -56,6 +56,7 @@ from systemlens.render.module_graph import (
     render_workspace_text,
 )
 from systemlens.render.software_layers import render_software_layers_html, software_layer
+from systemlens.render.namespaces import render_namespaces_html
 # Kept importable for the test suite, which exercises this internal helper directly.
 from systemlens.render._graph_view_helpers import _vscode_file_uri
 
@@ -102,6 +103,7 @@ __all__ = [
     "render_workspace_json",
     "render_workspace_text",
     "render_software_layers_html",
+    "render_namespaces_html",
     "software_layer",
     "_vscode_file_uri",
 ]

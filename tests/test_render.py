@@ -104,6 +104,7 @@ def test_microservice_graph_exposes_software_layers_and_namespaces() -> None:
     assert node["layer"] == "domain"
     assert node["runtime_namespaces"] == ["orders-prod"]
     assert node["fact_namespaces"] == ["ai-boundaries"]
+    assert node["project_namespace"] == "workspace"
     assert "domain" in graph_data["software_layers"]
     assert graph_data["runtime_namespaces"] == ["orders-prod"]
     assert graph_data["fact_namespaces"] == ["ai-boundaries"]

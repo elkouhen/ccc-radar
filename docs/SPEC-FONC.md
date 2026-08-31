@@ -48,6 +48,7 @@ but does not alter AST endpoint extraction.
 | `systemlens export microservices (--html FILE | --c4 DIRECTORY | --json) [--graph FILE] [--root-path DIRECTORY]` | Exports the deployable microservice, API, data-schema and message-channel topology. Non-deployable indexed modules (libraries and aggregators without an application entry point) are excluded from this view and remain available to `export modules` and `export layers`. Persisted MCP graph facts are included in the HTML export. `--graph FILE` reads a validated `systemlens-ai-graph-v1` manifest; `--root-path` provides the local source root for HTML source links. |
 | `systemlens export modules --html FILE` | Exports the Maven/Gradle build-dependency view. |
 | `systemlens export layers --html FILE` | Exports a dedicated software-layer view. Modules named `domain-*` are rendered in the Domain layer, alongside Application, API/contracts, Infrastructure, Shared and other module layers. |
+| `systemlens export namespaces --html FILE` | Exports a namespace view where each parent directory containing projects is shown as a container containing its indexed modules. Kubernetes namespaces remain secondary module metadata and do not define these containers. |
 | `systemlens export request-reply --html FILE` | Exports Strategy1 Kafka request/reply candidates. |
 | `systemlens web [--host HOST] [--port PORT]` | Starts the local Python web application at `http://127.0.0.1:8765/` by default. Its home page links to Architecture. Architecture renders the persisted snapshot for each request, excluding test-fixture microservices and every relation attached to them; when no index exists, it offers an explicit local button that creates the default configuration when needed and indexes the repository. The default loopback host prevents network exposure unless the user explicitly changes `--host`. |
 | `simpleweb [DIRECTORY] [--host HOST] [--port PORT]` | Serves static files from `DIRECTORY`, or from the current directory when omitted, for opening generated HTML files that load adjacent JSON. It binds to `http://127.0.0.1:8000/` by default, has no write routes, and does not create or modify files. The directory must exist. |
@@ -118,6 +119,8 @@ layer, and services/resources are placed inside each namespace without
 overlap. The canonical order is `api`, `application`, `infrastructure`,
 `shared`, `module`, `domain`, then `persistence`; `persistence` is always the
 lowest layer.
+For the graph export, a namespace is the parent directory containing one or
+more projects/modules; Kubernetes namespaces are retained as metadata only.
 The namespace-cluster layout is independent of the layer order and uses a
 deterministic two-level packing without ELK: fCoSE first computes the local
 compound layout of resources inside each namespace, then a deterministic

@@ -58,6 +58,7 @@ from systemlens.render import (
     render_module_graph_json,
     render_module_graph_text,
     render_software_layers_html,
+    render_namespaces_html,
     render_modules_list_json,
     render_modules_list_text,
 )
@@ -1566,6 +1567,35 @@ def export_layers_cmd(
     typer.echo(
         f"Export layers écrit dans {html} "
         f"({len(modules)} modules, {domain_count} modules Domain, {len(dependencies)} dépendances)."
+    )
+
+
+@export_app.command(name="namespaces")
+def export_namespaces_cmd(
+    html: Optional[Path] = typer.Option(
+        None, "--html", help="Fichier HTML des namespaces à produire."
+    ),
+) -> None:
+    """Exporter les namespaces et les modules qui leur sont associés.
+
+    Exemple : `systemlens export namespaces --html namespaces.html`.
+    """
+    if html is None:
+        typer.echo("`systemlens export namespaces` requiert --html FILE.", err=True)
+        raise typer.Exit(code=2)
+    repo_root = Path.cwd()
+    if not db_path(repo_root).is_file():
+        typer.echo(
+            "Index absent : lancez d'abord `systemlens index` dans ce répertoire.",
+            err=True,
+        )
+        raise typer.Exit(code=2)
+    with Store(repo_root, readonly=True) as store:
+        modules = store.all_modules()
+    html.write_text(render_namespaces_html(modules), encoding="utf-8")
+    namespace_count = len({module.path.parent.name or "root" for module in modules})
+    typer.echo(
+        f"Export namespaces écrit dans {html} ({namespace_count} namespaces, {len(modules)} modules)."
     )
 
 

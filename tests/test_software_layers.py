@@ -2,7 +2,7 @@ from pathlib import Path
 
 from systemlens.models import MessageEndpoint
 from systemlens.modules import DiscoveredModule, ModuleDependency
-from systemlens.render import render_software_layers_html, software_layer
+from systemlens.render import render_namespaces_html, render_software_layers_html, software_layer
 
 
 def _module(name: str, *, starts_application: bool = False) -> DiscoveredModule:
@@ -49,3 +49,12 @@ def test_software_layers_render_contains_layer_metadata_and_dependencies() -> No
     assert '"namespace_groups"' in html
     assert '"y": -5' in html
     assert "Software layers" in html
+
+
+def test_namespace_export_groups_modules_by_resolved_namespace() -> None:
+    module = _module("orders-service", starts_application=True)
+    html = render_namespaces_html([module])
+
+    assert "Namespace hierarchy" in html
+    assert '"name": "workspace"' in html
+    assert "orders-service" in html
