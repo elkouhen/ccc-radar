@@ -1290,6 +1290,29 @@
           if (!node || !point) return;
           nodePoints.set(id, point);
         });
+        // Cards keep one shared scale in every view. At the initial fit this
+        // is the base scale; when the camera zooms out, reduce that same
+        // scale for every card until the projected gaps remain sufficient.
+        let visibleCardScale = .4;
+        const cardWidth = 110;
+        const cardHeight = 70;
+        const cardGap = 4;
+        const visiblePoints = [...nodePoints.values()];
+        for (let leftIndex = 0; leftIndex < visiblePoints.length; leftIndex += 1) {
+          for (let rightIndex = leftIndex + 1; rightIndex < visiblePoints.length; rightIndex += 1) {
+            const left = visiblePoints[leftIndex];
+            const right = visiblePoints[rightIndex];
+            const distanceX = Math.abs(right.x - left.x);
+            const distanceY = Math.abs(right.y - left.y);
+            if (distanceX >= cardWidth * visibleCardScale + cardGap
+              || distanceY >= cardHeight * visibleCardScale + cardGap) continue;
+            const scaleForPair = Math.max(
+              (distanceX - cardGap) / cardWidth,
+              (distanceY - cardGap) / cardHeight,
+            );
+            visibleCardScale = Math.min(visibleCardScale, Math.max(.04, scaleForPair));
+          }
+        }
         // Pack the readable overlay by layer and namespace. Sigma keeps the
         // actual graph geometry, while cards use a deterministic screen grid
         // with five columns and a measured gap, so their HTML rectangles do
@@ -1612,8 +1635,7 @@
           // The HTML cards are the same visual object in every view. Keep
           // their projected size aligned with the default graph view; the
           // cluster/layer geometry is responsible for providing the space.
-          const clusterCardScale = .4;
-          label.style.transform = `translate(-50%, -50%) scale(${clusteredView || layeredClusterView ? clusterCardScale : .4})`;
+          label.style.transform = `translate(-50%, -50%) scale(${visibleCardScale})`;
           label.style.setProperty("--card-accent", node.color || "#64748b");
           const icon = document.createElement("span");
           icon.className = `graph-node-card-icon ${isTopic ? "is-topic" : isDatabase ? "is-database" : "is-service"}`;

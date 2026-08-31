@@ -338,5 +338,12 @@ def test_html_export_resources_are_usable_in_a_constrained_browser_viewport(tmp_
         search.fill("inventory")
         search.press("Enter")
         assert page.locator(".details-title").inner_text() == "inventory"
+        page.get_by_role("button", name="Graphe", exact=True).click()
+        page.locator("#layout-status").filter(has_text="vue graphe").wait_for(state="visible")
+        for _ in range(3):
+            page.locator("#zoom-out").click()
+        page.wait_for_timeout(400)
+        _assert_architecture_cards_have_uniform_size(page)
+        _assert_architecture_cards_do_not_overlap(page)
         assert not errors
         browser.close()
