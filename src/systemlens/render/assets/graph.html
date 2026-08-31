@@ -1495,7 +1495,7 @@
           const title = document.createElement("span"); title.className = "graph-namespace-title";
           title.textContent = group.namespace === "root" ? "ROOT" : group.namespace;
           box.append(title);
-          if (clusteredView) {
+          if (clusteredView || layeredClusterView) {
             const graphPoints = group.ids.map(id => ({
               point: nodePoints.get(id),
               kind: nodeDataById.get(id)?.kind,
@@ -1841,6 +1841,7 @@
         return {
           namespace,
           nodes: orderedNodes,
+          resources,
           subLayers,
           width: subLayers.width,
           height: Math.abs(subLayers.height),
@@ -1865,7 +1866,11 @@
           const position = group.subLayers.positions[node];
           network.setNodeAttribute(node, "x", clusterX - group.width / 2 + position.x);
           network.setNodeAttribute(node, "y", clusterY + position.y);
-          network.setNodeAttribute(node, "clusterSubLayer", position.group === 0 ? "microservices" : "resources");
+          network.setNodeAttribute(
+            node,
+            "clusterSubLayer",
+            group.resources.includes(node) ? "resources" : "microservices",
+          );
         });
         if (column === outerColumns - 1 || index === packedGroups.length - 1) {
           cursorY += rowHeights[row] + clusterGapY;
@@ -1916,10 +1921,14 @@
                 || left.localeCompare(right);
             });
             const columns = Math.min(12, Math.max(1, Math.ceil(Math.sqrt(orderedNodes.length))));
+            const microservices = orderedNodes.filter(node => nodeDataById.get(node)?.kind === "microservice");
+            const resources = orderedNodes.filter(node => nodeDataById.get(node)?.kind !== "microservice");
             return {
               namespace,
               nodes: orderedNodes,
               columns,
+              microservices,
+              resources,
             };
           });
         if (!groups.length) return;
@@ -1929,8 +1938,13 @@
           const columns = Math.min(10, Math.max(1, groups.length));
           const rows = Math.ceil(groups.length / columns);
           groups.forEach(group => {
-            group.width = (group.columns - 1) * nodeGapX;
-            group.height = (Math.ceil(group.nodes.length / group.columns) - 1) * nodeGapY;
+            group.subLayers = SystemLensLayerGeometry.computeClusterSubLayers(
+              group.microservices,
+              group.resources,
+              { nodeGapX, nodeGapY, subLayerGapY: 120, maxColumns: group.columns },
+            );
+            group.width = group.subLayers.width;
+            group.height = Math.abs(group.subLayers.height);
           });
           const outerWidth = Math.max(...groups.map(group => group.width + 240 + clusterPaddingX * 2));
           const rowHeights = Array.from({ length: rows }, (_, row) => Math.max(
@@ -1948,9 +1962,15 @@
             // the first node, not by half of that span on either side.
             group.minY = clusterY - group.height - clusterPaddingY;
             group.maxY = clusterY + clusterPaddingY;
-            group.nodes.forEach((node, nodeIndex) => {
-              network.setNodeAttribute(node, "x", clusterX - group.width / 2 + (nodeIndex % group.columns) * nodeGapX);
-              network.setNodeAttribute(node, "y", clusterY - Math.floor(nodeIndex / group.columns) * nodeGapY);
+            group.nodes.forEach(node => {
+              const position = group.subLayers.positions[node];
+              network.setNodeAttribute(node, "x", clusterX - group.width / 2 + position.x);
+              network.setNodeAttribute(node, "y", clusterY + position.y);
+              network.setNodeAttribute(
+                node,
+                "clusterSubLayer",
+                group.resources.includes(node) ? "resources" : "microservices",
+              );
             });
             if (column === columns - 1 || index === groups.length - 1) {
               layerCursorY += rowHeights[row] + namespaceGapY;
@@ -1977,6 +1997,7 @@
         }
         cursorY = layoutLayerGroups() + layerGapY;
       });
+      document.getElementById("graph").dataset.layeredSubLayers = "microservices-first,resources-second";
     }
     async function applyFcoseClusterLayout() {
       clusterLayoutPositions = new Map();

@@ -186,7 +186,8 @@ The HTML architecture view MUST preserve these visual invariants:
   filtered network.
 - The layered view extends the namespace-cluster packing: each canonical
   software layer is a separate horizontal band ordered from top to bottom,
-  and namespaces are packed inside that band. ELK compound-node placement is
+  namespaces are packed inside that band, and each namespace uses a first
+  microservice sub-layer followed by a resource sub-layer. ELK compound-node placement is
   used as a seed when available, while the deterministic layer-aware packing
   is the final collision guard. If ELK is unavailable or fails, the fallback
   MUST retain the same layer order, namespace containment and non-overlap

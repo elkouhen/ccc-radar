@@ -182,6 +182,7 @@ def test_html_export_resources_are_usable_in_a_constrained_browser_viewport(tmp_
 
         page.locator("#layout-cluster").click()
         page.locator("#layout-status").filter(has_text="vue clusters namespaces").wait_for(state="visible")
+        page.wait_for_function("() => Boolean(document.querySelector('#graph').dataset.clusterLayout)")
         assert page.locator("#graph").get_attribute("data-cluster-sub-layers") == (
             "microservices-first,resources-second"
         )
