@@ -294,9 +294,8 @@ in graph coordinates until it is projected to the viewport. When project or
 other parent groups are enabled, their bounds are the union of the already
 projected child namespace bounds plus title/padding margins; node-grid gaps are
 calibrated with generous graph-space margins for the shared 110×70 card at the
-common 0.4 base display scale, reduced uniformly when the camera zooms out, and a
-dedicated vertical separation between the two sub-layers, so cards do not overlap
-after projection. This explicit hierarchy prevents
+common 0.4 display scale and a dedicated vertical separation between the two
+sub-layers, so cards do not overlap after projection. This explicit hierarchy prevents
 a parent from being smaller than a nested cluster after
 zooming. Sibling rectangles remain separated, while parent/descendant
 intersection is intentional. Project groups carry their owning project
