@@ -1187,6 +1187,7 @@
     let clusteredView = false;
     let layeredClusterView = false;
     let clusterLayoutPositions = new Map();
+    let cameraFitAdjusting = false;
     let activeLayout = "forceatlas2-noverlap";
     function rebuildGraph() {
       const visibleLinks = graphData.links.filter(link => (
@@ -1290,6 +1291,38 @@
           if (!node || !point) return;
           nodePoints.set(id, point);
         });
+        // Keep the shared card size stable. If a manual zoom-out would make
+        // two projected card envelopes intersect, clamp the camera instead
+        // of shrinking the cards or changing the layout unexpectedly.
+        const cardWidth = 110 * .4;
+        const cardHeight = 70 * .4;
+        const cardGap = 4;
+        let requiredZoomIn = 1;
+        const visiblePoints = [...nodePoints.values()];
+        for (let leftIndex = 0; leftIndex < visiblePoints.length; leftIndex += 1) {
+          for (let rightIndex = leftIndex + 1; rightIndex < visiblePoints.length; rightIndex += 1) {
+            const left = visiblePoints[leftIndex];
+            const right = visiblePoints[rightIndex];
+            const distanceX = Math.abs(right.x - left.x);
+            const distanceY = Math.abs(right.y - left.y);
+            if (distanceX >= cardWidth + cardGap || distanceY >= cardHeight + cardGap) continue;
+            requiredZoomIn = Math.max(
+              requiredZoomIn,
+              Math.min(2, Math.max(
+                (cardWidth + cardGap) / Math.max(distanceX, 1),
+                (cardHeight + cardGap) / Math.max(distanceY, 1),
+              )),
+            );
+          }
+        }
+        if (requiredZoomIn > 1.001 && !cameraFitAdjusting) {
+          cameraFitAdjusting = true;
+          const camera = renderer.getCamera();
+          const state = camera.getState();
+          camera.setState({ ...state, ratio: state.ratio / requiredZoomIn });
+          setTimeout(() => { cameraFitAdjusting = false; }, 120);
+          return;
+        }
         // Pack the readable overlay by layer and namespace. Sigma keeps the
         // actual graph geometry, while cards use a deterministic screen grid
         // with five columns and a measured gap, so their HTML rectangles do
@@ -3746,8 +3779,16 @@
     function activeRenderer() {
       return dependencyCanvas.hidden ? renderer : ensureDependencyRenderer();
     }
-    document.getElementById("zoom-in").addEventListener("click", () => activeRenderer().getCamera().animatedZoom({ duration: 180 }));
-    document.getElementById("zoom-out").addEventListener("click", () => activeRenderer().getCamera().animatedUnzoom({ duration: 180 }));
+    document.getElementById("zoom-in").addEventListener("click", () => {
+      const renderer = activeRenderer();
+      renderer.getCamera().animatedZoom({ duration: 180 });
+      setTimeout(() => refreshNodeLabels?.(), 240);
+    });
+    document.getElementById("zoom-out").addEventListener("click", () => {
+      const renderer = activeRenderer();
+      renderer.getCamera().animatedUnzoom({ duration: 180 });
+      setTimeout(() => refreshNodeLabels?.(), 240);
+    });
     document.getElementById("fit-view").addEventListener("click", () => activeRenderer().getCamera().animatedReset({ duration: 220 }));
     document.getElementById("reset").addEventListener("click", reset);
     document.getElementById("inspector-close").addEventListener("click", closeInspector);

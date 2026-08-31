@@ -338,12 +338,33 @@ def test_html_export_resources_are_usable_in_a_constrained_browser_viewport(tmp_
         search.fill("inventory")
         search.press("Enter")
         assert page.locator(".details-title").inner_text() == "inventory"
-        page.get_by_role("button", name="Graphe", exact=True).click()
-        page.locator("#layout-status").filter(has_text="vue graphe").wait_for(state="visible")
-        for _ in range(3):
-            page.locator("#zoom-out").click()
-        page.wait_for_timeout(400)
-        _assert_architecture_cards_have_uniform_size(page)
-        _assert_architecture_cards_do_not_overlap(page)
+        # Run the same geometry contract against every primary view and every
+        # camera state. This is intentionally one fixture so a layout fix for
+        # one view cannot silently regress another view.
+        for view_name, status_text in (
+            ("Graphe", "vue graphe"),
+            ("Couches", "vue couches"),
+            ("Namespaces", "vue namespaces"),
+        ):
+            page.get_by_role("button", name=view_name, exact=True).click()
+            page.locator("#layout-status").filter(has_text=status_text).wait_for(state="visible")
+            _assert_architecture_cards_have_uniform_size(page)
+            _assert_architecture_cards_do_not_overlap(page)
+            for _ in range(2):
+                page.locator("#zoom-out").click()
+            page.wait_for_timeout(400)
+            _assert_architecture_cards_have_uniform_size(page)
+            _assert_architecture_cards_do_not_overlap(page)
+            for _ in range(2):
+                page.locator("#zoom-in").click()
+            page.wait_for_timeout(400)
+            _assert_architecture_cards_have_uniform_size(page)
+            _assert_architecture_cards_do_not_overlap(page)
+            page.set_viewport_size({"width": 1024, "height": 600})
+            page.wait_for_timeout(400)
+            _assert_architecture_cards_have_uniform_size(page)
+            _assert_architecture_cards_do_not_overlap(page)
+            page.set_viewport_size({"width": 800, "height": 450})
+            page.wait_for_timeout(400)
         assert not errors
         browser.close()
