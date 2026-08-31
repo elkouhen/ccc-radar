@@ -59,19 +59,28 @@ def _assert_filtered_graph_is_valid(
     return count
 
 
-def _assert_architecture_cards_have_uniform_size(page) -> None:
-    assert page.evaluate(
+def _assert_architecture_cards_have_uniform_size(page) -> tuple[float, float]:
+    size = page.evaluate(
         """() => {
             const cards = [...document.querySelectorAll('.graph-node-card-label')];
-            if (!cards.length) return true;
+            if (!cards.length) return null;
             const first = cards[0].getBoundingClientRect();
-            return cards.every(card => {
+            const uniform = cards.every(card => {
                 const rect = card.getBoundingClientRect();
                 return Math.abs(rect.width - first.width) < 0.01
                     && Math.abs(rect.height - first.height) < 0.01;
             });
+            return uniform ? [first.width, first.height] : false;
         }"""
     )
+    assert size is not False and size is not None
+    return float(size[0]), float(size[1])
+
+
+def _assert_architecture_cards_match_size(page, expected: tuple[float, float]) -> None:
+    actual = _assert_architecture_cards_have_uniform_size(page)
+    assert actual[0] == pytest.approx(expected[0], abs=0.01)
+    assert actual[1] == pytest.approx(expected[1], abs=0.01)
 
 
 @pytest.mark.slow
@@ -159,7 +168,7 @@ def test_html_export_resources_are_usable_in_a_constrained_browser_viewport(tmp_
             }"""
         )
         assert graph.get_attribute("data-relation-count") == "4"
-        _assert_architecture_cards_have_uniform_size(page)
+        card_size = _assert_architecture_cards_have_uniform_size(page)
         assert "1 ressource isolée" in page.locator("#graph-summary").inner_text()
         assert page.locator("#inventory-status").inner_text() == "Inventaire : aucun fait non résolu"
         assert page.locator("#node-suggestions option").count() == 5
@@ -178,7 +187,7 @@ def test_html_export_resources_are_usable_in_a_constrained_browser_viewport(tmp_
         page.locator("#layout-elk").click()
         page.locator("#layout-status").filter(has_text="vue couches").wait_for(state="visible")
         assert not errors, errors
-        _assert_architecture_cards_have_uniform_size(page)
+        _assert_architecture_cards_match_size(page, card_size)
         full_node_count = _assert_filtered_graph_is_valid(page)
 
         # Changing node types must rebuild the graph and its layer overlays.
@@ -227,7 +236,7 @@ def test_html_export_resources_are_usable_in_a_constrained_browser_viewport(tmp_
                 assert min(services) > max(resources)
         assert page.locator("#graph-layers .graph-namespace-group").count() >= 1
         assert page.locator("#graph-layers .graph-cluster-sublayer-title").count() >= 2
-        _assert_architecture_cards_have_uniform_size(page)
+        _assert_architecture_cards_match_size(page, card_size)
         assert page.evaluate(
             """() => {
                 const boxes = [...document.querySelectorAll('#graph-layers .graph-namespace-group')]

@@ -1607,10 +1607,10 @@
           const origin = graphPointToViewport({ x: 0, y: 0 });
           const unit = graphPointToViewport({ x: 1, y: 0 });
           const graphScale = Math.hypot(unit.x - origin.x, unit.y - origin.y);
-          const clusterCardScale = Math.min(
-            .5,
-            Math.max(.02, Math.min((240 * graphScale * .78) / 110, (160 * graphScale * .78) / 70)),
-          );
+          // The HTML cards are the same visual object in every view. Keep
+          // their projected size aligned with the default graph view; the
+          // cluster/layer geometry is responsible for providing the space.
+          const clusterCardScale = .5;
           label.style.transform = `translate(-50%, -50%) scale(${clusteredView || layeredClusterView ? clusterCardScale : .5})`;
           label.style.setProperty("--card-accent", node.color || "#64748b");
           const icon = document.createElement("span");
