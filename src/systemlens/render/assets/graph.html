@@ -13,6 +13,7 @@
   <script src="https://unpkg.com/cose-base@2.2.0/cose-base.js"></script>
   <script src="https://unpkg.com/cytoscape-fcose@2.2.0/cytoscape-fcose.js"></script>
   <script src="https://unpkg.com/swagger-ui-dist@5.11.0/swagger-ui-bundle.js"></script>
+  <script>__LAYER_GEOMETRY__</script>
   <style>
     :root { color: #172033; background: #f5f7fb; font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
     * { box-sizing: border-box; }
@@ -1375,10 +1376,10 @@
         // widened band starts earlier so the overlay title never sits on top
         // of the first cluster.
         const layerTitleGutter = 182;
-        const globalMinX = allLayerPoints.length
-          ? Math.max(0, Math.min(...allLayerPoints.map(point => point.x)) - 92 - layerTitleGutter)
+        const contentMinX = allLayerPoints.length
+          ? Math.max(0, Math.min(...allLayerPoints.map(point => point.x)) - 92)
           : 0;
-        const globalMaxX = allLayerPoints.length
+        const contentMaxX = allLayerPoints.length
           ? Math.min(window.innerWidth, Math.max(...allLayerPoints.map(point => point.x)) + 92)
           : window.innerWidth;
         const viewportBoundsFromGraphBounds = (bounds) => {
@@ -1424,21 +1425,19 @@
         if (!layerCenters.length) {
           graphLayersOverlay.replaceChildren();
         }
+        const layerBands = SystemLensLayerGeometry.computeLayerBands(layerBounds, {
+          contentMinX,
+          contentMaxX,
+          viewportWidth: window.innerWidth,
+          titleGutter: layerTitleGutter,
+        });
         if (!clusteredView || layeredClusterView) layerCenters.forEach((layer, index) => {
-          const bounds = layerBounds[index];
-          const previous = layerBounds[index - 1];
-          const next = layerBounds[index + 1];
+          const bandBounds = layerBands[index];
           const band = document.createElement("div");
           band.className = "graph-layer-band";
-          const bandTop = previous
-            ? (previous.contentBottom + bounds.contentTop) / 2
-            : bounds.contentTop;
-          const bandBottom = next
-            ? (bounds.contentBottom + next.contentTop) / 2
-            : bounds.contentBottom;
-          band.style.left = `${globalMinX}px`; band.style.top = `${Math.max(0, bandTop)}px`;
-          band.style.width = `${Math.max(260, globalMaxX - globalMinX)}px`;
-          band.style.height = `${Math.max(0, Math.min(window.innerHeight, bandBottom) - Math.max(0, bandTop))}px`;
+          band.style.left = `${bandBounds.left}px`; band.style.top = `${bandBounds.top}px`;
+          band.style.width = `${bandBounds.width}px`;
+          band.style.height = `${Math.min(window.innerHeight, bandBounds.top + bandBounds.height) - bandBounds.top}px`;
           band.style.setProperty("--layer-accent", layerColors[layer.id] || "#64748b");
           const title = document.createElement("span"); title.className = "graph-layer-title";
           title.textContent = layer.id.replaceAll("_", " "); band.append(title); graphLayersOverlay.append(band);

@@ -50,6 +50,7 @@ from systemlens.render.likec4_export import _complexity_ranking
 from systemlens.render_snapshot import kafka_dto_views
 
 _GRAPH_HTML_TEMPLATE = (Path(__file__).parent / "assets" / "graph.html").read_text(encoding="utf-8")
+_LAYER_GEOMETRY_JS = (Path(__file__).parent / "assets" / "layer_geometry.js").read_text(encoding="utf-8")
 
 
 def _fact_runtime_namespaces(fact: GraphFact) -> list[str]:
@@ -1175,4 +1176,6 @@ def render_graph_html(
         },
         ensure_ascii=False,
     ).replace("</", "<\\/")
-    return _GRAPH_HTML_TEMPLATE.replace("__GRAPH_DATA__", graph_data)
+    return _GRAPH_HTML_TEMPLATE.replace("__GRAPH_DATA__", graph_data).replace(
+        "__LAYER_GEOMETRY__", _LAYER_GEOMETRY_JS
+    )

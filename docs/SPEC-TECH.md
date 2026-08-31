@@ -310,6 +310,9 @@ positions are recomputed. This trades height for diagram width to preserve
 layer separation.
 Layer bands reserve a left graph-space gutter for their titles, so the title
 overlay cannot cover the first namespace or project cluster.
+This calculation is implemented in the embedded `layer_geometry.js` module
+and is covered by renderer geometry unit tests for ordering, containment,
+shared bounds, and sibling non-overlap.
 
 ## Persistence and compatibility
 
