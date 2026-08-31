@@ -175,6 +175,8 @@ enum PaymentStatus { AUTHORIZED, DECLINED }
     assert 'id="request-reply-panel"' in document
     assert 'id="dependencies-panel"' in document
     assert 'id="graph-legend"' in document
+    assert "layerTitleGutter = 182" in document
+    assert "min-width: 154px" in document
     assert 'graphLegend.hidden = !showingGraph' in document
     assert 'issue.vscode_uri ? "a" : "code"' in document
     assert "max-height: calc(100vh - 32px)" in document

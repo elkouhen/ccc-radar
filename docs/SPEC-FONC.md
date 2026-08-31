@@ -156,6 +156,9 @@ The HTML architecture view MUST preserve these visual invariants:
 - All visible layer bands MUST share the same left and right bounds. The first
   band starts immediately above its highest visible namespace content, and the
   last band ends immediately below its lowest visible namespace content.
+- Each layer band MUST reserve a visible left gutter for its title. The title
+  MUST NOT overlap a namespace or project cluster; widening the band is
+  preferred to moving or shrinking cluster content.
 - Layers MUST be stacked vertically in the canonical order above, with the
   Persistence layer at the bottom.
 - Each visible project or fact namespace MUST be represented by a bounded rectangle

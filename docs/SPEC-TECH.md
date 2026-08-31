@@ -308,6 +308,8 @@ checks each cluster envelope after placement. Clusters that exceed the vertical
 safety envelope are widened by adding columns, then the row width and all
 positions are recomputed. This trades height for diagram width to preserve
 layer separation.
+Layer bands reserve a left graph-space gutter for their titles, so the title
+overlay cannot cover the first namespace or project cluster.
 
 ## Persistence and compatibility
 
