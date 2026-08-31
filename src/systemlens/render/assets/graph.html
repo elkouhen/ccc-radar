@@ -1763,6 +1763,7 @@
       return path === "root" ? "ROOT" : path;
     }
     function packClusterGraphPositions() {
+      document.getElementById("graph").dataset.clusterSubLayers = "microservices-first,resources-second";
       const namespaceGroups = new Map();
       network.forEachNode(node => {
         const namespace = namespaceForNode(node);
@@ -1784,11 +1785,12 @@
             || (leftPosition?.x ?? 0) - (rightPosition?.x ?? 0)
             || left.localeCompare(right);
         });
-        const columns = Math.min(5, Math.max(1, Math.ceil(Math.sqrt(orderedNodes.length))));
-        const rows = Math.ceil(orderedNodes.length / columns);
-        const width = (columns - 1) * nodeGapX;
-        const height = (rows - 1) * nodeGapY;
-        return { namespace, nodes: orderedNodes, columns, width, height };
+        const microservices = orderedNodes.filter(node => nodeDataById.get(node)?.kind === "microservice");
+        const resources = orderedNodes.filter(node => nodeDataById.get(node)?.kind !== "microservice");
+        const subLayers = SystemLensLayerGeometry.computeClusterSubLayers(
+          microservices, resources, { nodeGapX, nodeGapY, subLayerGapY: 120, maxColumns: 5 }
+        );
+        return { namespace, nodes: orderedNodes, subLayers, width: subLayers.width, height: subLayers.height };
       });
       const outerColumns = Math.min(3, Math.max(1, Math.ceil(Math.sqrt(packedGroups.length))));
       const outerRows = Math.ceil(packedGroups.length / outerColumns);
@@ -1803,9 +1805,10 @@
         const column = index % outerColumns;
         const clusterX = (column - (outerColumns - 1) / 2) * (outerWidth + clusterGapX);
         const clusterY = cursorY + clusterPaddingY;
-        group.nodes.forEach((node, nodeIndex) => {
-          network.setNodeAttribute(node, "x", clusterX - group.width / 2 + (nodeIndex % group.columns) * nodeGapX);
-          network.setNodeAttribute(node, "y", clusterY + Math.floor(nodeIndex / group.columns) * nodeGapY);
+        group.nodes.forEach(node => {
+          const position = group.subLayers.positions[node];
+          network.setNodeAttribute(node, "x", clusterX - group.width / 2 + position.x);
+          network.setNodeAttribute(node, "y", clusterY + position.y);
         });
         if (column === outerColumns - 1 || index === packedGroups.length - 1) {
           cursorY += rowHeights[row] + clusterGapY;

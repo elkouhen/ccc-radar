@@ -179,6 +179,13 @@ def test_html_export_resources_are_usable_in_a_constrained_browser_viewport(tmp_
         page.locator("#node-mongodb-collection").check()
         page.locator("#layout-status").filter(has_text="vue architecturale").wait_for(state="visible")
 
+        page.locator("#layout-cluster").click()
+        page.locator("#layout-status").filter(has_text="vue clusters namespaces").wait_for(state="visible")
+        assert page.locator("#graph").get_attribute("data-cluster-sub-layers") == (
+            "microservices-first,resources-second"
+        )
+        assert page.locator("#graph").get_attribute("data-invalid-coordinates") == "false"
+
         page.get_by_role("tab", name="Kafka").click()
         page.locator("#kafka-panel").wait_for(state="visible")
         dto_filter = page.locator("#dto-reference-filter")

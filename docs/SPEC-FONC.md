@@ -222,6 +222,9 @@ The cluster view MUST preserve these visual invariants:
   `ROOT`.
 - Resources inside one namespace MUST be placed on a grid with a positive
   horizontal and vertical gap greater than the projected card size.
+- Within each namespace cluster, microservices MUST occupy the first
+  sub-layer and Kafka, MongoDB, and other resources MUST occupy a second
+  sub-layer below them. Empty sub-layers are omitted.
 - Namespace rectangles MUST be packed with a positive gap and MUST NOT overlap
   each other.
 - When a second grouping level is displayed, each parent cluster MUST be the

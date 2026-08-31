@@ -33,5 +33,28 @@
       && left.top + left.height > right.top;
   }
 
-  return { computeLayerBands, rectanglesOverlap };
+  function computeClusterSubLayers(microservices, resources, options) {
+    const { nodeGapX = 240, nodeGapY = 160, subLayerGapY = 120, maxColumns = 5 } = options;
+    const positions = {};
+    const groups = [microservices, resources].filter(group => group.length);
+    let cursorY = 0;
+    let width = 0;
+    groups.forEach((group, groupIndex) => {
+      const columns = Math.min(maxColumns, Math.max(1, Math.ceil(Math.sqrt(group.length))));
+      const rows = Math.ceil(group.length / columns);
+      width = Math.max(width, (columns - 1) * nodeGapX);
+      group.forEach((id, index) => {
+        positions[id] = {
+          x: (index % columns) * nodeGapX,
+          y: cursorY + Math.floor(index / columns) * nodeGapY,
+          group: groupIndex,
+        };
+      });
+      cursorY += (rows - 1) * nodeGapY;
+      if (groupIndex === 0 && groups.length > 1) cursorY += subLayerGapY;
+    });
+    return { positions, width, height: cursorY };
+  }
+
+  return { computeLayerBands, computeClusterSubLayers, rectanglesOverlap };
 });

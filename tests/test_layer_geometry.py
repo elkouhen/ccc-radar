@@ -44,3 +44,23 @@ def test_layer_bands_share_bounds_and_reserve_title_gutter() -> None:
     # Content begins at 300px; the 182px title gutter leaves the title area
     # before the first cluster envelope.
     assert all(band["left"] + 182 <= 300 for band in bands)
+
+
+def test_cluster_sub_layers_place_services_above_resources() -> None:
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("Node.js is required for the renderer geometry unit tests")
+    script = f"""
+const geometry = require({json.dumps(str(_MODULE))});
+console.log(JSON.stringify(geometry.computeClusterSubLayers(
+  ["service-a", "service-b"], ["topic-a", "collection-a"],
+  {{nodeGapX: 240, nodeGapY: 160, subLayerGapY: 120, maxColumns: 5}}
+)));
+"""
+    result = subprocess.run([node, "-e", script], check=True, capture_output=True, text=True)
+    layout = json.loads(result.stdout)
+    assert all(layout["positions"][service]["group"] == 0 for service in ["service-a", "service-b"])
+    assert all(layout["positions"][resource]["group"] == 1 for resource in ["topic-a", "collection-a"])
+    assert max(layout["positions"][service]["y"] for service in ["service-a", "service-b"]) < min(
+        layout["positions"][resource]["y"] for resource in ["topic-a", "collection-a"]
+    )

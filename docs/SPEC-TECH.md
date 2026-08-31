@@ -283,7 +283,8 @@ its evidence is intended for a human or an AI to assess a conservative rule.
 ## Graph layout algorithms
 
 The HTML renderer keeps graph coordinates as the source of truth for layout.
-The namespace-cluster packer places resources on separated grids and then
+The namespace-cluster packer places microservices in a first sub-layer and
+resources in a second sub-layer on separated grids, then
 packs namespace rectangles with positive margins. Container geometry is kept
 in graph coordinates until it is projected to the viewport. When project or
 other parent groups are enabled, their bounds are the union of the already
