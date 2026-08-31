@@ -25,7 +25,7 @@ from systemlens.architecture import (
     show_object as show_architecture_object,
     trace_topic_flows,
 )
-from systemlens.architecture_inventory import load_architecture_inventory
+from systemlens.architecture_inventory import is_deployable_service, load_architecture_inventory
 from systemlens.audit import assess_architecture, render_audit_json, render_audit_text
 from systemlens.config import ConfigError, init_config, load_config
 from systemlens.flow import resolve_topic
@@ -1236,6 +1236,7 @@ def _load_microservice_graph(
         name: endpoints
         for name, endpoints in inventory.endpoints_by_service.items()
         if _is_exportable_microservice(name)
+        and is_deployable_service(name, inventory.modules_by_service)
     }
     edges = [
         edge

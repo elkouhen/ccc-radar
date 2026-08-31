@@ -27,6 +27,19 @@ class ArchitectureInventoryError(RuntimeError):
     """The requested repository has not been indexed yet."""
 
 
+def is_deployable_service(
+    name: str, modules_by_service: dict[str, DiscoveredModule]
+) -> bool:
+    """Return whether a service identity represents a deployable module.
+
+    External services may not have a local module and remain visible. When a
+    local module is known, only modules with an application entry point are
+    runtime services; libraries and aggregators belong to build/layer views.
+    """
+    module = modules_by_service.get(name)
+    return module is None or module.starts_application
+
+
 @dataclass(frozen=True)
 class AnalysisProfile:
     """Persisted extraction choices required to interpret one snapshot."""

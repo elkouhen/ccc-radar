@@ -7,6 +7,7 @@ import pytest
 from typer.testing import CliRunner
 
 from systemlens import cli
+from systemlens.architecture_inventory import is_deployable_service
 from systemlens.cli import app
 from systemlens.config import Config
 from systemlens.indexer import index_repo
@@ -23,6 +24,28 @@ from systemlens.store import Store
 from systemlens.workspace import discover_workspace_services, load_federation
 
 runner = CliRunner()
+
+
+def _module_for_test(name: str, *, starts_application: bool) -> DiscoveredModule:
+    return DiscoveredModule(
+        name=name,
+        path=Path("/workspace") / name,
+        build_system="maven",
+        version=None,
+        kind="application" if starts_application else "library",
+        starts_application=starts_application,
+        configuration_example="",
+    )
+
+
+def test_microservice_export_excludes_non_deployable_modules() -> None:
+    application = _module_for_test("orders", starts_application=True)
+    library = _module_for_test("orders-domain", starts_application=False)
+    modules = {"orders": application, "orders-domain": library}
+
+    assert is_deployable_service("orders", modules)
+    assert not is_deployable_service("orders-domain", modules)
+    assert is_deployable_service("external-billing", modules)
 
 
 def test_microservice_html_export_uses_the_explicit_root_path(

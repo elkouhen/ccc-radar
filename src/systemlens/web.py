@@ -15,7 +15,11 @@ from pathlib import Path
 from typing import TypeAlias
 from urllib.parse import urlsplit
 
-from systemlens.architecture_inventory import ArchitectureInventoryError, load_architecture_inventory
+from systemlens.architecture_inventory import (
+    ArchitectureInventoryError,
+    is_deployable_service,
+    load_architecture_inventory,
+)
 from systemlens.config import ConfigError, init_config, load_config
 from systemlens.graph import graph_edges_from_relations
 from systemlens.indexer import index_repo
@@ -59,6 +63,7 @@ class SystemLensWebApplication:
             name: endpoints
             for name, endpoints in inventory.endpoints_by_service.items()
             if _is_exportable_microservice(name)
+            and is_deployable_service(name, inventory.modules_by_service)
         }
         edges = [
             edge
