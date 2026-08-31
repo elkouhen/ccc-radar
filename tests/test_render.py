@@ -204,11 +204,14 @@ enum PaymentStatus { AUTHORIZED, DECLINED }
     assert '"elk.algorithm": "layered"' in document
     assert "async function applyElkLayout(libraries)" in document
     assert "function packLayeredClusterGraphPositions()" in document
-    assert '"persistence"]' in document
+    assert '"external"]' in document
     assert '"orchestration"' in document
     assert 'external: "#64748b"' in document
     assert "layeredClusterView = layout === \"elk\"" in document
     assert "packLayeredClusterGraphPositions();" in document
+    assert "const idsByLayer = new Map" in document
+    assert "if (layeredClusterView)" in document
+    assert "const projectedBounds = viewportBoundsFromGraphBounds" in document
     assert "function namespaceForNode(node)" in document
     assert 'link.target === node' in document
     assert 'producer?.kind === "microservice"' in document

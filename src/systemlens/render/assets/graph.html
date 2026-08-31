@@ -1350,19 +1350,55 @@
           center: layer.items.reduce((sum, item) => sum + item.point.y, 0) / layer.items.length,
         }));
         const pointsByLayer = new Map(layerCenters.map(layer => [layer.id, layer.items.map(item => item.point)]));
+        const idsByLayer = new Map(layerCenters.map(layer => [layer.id, layer.items.map(item => item.id)]));
         [...nodePoints.entries()]
           .filter(([id]) => nodeDataById.get(id)?.kind !== "microservice")
-          .forEach(([, point]) => {
+          .forEach(([id, point]) => {
             const nearest = layerCenters.reduce((best, layer) => (
               Math.abs(layer.center - point.y) < Math.abs(best.center - point.y) ? layer : best
             ), layerCenters[0]);
-            if (nearest) pointsByLayer.get(nearest.id).push(point);
+            if (nearest) {
+              pointsByLayer.get(nearest.id).push(point);
+              idsByLayer.get(nearest.id).push(id);
+            }
           });
         const allLayerPoints = [...pointsByLayer.values()].flat();
         const globalMinX = Math.max(0, Math.min(...allLayerPoints.map(point => point.x)) - 92);
         const globalMaxX = Math.min(window.innerWidth, Math.max(...allLayerPoints.map(point => point.x)) + 92);
+        const viewportBoundsFromGraphBounds = (bounds) => {
+          const corners = [
+            graphPointToViewport({ x: bounds.minX, y: bounds.minY }),
+            graphPointToViewport({ x: bounds.minX, y: bounds.maxY }),
+            graphPointToViewport({ x: bounds.maxX, y: bounds.minY }),
+            graphPointToViewport({ x: bounds.maxX, y: bounds.maxY }),
+          ];
+          return {
+            minX: Math.min(...corners.map(point => point.x)),
+            maxX: Math.max(...corners.map(point => point.x)),
+            minY: Math.min(...corners.map(point => point.y)),
+            maxY: Math.max(...corners.map(point => point.y)),
+          };
+        };
         const layerBounds = layerCenters.map(layer => {
           const points = pointsByLayer.get(layer.id) || [];
+          if (layeredClusterView) {
+            const graphPoints = (idsByLayer.get(layer.id) || [])
+              .map(id => id && network.getNodeAttributes(id))
+              .filter(Boolean);
+            if (graphPoints.length) {
+              const projectedBounds = viewportBoundsFromGraphBounds({
+                minX: Math.min(...graphPoints.map(point => point.x)) - 120,
+                maxX: Math.max(...graphPoints.map(point => point.x)) + 120,
+                minY: Math.min(...graphPoints.map(point => point.y)) - 100,
+                maxY: Math.max(...graphPoints.map(point => point.y)) + 100,
+              });
+              return {
+                ...layer,
+                contentTop: projectedBounds.minY,
+                contentBottom: projectedBounds.maxY,
+              };
+            }
+          }
           return {
             ...layer,
             contentTop: Math.min(...points.map(point => point.y)) - 44,
@@ -1406,20 +1442,6 @@
             group.points.push(point); group.ids.push(id); namespaces.set(key, group);
           });
         });
-        const viewportBoundsFromGraphBounds = (bounds) => {
-          const corners = [
-            graphPointToViewport({ x: bounds.minX, y: bounds.minY }),
-            graphPointToViewport({ x: bounds.minX, y: bounds.maxY }),
-            graphPointToViewport({ x: bounds.maxX, y: bounds.minY }),
-            graphPointToViewport({ x: bounds.maxX, y: bounds.maxY }),
-          ];
-          return {
-            minX: Math.min(...corners.map(point => point.x)),
-            maxX: Math.max(...corners.map(point => point.x)),
-            minY: Math.min(...corners.map(point => point.y)),
-            maxY: Math.max(...corners.map(point => point.y)),
-          };
-        };
         const namespaceBounds = new Map();
         namespaces.forEach(group => {
           let minX = Math.min(...group.points.map(point => point.x)) - 68;
