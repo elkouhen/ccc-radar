@@ -47,6 +47,7 @@ but does not alter AST endpoint extraction.
 | `systemlens analyze request-reply [--root DIR] [--json]` | Lists Strategy1 Kafka request/reply candidates. |
 | `systemlens export microservices (--html FILE | --c4 DIRECTORY | --json) [--graph FILE] [--root-path DIRECTORY]` | Exports the microservice, API, data-schema and message-channel topology. Persisted MCP graph facts are included in the HTML export. `--graph FILE` reads a validated `systemlens-ai-graph-v1` manifest; `--root-path` provides the local source root for HTML source links. |
 | `systemlens export modules --html FILE` | Exports the Maven/Gradle build-dependency view. |
+| `systemlens export layers --html FILE` | Exports a dedicated software-layer view. Modules named `domain-*` are rendered in the Domain layer, alongside Application, API/contracts, Infrastructure, Shared and other module layers. |
 | `systemlens export request-reply --html FILE` | Exports Strategy1 Kafka request/reply candidates. |
 | `systemlens web [--host HOST] [--port PORT]` | Starts the local Python web application at `http://127.0.0.1:8765/` by default. Its home page links to Architecture. Architecture renders the persisted snapshot for each request, excluding test-fixture microservices and every relation attached to them; when no index exists, it offers an explicit local button that creates the default configuration when needed and indexes the repository. The default loopback host prevents network exposure unless the user explicitly changes `--host`. |
 | `simpleweb [DIRECTORY] [--host HOST] [--port PORT]` | Serves static files from `DIRECTORY`, or from the current directory when omitted, for opening generated HTML files that load adjacent JSON. It binds to `http://127.0.0.1:8000/` by default, has no write routes, and does not create or modify files. The directory must exist. |
@@ -111,12 +112,80 @@ Its initial view foregrounds task-oriented entry points (Kafka topic, service
 dependencies, service-to-service path and Kafka messages). Relation/resource
 filters and graph layouts are available as advanced controls. The graph offers
 grouped, airy, balanced, and architectural layouts; the architectural layout
-uses ELK.js to arrange resources in a deterministic left-to-right layered view.
+uses ELK.js compound nodes to arrange resources in a deterministic hierarchy:
+software layers are stacked vertically, namespaces are nested inside their
+layer, and services/resources are placed inside each namespace without
+overlap. The canonical order is `api`, `application`, `infrastructure`,
+`shared`, `module`, then `domain`; `domain` is always the lowest layer.
+The namespace-cluster layout is independent of the layer order and uses a
+deterministic two-level packing without ELK: fCoSE first computes the local
+compound layout of resources inside each namespace, then a deterministic
+packing step places namespace rectangles one per row with a fixed separating
+margin in graph coordinates; the rectangles are projected only after packing,
+so camera zoom does not change their relative separation. The final grid is
+the authoritative collision guard. Node identifiers
+and namespace names are sorted only to make the result reproducible; there is
+no semantic order between clusters. Neither resources nor namespace
+rectangles may overlap. If fCoSE is unavailable, the same deterministic grid
+is used without the local fCoSE ordering.
+ELK is used only for the architectural layer layout, while Sigma.js provides
+the interactive rendering for both views. Architecture relations remain
+visible even when they are not used as placement edges.
 It also provides dedicated
 OpenAPI, Kafka, Mongo, Request/reply, and Build views keep their domain
 inventories separate. Changing a relation-type filter rebuilds and relayouts
 the graph from only the selected dependency types; excluded relations do not
 influence the resulting graph layout.
+
+### Rules for the layered microservice rendering
+
+The HTML architecture view MUST preserve these visual invariants:
+
+- Each software layer is a bounded horizontal band whose width and height are
+  calculated from its visible content. Layers MUST NOT be infinite full-width
+  backgrounds.
+- All visible layer bands MUST share the same left and right bounds. The first
+  band starts immediately above its highest visible namespace content, and the
+  last band ends immediately below its lowest visible namespace content.
+- Layers MUST be stacked vertically in the canonical order above, with the
+  Domain layer at the bottom.
+- Each Kubernetes or fact namespace MUST be represented by a bounded rectangle
+  fully contained inside its owning layer, including its header and padding.
+- A namespace MAY use several rows. The default placement uses at most five
+  boxes per row; additional boxes wrap onto subsequent rows.
+- Microservices, Kafka topics, message channels, MongoDB collections, data
+  schemas and other rendered resources MUST NOT overlap. Placement MUST keep a
+  positive horizontal and vertical gap greater than the projected card size.
+- Layer and namespace bounds MUST be recomputed after filtering, zooming,
+  camera updates and layout changes so containers continue to contain their
+  visible children.
+- Selecting a layer or namespace MUST rebuild the visible graph without
+  turning remaining cards white, losing isolated services, or leaving stale
+  containers on screen.
+- The layered view extends the namespace-cluster packing: each canonical
+  software layer is a separate horizontal band ordered from top to bottom,
+  and namespaces are packed inside that band. ELK compound-node placement is
+  used as a seed when available, while the deterministic layer-aware packing
+  is the final collision guard. If ELK is unavailable or fails, the fallback
+  MUST retain the same layer order, namespace containment and non-overlap
+  guarantees.
+Every layout switch MUST refit the camera to the resulting graph; it MUST NOT
+apply an additional automatic zoom-out that makes the layout unnecessarily
+small.
+
+### Rules for the namespace-cluster rendering
+
+The cluster view MUST preserve these visual invariants:
+
+- Namespace membership MUST use the same resolver for placement and for the
+  visible namespace rectangle.
+- Resources inside one namespace MUST be placed on a grid with a positive
+  horizontal and vertical gap greater than the projected card size.
+- Namespace rectangles MUST be packed with a positive gap and MUST NOT overlap
+  each other.
+- The layout MUST NOT depend on the software-layer order. Narrow viewports MAY
+  use additional rows to keep clusters inside the visible graph area.
+
 Microservices with no indexed inter-service relation remain visible in a
 separate isolated area of the graph, so their absence of dependencies is not
 confused with an absent service.

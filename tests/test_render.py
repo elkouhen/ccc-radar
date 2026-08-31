@@ -3,8 +3,9 @@ import re
 from dataclasses import replace
 from pathlib import Path
 
-from systemlens.models import MessageEndpoint, compute_endpoint_id
+from systemlens.models import GraphFact, MessageEndpoint, compute_endpoint_id
 from systemlens.graph import GraphEdge
+from systemlens.kubernetes import KubernetesWorkload
 from systemlens.modules import (
     DiscoveredModule,
     ModuleDependency,
@@ -58,6 +59,54 @@ def _html_graph_data(document: str) -> dict[str, object]:
     )
     assert match is not None
     return json.loads(match.group(1))
+
+
+def test_microservice_graph_exposes_software_layers_and_namespaces() -> None:
+    module = DiscoveredModule(
+        name="domain-orders",
+        path=Path("/workspace/domain-orders"),
+        build_system="maven",
+        version=None,
+        kind="library",
+        starts_application=False,
+        configuration_example="",
+        kubernetes_workloads=(KubernetesWorkload(
+            kind="Deployment",
+            namespace="orders-prod",
+            name="domain-orders",
+            replicas=2,
+            cpu_request_millicores=None,
+            memory_request_bytes=None,
+            cpu_limit_millicores=None,
+            memory_limit_bytes=None,
+        ),),
+    )
+    fact = GraphFact(
+        id="fact-1",
+        fact_type="node",
+        kind="microservice",
+        name="domain-orders",
+        source_kind=None,
+        source_name=None,
+        target_kind=None,
+        target_name=None,
+        relation=None,
+        origin="ai",
+        confidence="medium",
+        namespace="ai-boundaries",
+    )
+
+    graph_data = _html_graph_data(render_graph_html(
+        {"domain-orders": []}, [], modules_by_service={"domain-orders": module},
+        graph_facts=[fact],
+    ))
+    node = next(item for item in graph_data["nodes"] if item["name"] == "domain-orders")
+    assert node["layer"] == "domain"
+    assert node["runtime_namespaces"] == ["orders-prod"]
+    assert node["fact_namespaces"] == ["ai-boundaries"]
+    assert "domain" in graph_data["software_layers"]
+    assert graph_data["runtime_namespaces"] == ["orders-prod"]
+    assert graph_data["fact_namespaces"] == ["ai-boundaries"]
 
 
 def test_graph_html_uses_only_indexed_kafka_dto_facts(tmp_path: Path) -> None:
@@ -140,16 +189,27 @@ enum PaymentStatus { AUTHORIZED, DECLINED }
     assert 'appendRelationList("Services utilisant cette collection"' in document
     assert 'appendList("Stockee par", [node.owner], relationsGroup)' not in document
     assert "function rebuildGraph()" in document
-    assert "const visibleLinks = graphData.links.filter(link => isVisibleRelation(link.kind));" in document
+    assert "const visibleLinks = graphData.links.filter(link => (" in document
     assert 'id="node-suggestions"' in document
     assert 'id="inventory-status"' in document
     assert "const isolatedNodeIds = new Set(" in document
     assert "function layoutIsolatedNodes(nodes, connectedNodes)" in document
     assert "...layoutIsolatedNodes(isolatedNodes, positionedConnectedNodes)" in document
     assert 'id="layout-elk"' in document
+    assert 'id="layout-cluster"' in document
     assert 'src="https://cdn.jsdelivr.net/npm/elkjs@0.12.0/lib/elk.bundled.js"' in document
+    assert 'src="https://unpkg.com/cytoscape-fcose@2.2.0/cytoscape-fcose.js"' in document
     assert '"elk.algorithm": "layered"' in document
     assert "async function applyElkLayout(libraries)" in document
+    assert "function packLayeredClusterGraphPositions()" in document
+    assert "layeredClusterView = layout === \"elk\"" in document
+    assert "packLayeredClusterGraphPositions();" in document
+    assert "function namespaceForNode(node)" in document
+    assert "? [namespaceForNode(id)]" in document
+    assert 'const libraries = layout === "cluster" ? {} : await layoutLibraries' in document
+    assert "async function applyFcoseClusterLayout()" in document
+    assert 'const nextLayout = !layeredView' in document
+    assert '? "cluster"' in document
     assert "labelGridCellSize: 160" in document
     assert "labelRenderedSizeThreshold: 10" in document
     assert "Connectivité relative :" in document

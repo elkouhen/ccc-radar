@@ -25,6 +25,7 @@ from systemlens.modules import (
     MongoPersistenceClass,
     module_identity,
 )
+from systemlens.render.software_layers import software_layer
 from systemlens.render._graph_view_helpers import (
     _endpoint_vscode_uri,
     _mongodb_collection_nodes,
@@ -526,6 +527,12 @@ def render_graph_html(
         for module in [*(build_modules or []), *module_details.values()]
     }.values())
     module_by_identity = {module_identity(module): module for module in all_modules}
+    fact_namespaces_by_service: dict[str, set[str]] = {}
+    for fact in graph_facts or []:
+        fact_names = {value for value in (fact.name, fact.source_name, fact.target_name) if value}
+        for service in ordered_services:
+            if service in fact_names:
+                fact_namespaces_by_service.setdefault(service, set()).add(fact.namespace)
     openapi_specs = {
         (str(contract["module"]), str(contract["path"])): contract["spec"]
         for contract in openapi_contracts or []
@@ -607,12 +614,34 @@ def render_graph_html(
                     ],
                 })
     nodes: list[dict[str, object]] = []
+    runtime_namespaces = sorted({
+        workload.namespace
+        for module in all_modules
+        for workload in module.kubernetes_workloads
+        if workload.namespace
+    } | {
+        str(namespace)
+        for fact in graph_facts or []
+        for namespace in (
+            (fact.metadata or {}).get("namespaces", [])
+            if isinstance((fact.metadata or {}).get("namespaces", []), list)
+            else [(fact.metadata or {}).get("namespace")]
+        )
+        if namespace
+    })
+    fact_namespaces = sorted({fact.namespace for fact in graph_facts or [] if fact.namespace})
     for name in ordered_services:
         endpoints = endpoints_by_service.get(name, [])
         resources = _rest_resources_served(endpoints)
         contract_resources: dict[str, set[str]] = {}
         contract_owner_identity: dict[str, str] = {}
         module = module_details.get(name)
+        module_layer = software_layer(module) if module else "unknown"
+        module_namespaces = sorted({
+            workload.namespace
+            for workload in (module.kubernetes_workloads if module else ())
+            if workload.namespace
+        })
         for endpoint in endpoints:
             if (
                 endpoint.system == "rest"
@@ -659,6 +688,21 @@ def render_graph_html(
                 "id": f"microservice:{name}",
                 "kind": "microservice",
                 "name": name,
+                "layer": module_layer,
+                "layer_label": module_layer.replace("_", " ").title(),
+                "color": {
+                    "application": "#2563eb",
+                    "domain": "#7c3aed",
+                    "api": "#0891b2",
+                    "infrastructure": "#d97706",
+                    "shared": "#64748b",
+                    "module": "#475569",
+                    "unknown": "#94a3b8",
+                }.get(module_layer, "#94a3b8"),
+                "runtime_namespaces": module_namespaces,
+                "fact_namespaces": sorted(fact_namespaces_by_service.get(name, set())),
+                **({"architecture_namespace": module_namespaces[0]} if module_namespaces else {}),
+                "architecture_layer": module_layer,
                 "kafka_endpoints": [
                     {
                         "role": endpoint.role,
@@ -755,10 +799,11 @@ def render_graph_html(
     known_node_ids = {str(node["id"]) for node in nodes}
     for fact in graph_facts or []:
         if fact.fact_type == "node" and fact.name is not None:
-            node_id = f"{fact.kind}:{fact.name}"
+            fact_visual_kind = "microservice" if fact.kind == "service" else fact.kind
+            node_id = f"{fact_visual_kind}:{fact.name}"
             if node_id not in known_node_ids:
                 node = {
-                    "id": node_id, "kind": fact.kind, "name": fact.name,
+                    "id": node_id, "kind": fact_visual_kind, "name": fact.name,
                     "label": fact.name, "width": 190, "height": 42,
                     "status": fact.status,
                 }
@@ -769,6 +814,74 @@ def render_graph_html(
                 node["technology"] = fact.technology
             if fact.metadata:
                 node["metadata"] = fact.metadata
+                if fact_visual_kind == "microservice":
+                    layer = fact.metadata.get("layer")
+                    if isinstance(layer, str) and layer:
+                        node["layer"] = layer
+                        node["layer_label"] = layer.replace("_", " ").title()
+                        node["color"] = {
+                            "application": "#2563eb",
+                            "domain": "#7c3aed",
+                            "api": "#0891b2",
+                            "infrastructure": "#d97706",
+                            "shared": "#64748b",
+                            "module": "#475569",
+                        }.get(layer, "#94a3b8")
+                    namespaces = fact.metadata.get("namespaces")
+                    if not isinstance(namespaces, list):
+                        namespaces = [fact.metadata.get("namespace")]
+                    node["runtime_namespaces"] = sorted({
+                        str(namespace) for namespace in namespaces if namespace
+                    })
+                    if node["runtime_namespaces"]:
+                        node["architecture_namespace"] = node["runtime_namespaces"][0]
+                    if node.get("layer"):
+                        node["architecture_layer"] = node["layer"]
+            if fact_visual_kind == "microservice":
+                node.setdefault("fact_namespaces", [])
+                if fact.namespace not in node["fact_namespaces"]:
+                    node["fact_namespaces"].append(fact.namespace)
+
+    # A resource belongs visually to the boundary of the service that writes
+    # or publishes it.  The namespace on a data/topic fact often describes
+    # the broker or database infrastructure, which is useful as provenance
+    # but is not the architectural ownership boundary used by this view.
+    service_architecture = {
+        str(node["name"]): {
+            "layer": node.get("layer", "unknown"),
+            "namespace": (
+                (node.get("runtime_namespaces") or [])
+                + (node.get("fact_namespaces") or [])
+            )[0] if (node.get("runtime_namespaces") or []) + (node.get("fact_namespaces") or []) else None,
+        }
+        for node in nodes
+        if node.get("kind") == "microservice"
+    }
+    resource_owners: dict[tuple[str, str], str] = {}
+    for fact in graph_facts or []:
+        if fact.fact_type != "edge" or fact.relation not in {"publishes", "writes"}:
+            continue
+        source_kind = "microservice" if fact.source_kind == "service" else fact.source_kind
+        if source_kind != "microservice" or not fact.source_name or not fact.target_name:
+            continue
+        resource_owners[(fact.target_kind or "", fact.target_name)] = fact.source_name
+    for edge in edges:
+        if edge.kind == "kafka" and edge.from_endpoint.topic:
+            resource_owners.setdefault(("kafka_topic", edge.from_endpoint.topic), edge.from_service)
+    for node in nodes:
+        owner = resource_owners.get((str(node.get("kind")), str(node.get("name"))))
+        if owner is None and node.get("kind") == "mongodb_collection":
+            owner = str(node.get("owner") or "") or None
+        if owner is None:
+            continue
+        owner_data = service_architecture.get(owner)
+        if not owner_data:
+            continue
+        node["owner_service"] = owner
+        node["architecture_layer"] = owner_data["layer"]
+        if owner_data["namespace"]:
+            node["architecture_namespace"] = owner_data["namespace"]
+        node["namespace_source"] = "writer"
     links: list[dict[str, object]] = []
     for source_kind, source_name, target_kind, target_name, label, kind in _visual_graph_edges(edges):
         confidence, provenance = _visual_link_evidence(
@@ -801,11 +914,13 @@ def render_graph_html(
             continue
         if not all((fact.source_kind, fact.source_name, fact.target_kind, fact.target_name)):
             continue
-        source_id = f"{fact.source_kind}:{fact.source_name}"
-        target_id = f"{fact.target_kind}:{fact.target_name}"
+        source_kind = "microservice" if fact.source_kind == "service" else fact.source_kind
+        target_kind = "microservice" if fact.target_kind == "service" else fact.target_kind
+        source_id = f"{source_kind}:{fact.source_name}"
+        target_id = f"{target_kind}:{fact.target_name}"
         for node_id, node_kind, node_name in (
-            (source_id, fact.source_kind, fact.source_name),
-            (target_id, fact.target_kind, fact.target_name),
+            (source_id, source_kind, fact.source_name),
+            (target_id, target_kind, fact.target_name),
         ):
             if node_id not in known_node_ids:
                 nodes.append({
@@ -964,6 +1079,13 @@ def render_graph_html(
         {
             "nodes": nodes,
             "links": links,
+            "software_layers": sorted({
+                str(node.get("layer"))
+                for node in nodes
+                if node.get("kind") == "microservice"
+            }),
+            "runtime_namespaces": runtime_namespaces,
+            "fact_namespaces": fact_namespaces,
             "groups": project_groups,
             "build_dependencies": _module_dependency_view(build_modules, module_dependencies),
             "kafka_dtos": kafka_dtos,

@@ -273,6 +273,17 @@ severity, service, framework, topic/API, extracted message type and its source
 path, line range and snippet. The command does not infer or apply a heuristic;
 its evidence is intended for a human or an AI to assess a conservative rule.
 
+## Graph layout algorithms
+
+The HTML renderer keeps graph coordinates as the source of truth for layout.
+The namespace-cluster packer places resources on separated grids and then
+packs namespace rectangles with positive margins. The layered view reuses this
+packer with an additional grouping key: namespaces are first grouped by the
+canonical software-layer order (`api`, `application`, `infrastructure`,
+`shared`, `module`, `domain`), producing top-to-bottom layer bands. ELK may
+provide the initial compound layout, but the deterministic layer-aware pack is
+the final collision guard and remains valid when ELK fails.
+
 ## Persistence and compatibility
 
 SQLite schema migration is additive where possible. `files` stores hash state,

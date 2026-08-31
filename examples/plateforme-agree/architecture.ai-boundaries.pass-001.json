@@ -1,0 +1,3454 @@
+{
+  "format": "systemlens-ai-graph-v1",
+  "project": "plateforme-agreee-demo",
+  "generated_by": {
+    "agent": "systemlens-demo-generator",
+    "model": "synthetic-fixture",
+    "source_revision": "demo-2026-08-30",
+    "pass": "boundaries-001",
+    "namespace": "ai-boundaries"
+  },
+  "mode": "complete",
+  "nodes": [
+    {
+      "id": "api-gateway",
+      "kind": "service",
+      "name": "api-gateway",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "layer": "api",
+        "namespace": "platform-edge",
+        "namespaces": [
+          "platform-edge"
+        ],
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-edge/api-gateway/service.yaml",
+          "start_line": 1,
+          "end_line": 20,
+          "quote": "api-gateway deployment boundary"
+        }
+      ]
+    },
+    {
+      "id": "api-public",
+      "kind": "service",
+      "name": "api-public",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "layer": "api",
+        "namespace": "platform-edge",
+        "namespaces": [
+          "platform-edge"
+        ],
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-edge/api-public/service.yaml",
+          "start_line": 1,
+          "end_line": 20,
+          "quote": "api-public deployment boundary"
+        }
+      ]
+    },
+    {
+      "id": "api-partner",
+      "kind": "service",
+      "name": "api-partner",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "layer": "api",
+        "namespace": "platform-edge",
+        "namespaces": [
+          "platform-edge"
+        ],
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-edge/api-partner/service.yaml",
+          "start_line": 1,
+          "end_line": 20,
+          "quote": "api-partner deployment boundary"
+        }
+      ]
+    },
+    {
+      "id": "api-admin",
+      "kind": "service",
+      "name": "api-admin",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "layer": "api",
+        "namespace": "platform-edge",
+        "namespaces": [
+          "platform-edge"
+        ],
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-edge/api-admin/service.yaml",
+          "start_line": 1,
+          "end_line": 20,
+          "quote": "api-admin deployment boundary"
+        }
+      ]
+    },
+    {
+      "id": "api-catalog",
+      "kind": "service",
+      "name": "api-catalog",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "layer": "api",
+        "namespace": "platform-edge",
+        "namespaces": [
+          "platform-edge"
+        ],
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-edge/api-catalog/service.yaml",
+          "start_line": 1,
+          "end_line": 20,
+          "quote": "api-catalog deployment boundary"
+        }
+      ]
+    },
+    {
+      "id": "api-notification",
+      "kind": "service",
+      "name": "api-notification",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "layer": "api",
+        "namespace": "platform-edge",
+        "namespaces": [
+          "platform-edge"
+        ],
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-edge/api-notification/service.yaml",
+          "start_line": 1,
+          "end_line": 20,
+          "quote": "api-notification deployment boundary"
+        }
+      ]
+    },
+    {
+      "id": "application-onboarding",
+      "kind": "service",
+      "name": "application-onboarding",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "layer": "application",
+        "namespace": "platform-core",
+        "namespaces": [
+          "platform-core"
+        ],
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-core/application-onboarding/service.yaml",
+          "start_line": 1,
+          "end_line": 20,
+          "quote": "application-onboarding deployment boundary"
+        }
+      ]
+    },
+    {
+      "id": "application-account",
+      "kind": "service",
+      "name": "application-account",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "layer": "application",
+        "namespace": "platform-core",
+        "namespaces": [
+          "platform-core"
+        ],
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-core/application-account/service.yaml",
+          "start_line": 1,
+          "end_line": 20,
+          "quote": "application-account deployment boundary"
+        }
+      ]
+    },
+    {
+      "id": "application-user",
+      "kind": "service",
+      "name": "application-user",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "layer": "application",
+        "namespace": "platform-core",
+        "namespaces": [
+          "platform-core"
+        ],
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-core/application-user/service.yaml",
+          "start_line": 1,
+          "end_line": 20,
+          "quote": "application-user deployment boundary"
+        }
+      ]
+    },
+    {
+      "id": "application-organization",
+      "kind": "service",
+      "name": "application-organization",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "layer": "application",
+        "namespace": "platform-core",
+        "namespaces": [
+          "platform-core"
+        ],
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-core/application-organization/service.yaml",
+          "start_line": 1,
+          "end_line": 20,
+          "quote": "application-organization deployment boundary"
+        }
+      ]
+    },
+    {
+      "id": "application-approval",
+      "kind": "service",
+      "name": "application-approval",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "layer": "application",
+        "namespace": "platform-core",
+        "namespaces": [
+          "platform-core"
+        ],
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-core/application-approval/service.yaml",
+          "start_line": 1,
+          "end_line": 20,
+          "quote": "application-approval deployment boundary"
+        }
+      ]
+    },
+    {
+      "id": "application-compliance",
+      "kind": "service",
+      "name": "application-compliance",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "layer": "application",
+        "namespace": "platform-core",
+        "namespaces": [
+          "platform-core"
+        ],
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-core/application-compliance/service.yaml",
+          "start_line": 1,
+          "end_line": 20,
+          "quote": "application-compliance deployment boundary"
+        }
+      ]
+    },
+    {
+      "id": "application-certificate",
+      "kind": "service",
+      "name": "application-certificate",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "layer": "application",
+        "namespace": "platform-core",
+        "namespaces": [
+          "platform-core"
+        ],
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-core/application-certificate/service.yaml",
+          "start_line": 1,
+          "end_line": 20,
+          "quote": "application-certificate deployment boundary"
+        }
+      ]
+    },
+    {
+      "id": "application-workflow",
+      "kind": "service",
+      "name": "application-workflow",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "layer": "application",
+        "namespace": "platform-core",
+        "namespaces": [
+          "platform-core"
+        ],
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-core/application-workflow/service.yaml",
+          "start_line": 1,
+          "end_line": 20,
+          "quote": "application-workflow deployment boundary"
+        }
+      ]
+    },
+    {
+      "id": "application-document",
+      "kind": "service",
+      "name": "application-document",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "layer": "application",
+        "namespace": "platform-core",
+        "namespaces": [
+          "platform-core"
+        ],
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-core/application-document/service.yaml",
+          "start_line": 1,
+          "end_line": 20,
+          "quote": "application-document deployment boundary"
+        }
+      ]
+    },
+    {
+      "id": "application-search",
+      "kind": "service",
+      "name": "application-search",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "layer": "application",
+        "namespace": "platform-core",
+        "namespaces": [
+          "platform-core"
+        ],
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-core/application-search/service.yaml",
+          "start_line": 1,
+          "end_line": 20,
+          "quote": "application-search deployment boundary"
+        }
+      ]
+    },
+    {
+      "id": "domain-identity",
+      "kind": "service",
+      "name": "domain-identity",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "layer": "domain",
+        "namespace": "platform-domain",
+        "namespaces": [
+          "platform-domain"
+        ],
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-domain/domain-identity/service.yaml",
+          "start_line": 1,
+          "end_line": 20,
+          "quote": "domain-identity deployment boundary"
+        }
+      ]
+    },
+    {
+      "id": "domain-organization",
+      "kind": "service",
+      "name": "domain-organization",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "layer": "domain",
+        "namespace": "platform-domain",
+        "namespaces": [
+          "platform-domain"
+        ],
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-domain/domain-organization/service.yaml",
+          "start_line": 1,
+          "end_line": 20,
+          "quote": "domain-organization deployment boundary"
+        }
+      ]
+    },
+    {
+      "id": "domain-accreditation",
+      "kind": "service",
+      "name": "domain-accreditation",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "layer": "domain",
+        "namespace": "platform-domain",
+        "namespaces": [
+          "platform-domain"
+        ],
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-domain/domain-accreditation/service.yaml",
+          "start_line": 1,
+          "end_line": 20,
+          "quote": "domain-accreditation deployment boundary"
+        }
+      ]
+    },
+    {
+      "id": "domain-approval",
+      "kind": "service",
+      "name": "domain-approval",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "layer": "domain",
+        "namespace": "platform-domain",
+        "namespaces": [
+          "platform-domain"
+        ],
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-domain/domain-approval/service.yaml",
+          "start_line": 1,
+          "end_line": 20,
+          "quote": "domain-approval deployment boundary"
+        }
+      ]
+    },
+    {
+      "id": "domain-compliance",
+      "kind": "service",
+      "name": "domain-compliance",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "layer": "domain",
+        "namespace": "platform-domain",
+        "namespaces": [
+          "platform-domain"
+        ],
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-domain/domain-compliance/service.yaml",
+          "start_line": 1,
+          "end_line": 20,
+          "quote": "domain-compliance deployment boundary"
+        }
+      ]
+    },
+    {
+      "id": "domain-certificate",
+      "kind": "service",
+      "name": "domain-certificate",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "layer": "domain",
+        "namespace": "platform-domain",
+        "namespaces": [
+          "platform-domain"
+        ],
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-domain/domain-certificate/service.yaml",
+          "start_line": 1,
+          "end_line": 20,
+          "quote": "domain-certificate deployment boundary"
+        }
+      ]
+    },
+    {
+      "id": "domain-audit",
+      "kind": "service",
+      "name": "domain-audit",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "layer": "domain",
+        "namespace": "platform-domain",
+        "namespaces": [
+          "platform-domain"
+        ],
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-domain/domain-audit/service.yaml",
+          "start_line": 1,
+          "end_line": 20,
+          "quote": "domain-audit deployment boundary"
+        }
+      ]
+    },
+    {
+      "id": "domain-document",
+      "kind": "service",
+      "name": "domain-document",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "layer": "domain",
+        "namespace": "platform-domain",
+        "namespaces": [
+          "platform-domain"
+        ],
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-domain/domain-document/service.yaml",
+          "start_line": 1,
+          "end_line": 20,
+          "quote": "domain-document deployment boundary"
+        }
+      ]
+    },
+    {
+      "id": "domain-catalog",
+      "kind": "service",
+      "name": "domain-catalog",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "layer": "domain",
+        "namespace": "platform-domain",
+        "namespaces": [
+          "platform-domain"
+        ],
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-domain/domain-catalog/service.yaml",
+          "start_line": 1,
+          "end_line": 20,
+          "quote": "domain-catalog deployment boundary"
+        }
+      ]
+    },
+    {
+      "id": "domain-partner",
+      "kind": "service",
+      "name": "domain-partner",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "layer": "domain",
+        "namespace": "platform-domain",
+        "namespaces": [
+          "platform-domain"
+        ],
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-domain/domain-partner/service.yaml",
+          "start_line": 1,
+          "end_line": 20,
+          "quote": "domain-partner deployment boundary"
+        }
+      ]
+    },
+    {
+      "id": "domain-user",
+      "kind": "service",
+      "name": "domain-user",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "layer": "domain",
+        "namespace": "platform-domain",
+        "namespaces": [
+          "platform-domain"
+        ],
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-domain/domain-user/service.yaml",
+          "start_line": 1,
+          "end_line": 20,
+          "quote": "domain-user deployment boundary"
+        }
+      ]
+    },
+    {
+      "id": "domain-case",
+      "kind": "service",
+      "name": "domain-case",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "layer": "domain",
+        "namespace": "platform-domain",
+        "namespaces": [
+          "platform-domain"
+        ],
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-domain/domain-case/service.yaml",
+          "start_line": 1,
+          "end_line": 20,
+          "quote": "domain-case deployment boundary"
+        }
+      ]
+    },
+    {
+      "id": "domain-workflow",
+      "kind": "service",
+      "name": "domain-workflow",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "layer": "domain",
+        "namespace": "platform-domain",
+        "namespaces": [
+          "platform-domain"
+        ],
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-domain/domain-workflow/service.yaml",
+          "start_line": 1,
+          "end_line": 20,
+          "quote": "domain-workflow deployment boundary"
+        }
+      ]
+    },
+    {
+      "id": "domain-notification",
+      "kind": "service",
+      "name": "domain-notification",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "layer": "domain",
+        "namespace": "platform-domain",
+        "namespaces": [
+          "platform-domain"
+        ],
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-domain/domain-notification/service.yaml",
+          "start_line": 1,
+          "end_line": 20,
+          "quote": "domain-notification deployment boundary"
+        }
+      ]
+    },
+    {
+      "id": "domain-billing",
+      "kind": "service",
+      "name": "domain-billing",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "layer": "domain",
+        "namespace": "platform-domain",
+        "namespaces": [
+          "platform-domain"
+        ],
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-domain/domain-billing/service.yaml",
+          "start_line": 1,
+          "end_line": 20,
+          "quote": "domain-billing deployment boundary"
+        }
+      ]
+    },
+    {
+      "id": "domain-entitlement",
+      "kind": "service",
+      "name": "domain-entitlement",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "layer": "domain",
+        "namespace": "platform-domain",
+        "namespaces": [
+          "platform-domain"
+        ],
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-domain/domain-entitlement/service.yaml",
+          "start_line": 1,
+          "end_line": 20,
+          "quote": "domain-entitlement deployment boundary"
+        }
+      ]
+    },
+    {
+      "id": "domain-policy",
+      "kind": "service",
+      "name": "domain-policy",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "layer": "domain",
+        "namespace": "platform-domain",
+        "namespaces": [
+          "platform-domain"
+        ],
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-domain/domain-policy/service.yaml",
+          "start_line": 1,
+          "end_line": 20,
+          "quote": "domain-policy deployment boundary"
+        }
+      ]
+    },
+    {
+      "id": "domain-risk",
+      "kind": "service",
+      "name": "domain-risk",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "layer": "domain",
+        "namespace": "platform-domain",
+        "namespaces": [
+          "platform-domain"
+        ],
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-domain/domain-risk/service.yaml",
+          "start_line": 1,
+          "end_line": 20,
+          "quote": "domain-risk deployment boundary"
+        }
+      ]
+    },
+    {
+      "id": "infrastructure-auth",
+      "kind": "service",
+      "name": "infrastructure-auth",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "layer": "infrastructure",
+        "namespace": "platform-infra",
+        "namespaces": [
+          "platform-infra"
+        ],
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-infra/infrastructure-auth/service.yaml",
+          "start_line": 1,
+          "end_line": 20,
+          "quote": "infrastructure-auth deployment boundary"
+        }
+      ]
+    },
+    {
+      "id": "infrastructure-storage",
+      "kind": "service",
+      "name": "infrastructure-storage",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "layer": "infrastructure",
+        "namespace": "platform-infra",
+        "namespaces": [
+          "platform-infra"
+        ],
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-infra/infrastructure-storage/service.yaml",
+          "start_line": 1,
+          "end_line": 20,
+          "quote": "infrastructure-storage deployment boundary"
+        }
+      ]
+    },
+    {
+      "id": "infrastructure-messaging",
+      "kind": "service",
+      "name": "infrastructure-messaging",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "layer": "infrastructure",
+        "namespace": "platform-infra",
+        "namespaces": [
+          "platform-infra"
+        ],
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-infra/infrastructure-messaging/service.yaml",
+          "start_line": 1,
+          "end_line": 20,
+          "quote": "infrastructure-messaging deployment boundary"
+        }
+      ]
+    },
+    {
+      "id": "infrastructure-search",
+      "kind": "service",
+      "name": "infrastructure-search",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "layer": "infrastructure",
+        "namespace": "platform-infra",
+        "namespaces": [
+          "platform-infra"
+        ],
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-infra/infrastructure-search/service.yaml",
+          "start_line": 1,
+          "end_line": 20,
+          "quote": "infrastructure-search deployment boundary"
+        }
+      ]
+    },
+    {
+      "id": "infrastructure-payment",
+      "kind": "service",
+      "name": "infrastructure-payment",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "layer": "infrastructure",
+        "namespace": "platform-infra",
+        "namespaces": [
+          "platform-infra"
+        ],
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-infra/infrastructure-payment/service.yaml",
+          "start_line": 1,
+          "end_line": 20,
+          "quote": "infrastructure-payment deployment boundary"
+        }
+      ]
+    },
+    {
+      "id": "infrastructure-observability",
+      "kind": "service",
+      "name": "infrastructure-observability",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "layer": "infrastructure",
+        "namespace": "platform-infra",
+        "namespaces": [
+          "platform-infra"
+        ],
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-infra/infrastructure-observability/service.yaml",
+          "start_line": 1,
+          "end_line": 20,
+          "quote": "infrastructure-observability deployment boundary"
+        }
+      ]
+    },
+    {
+      "id": "infrastructure-scheduler",
+      "kind": "service",
+      "name": "infrastructure-scheduler",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "layer": "infrastructure",
+        "namespace": "platform-infra",
+        "namespaces": [
+          "platform-infra"
+        ],
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-infra/infrastructure-scheduler/service.yaml",
+          "start_line": 1,
+          "end_line": 20,
+          "quote": "infrastructure-scheduler deployment boundary"
+        }
+      ]
+    },
+    {
+      "id": "infrastructure-archive",
+      "kind": "service",
+      "name": "infrastructure-archive",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "layer": "infrastructure",
+        "namespace": "platform-infra",
+        "namespaces": [
+          "platform-infra"
+        ],
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-infra/infrastructure-archive/service.yaml",
+          "start_line": 1,
+          "end_line": 20,
+          "quote": "infrastructure-archive deployment boundary"
+        }
+      ]
+    },
+    {
+      "id": "shared-events",
+      "kind": "service",
+      "name": "shared-events",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "layer": "shared",
+        "namespace": "platform-shared",
+        "namespaces": [
+          "platform-shared"
+        ],
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-shared/shared-events/service.yaml",
+          "start_line": 1,
+          "end_line": 20,
+          "quote": "shared-events deployment boundary"
+        }
+      ]
+    },
+    {
+      "id": "shared-contracts",
+      "kind": "service",
+      "name": "shared-contracts",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "layer": "shared",
+        "namespace": "platform-shared",
+        "namespaces": [
+          "platform-shared"
+        ],
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-shared/shared-contracts/service.yaml",
+          "start_line": 1,
+          "end_line": 20,
+          "quote": "shared-contracts deployment boundary"
+        }
+      ]
+    },
+    {
+      "id": "shared-security",
+      "kind": "service",
+      "name": "shared-security",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "layer": "shared",
+        "namespace": "platform-shared",
+        "namespaces": [
+          "platform-shared"
+        ],
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-shared/shared-security/service.yaml",
+          "start_line": 1,
+          "end_line": 20,
+          "quote": "shared-security deployment boundary"
+        }
+      ]
+    },
+    {
+      "id": "shared-kernel",
+      "kind": "service",
+      "name": "shared-kernel",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "layer": "shared",
+        "namespace": "platform-shared",
+        "namespaces": [
+          "platform-shared"
+        ],
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-shared/shared-kernel/service.yaml",
+          "start_line": 1,
+          "end_line": 20,
+          "quote": "shared-kernel deployment boundary"
+        }
+      ]
+    },
+    {
+      "id": "module-reporting",
+      "kind": "service",
+      "name": "module-reporting",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "layer": "module",
+        "namespace": "platform-ops",
+        "namespaces": [
+          "platform-ops"
+        ],
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-ops/module-reporting/service.yaml",
+          "start_line": 1,
+          "end_line": 20,
+          "quote": "module-reporting deployment boundary"
+        }
+      ]
+    },
+    {
+      "id": "module-import",
+      "kind": "service",
+      "name": "module-import",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "layer": "module",
+        "namespace": "platform-ops",
+        "namespaces": [
+          "platform-ops"
+        ],
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-ops/module-import/service.yaml",
+          "start_line": 1,
+          "end_line": 20,
+          "quote": "module-import deployment boundary"
+        }
+      ]
+    },
+    {
+      "id": "module-export",
+      "kind": "service",
+      "name": "module-export",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "layer": "module",
+        "namespace": "platform-ops",
+        "namespaces": [
+          "platform-ops"
+        ],
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-ops/module-export/service.yaml",
+          "start_line": 1,
+          "end_line": 20,
+          "quote": "module-export deployment boundary"
+        }
+      ]
+    },
+    {
+      "id": "module-migration",
+      "kind": "service",
+      "name": "module-migration",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "layer": "module",
+        "namespace": "platform-ops",
+        "namespaces": [
+          "platform-ops"
+        ],
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-ops/module-migration/service.yaml",
+          "start_line": 1,
+          "end_line": 20,
+          "quote": "module-migration deployment boundary"
+        }
+      ]
+    },
+    {
+      "id": "channel-accreditation-submitted",
+      "kind": "message_channel",
+      "name": "channel-accreditation-submitted",
+      "status": "confirmed",
+      "confidence": "high",
+      "technology": "messaging",
+      "metadata": {
+        "namespace": "platform-infra",
+        "namespaces": [
+          "platform-infra"
+        ],
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-infra/channel-accreditation-submitted.yaml",
+          "start_line": 1,
+          "end_line": 15,
+          "quote": "channel-accreditation-submitted resource declaration"
+        }
+      ]
+    },
+    {
+      "id": "channel-approval-decided",
+      "kind": "message_channel",
+      "name": "channel-approval-decided",
+      "status": "confirmed",
+      "confidence": "high",
+      "technology": "messaging",
+      "metadata": {
+        "namespace": "platform-infra",
+        "namespaces": [
+          "platform-infra"
+        ],
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-infra/channel-approval-decided.yaml",
+          "start_line": 1,
+          "end_line": 15,
+          "quote": "channel-approval-decided resource declaration"
+        }
+      ]
+    },
+    {
+      "id": "channel-certificate-issued",
+      "kind": "message_channel",
+      "name": "channel-certificate-issued",
+      "status": "confirmed",
+      "confidence": "high",
+      "technology": "messaging",
+      "metadata": {
+        "namespace": "platform-infra",
+        "namespaces": [
+          "platform-infra"
+        ],
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-infra/channel-certificate-issued.yaml",
+          "start_line": 1,
+          "end_line": 15,
+          "quote": "channel-certificate-issued resource declaration"
+        }
+      ]
+    },
+    {
+      "id": "channel-compliance-alert",
+      "kind": "message_channel",
+      "name": "channel-compliance-alert",
+      "status": "confirmed",
+      "confidence": "high",
+      "technology": "messaging",
+      "metadata": {
+        "namespace": "platform-infra",
+        "namespaces": [
+          "platform-infra"
+        ],
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-infra/channel-compliance-alert.yaml",
+          "start_line": 1,
+          "end_line": 15,
+          "quote": "channel-compliance-alert resource declaration"
+        }
+      ]
+    },
+    {
+      "id": "channel-partner-updated",
+      "kind": "message_channel",
+      "name": "channel-partner-updated",
+      "status": "confirmed",
+      "confidence": "high",
+      "technology": "messaging",
+      "metadata": {
+        "namespace": "platform-infra",
+        "namespaces": [
+          "platform-infra"
+        ],
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-infra/channel-partner-updated.yaml",
+          "start_line": 1,
+          "end_line": 15,
+          "quote": "channel-partner-updated resource declaration"
+        }
+      ]
+    },
+    {
+      "id": "schema-accreditation",
+      "kind": "data_schema",
+      "name": "schema-accreditation",
+      "status": "confirmed",
+      "confidence": "high",
+      "technology": "data",
+      "metadata": {
+        "namespace": "platform-data",
+        "namespaces": [
+          "platform-data"
+        ],
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-data/schema-accreditation.yaml",
+          "start_line": 1,
+          "end_line": 15,
+          "quote": "schema-accreditation resource declaration"
+        }
+      ]
+    },
+    {
+      "id": "schema-organization",
+      "kind": "data_schema",
+      "name": "schema-organization",
+      "status": "confirmed",
+      "confidence": "high",
+      "technology": "data",
+      "metadata": {
+        "namespace": "platform-data",
+        "namespaces": [
+          "platform-data"
+        ],
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-data/schema-organization.yaml",
+          "start_line": 1,
+          "end_line": 15,
+          "quote": "schema-organization resource declaration"
+        }
+      ]
+    },
+    {
+      "id": "schema-approval",
+      "kind": "data_schema",
+      "name": "schema-approval",
+      "status": "confirmed",
+      "confidence": "high",
+      "technology": "data",
+      "metadata": {
+        "namespace": "platform-data",
+        "namespaces": [
+          "platform-data"
+        ],
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-data/schema-approval.yaml",
+          "start_line": 1,
+          "end_line": 15,
+          "quote": "schema-approval resource declaration"
+        }
+      ]
+    },
+    {
+      "id": "schema-certificate",
+      "kind": "data_schema",
+      "name": "schema-certificate",
+      "status": "confirmed",
+      "confidence": "high",
+      "technology": "data",
+      "metadata": {
+        "namespace": "platform-data",
+        "namespaces": [
+          "platform-data"
+        ],
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-data/schema-certificate.yaml",
+          "start_line": 1,
+          "end_line": 15,
+          "quote": "schema-certificate resource declaration"
+        }
+      ]
+    },
+    {
+      "id": "schema-audit",
+      "kind": "data_schema",
+      "name": "schema-audit",
+      "status": "confirmed",
+      "confidence": "high",
+      "technology": "data",
+      "metadata": {
+        "namespace": "platform-data",
+        "namespaces": [
+          "platform-data"
+        ],
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-data/schema-audit.yaml",
+          "start_line": 1,
+          "end_line": 15,
+          "quote": "schema-audit resource declaration"
+        }
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge-001",
+      "source": "api-gateway",
+      "target": "api-public",
+      "kind": "calls",
+      "relation": "calls",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "namespace": "platform-edge",
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-edge/topology.yaml",
+          "start_line": 2,
+          "end_line": 2,
+          "quote": "api-gateway calls api-public"
+        }
+      ]
+    },
+    {
+      "id": "edge-002",
+      "source": "api-public",
+      "target": "api-partner",
+      "kind": "calls",
+      "relation": "calls",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "namespace": "platform-edge",
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-edge/topology.yaml",
+          "start_line": 3,
+          "end_line": 3,
+          "quote": "api-public calls api-partner"
+        }
+      ]
+    },
+    {
+      "id": "edge-003",
+      "source": "api-partner",
+      "target": "api-admin",
+      "kind": "calls",
+      "relation": "calls",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "namespace": "platform-edge",
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-edge/topology.yaml",
+          "start_line": 4,
+          "end_line": 4,
+          "quote": "api-partner calls api-admin"
+        }
+      ]
+    },
+    {
+      "id": "edge-004",
+      "source": "api-admin",
+      "target": "api-catalog",
+      "kind": "calls",
+      "relation": "calls",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "namespace": "platform-edge",
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-edge/topology.yaml",
+          "start_line": 5,
+          "end_line": 5,
+          "quote": "api-admin calls api-catalog"
+        }
+      ]
+    },
+    {
+      "id": "edge-005",
+      "source": "api-catalog",
+      "target": "api-notification",
+      "kind": "calls",
+      "relation": "calls",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "namespace": "platform-edge",
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-edge/topology.yaml",
+          "start_line": 6,
+          "end_line": 6,
+          "quote": "api-catalog calls api-notification"
+        }
+      ]
+    },
+    {
+      "id": "edge-006",
+      "source": "application-onboarding",
+      "target": "application-account",
+      "kind": "calls",
+      "relation": "calls",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "namespace": "platform-core",
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-core/topology.yaml",
+          "start_line": 7,
+          "end_line": 7,
+          "quote": "application-onboarding calls application-account"
+        }
+      ]
+    },
+    {
+      "id": "edge-007",
+      "source": "application-account",
+      "target": "application-user",
+      "kind": "calls",
+      "relation": "calls",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "namespace": "platform-core",
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-core/topology.yaml",
+          "start_line": 8,
+          "end_line": 8,
+          "quote": "application-account calls application-user"
+        }
+      ]
+    },
+    {
+      "id": "edge-008",
+      "source": "application-user",
+      "target": "application-organization",
+      "kind": "calls",
+      "relation": "calls",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "namespace": "platform-core",
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-core/topology.yaml",
+          "start_line": 9,
+          "end_line": 9,
+          "quote": "application-user calls application-organization"
+        }
+      ]
+    },
+    {
+      "id": "edge-009",
+      "source": "application-organization",
+      "target": "application-approval",
+      "kind": "calls",
+      "relation": "calls",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "namespace": "platform-core",
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-core/topology.yaml",
+          "start_line": 10,
+          "end_line": 10,
+          "quote": "application-organization calls application-approval"
+        }
+      ]
+    },
+    {
+      "id": "edge-010",
+      "source": "application-approval",
+      "target": "application-compliance",
+      "kind": "calls",
+      "relation": "calls",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "namespace": "platform-core",
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-core/topology.yaml",
+          "start_line": 11,
+          "end_line": 11,
+          "quote": "application-approval calls application-compliance"
+        }
+      ]
+    },
+    {
+      "id": "edge-011",
+      "source": "application-compliance",
+      "target": "application-certificate",
+      "kind": "calls",
+      "relation": "calls",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "namespace": "platform-core",
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-core/topology.yaml",
+          "start_line": 12,
+          "end_line": 12,
+          "quote": "application-compliance calls application-certificate"
+        }
+      ]
+    },
+    {
+      "id": "edge-012",
+      "source": "application-certificate",
+      "target": "application-workflow",
+      "kind": "calls",
+      "relation": "calls",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "namespace": "platform-core",
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-core/topology.yaml",
+          "start_line": 13,
+          "end_line": 13,
+          "quote": "application-certificate calls application-workflow"
+        }
+      ]
+    },
+    {
+      "id": "edge-013",
+      "source": "application-workflow",
+      "target": "application-document",
+      "kind": "calls",
+      "relation": "calls",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "namespace": "platform-core",
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-core/topology.yaml",
+          "start_line": 14,
+          "end_line": 14,
+          "quote": "application-workflow calls application-document"
+        }
+      ]
+    },
+    {
+      "id": "edge-014",
+      "source": "application-document",
+      "target": "application-search",
+      "kind": "calls",
+      "relation": "calls",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "namespace": "platform-core",
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-core/topology.yaml",
+          "start_line": 15,
+          "end_line": 15,
+          "quote": "application-document calls application-search"
+        }
+      ]
+    },
+    {
+      "id": "edge-015",
+      "source": "domain-identity",
+      "target": "domain-organization",
+      "kind": "calls",
+      "relation": "calls",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "namespace": "platform-domain",
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-domain/topology.yaml",
+          "start_line": 16,
+          "end_line": 16,
+          "quote": "domain-identity calls domain-organization"
+        }
+      ]
+    },
+    {
+      "id": "edge-016",
+      "source": "domain-organization",
+      "target": "domain-accreditation",
+      "kind": "calls",
+      "relation": "calls",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "namespace": "platform-domain",
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-domain/topology.yaml",
+          "start_line": 17,
+          "end_line": 17,
+          "quote": "domain-organization calls domain-accreditation"
+        }
+      ]
+    },
+    {
+      "id": "edge-017",
+      "source": "domain-accreditation",
+      "target": "domain-approval",
+      "kind": "calls",
+      "relation": "calls",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "namespace": "platform-domain",
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-domain/topology.yaml",
+          "start_line": 18,
+          "end_line": 18,
+          "quote": "domain-accreditation calls domain-approval"
+        }
+      ]
+    },
+    {
+      "id": "edge-018",
+      "source": "domain-approval",
+      "target": "domain-compliance",
+      "kind": "calls",
+      "relation": "calls",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "namespace": "platform-domain",
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-domain/topology.yaml",
+          "start_line": 19,
+          "end_line": 19,
+          "quote": "domain-approval calls domain-compliance"
+        }
+      ]
+    },
+    {
+      "id": "edge-019",
+      "source": "domain-compliance",
+      "target": "domain-certificate",
+      "kind": "calls",
+      "relation": "calls",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "namespace": "platform-domain",
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-domain/topology.yaml",
+          "start_line": 20,
+          "end_line": 20,
+          "quote": "domain-compliance calls domain-certificate"
+        }
+      ]
+    },
+    {
+      "id": "edge-020",
+      "source": "domain-certificate",
+      "target": "domain-audit",
+      "kind": "calls",
+      "relation": "calls",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "namespace": "platform-domain",
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-domain/topology.yaml",
+          "start_line": 21,
+          "end_line": 21,
+          "quote": "domain-certificate calls domain-audit"
+        }
+      ]
+    },
+    {
+      "id": "edge-021",
+      "source": "domain-audit",
+      "target": "domain-document",
+      "kind": "calls",
+      "relation": "calls",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "namespace": "platform-domain",
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-domain/topology.yaml",
+          "start_line": 22,
+          "end_line": 22,
+          "quote": "domain-audit calls domain-document"
+        }
+      ]
+    },
+    {
+      "id": "edge-022",
+      "source": "domain-document",
+      "target": "domain-catalog",
+      "kind": "calls",
+      "relation": "calls",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "namespace": "platform-domain",
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-domain/topology.yaml",
+          "start_line": 23,
+          "end_line": 23,
+          "quote": "domain-document calls domain-catalog"
+        }
+      ]
+    },
+    {
+      "id": "edge-023",
+      "source": "domain-catalog",
+      "target": "domain-partner",
+      "kind": "calls",
+      "relation": "calls",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "namespace": "platform-domain",
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-domain/topology.yaml",
+          "start_line": 24,
+          "end_line": 24,
+          "quote": "domain-catalog calls domain-partner"
+        }
+      ]
+    },
+    {
+      "id": "edge-024",
+      "source": "domain-partner",
+      "target": "domain-user",
+      "kind": "calls",
+      "relation": "calls",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "namespace": "platform-domain",
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-domain/topology.yaml",
+          "start_line": 25,
+          "end_line": 25,
+          "quote": "domain-partner calls domain-user"
+        }
+      ]
+    },
+    {
+      "id": "edge-025",
+      "source": "domain-user",
+      "target": "domain-case",
+      "kind": "calls",
+      "relation": "calls",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "namespace": "platform-domain",
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-domain/topology.yaml",
+          "start_line": 26,
+          "end_line": 26,
+          "quote": "domain-user calls domain-case"
+        }
+      ]
+    },
+    {
+      "id": "edge-026",
+      "source": "domain-case",
+      "target": "domain-workflow",
+      "kind": "calls",
+      "relation": "calls",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "namespace": "platform-domain",
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-domain/topology.yaml",
+          "start_line": 27,
+          "end_line": 27,
+          "quote": "domain-case calls domain-workflow"
+        }
+      ]
+    },
+    {
+      "id": "edge-027",
+      "source": "domain-workflow",
+      "target": "domain-notification",
+      "kind": "calls",
+      "relation": "calls",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "namespace": "platform-domain",
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-domain/topology.yaml",
+          "start_line": 28,
+          "end_line": 28,
+          "quote": "domain-workflow calls domain-notification"
+        }
+      ]
+    },
+    {
+      "id": "edge-028",
+      "source": "domain-notification",
+      "target": "domain-billing",
+      "kind": "calls",
+      "relation": "calls",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "namespace": "platform-domain",
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-domain/topology.yaml",
+          "start_line": 29,
+          "end_line": 29,
+          "quote": "domain-notification calls domain-billing"
+        }
+      ]
+    },
+    {
+      "id": "edge-029",
+      "source": "domain-billing",
+      "target": "domain-entitlement",
+      "kind": "calls",
+      "relation": "calls",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "namespace": "platform-domain",
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-domain/topology.yaml",
+          "start_line": 30,
+          "end_line": 30,
+          "quote": "domain-billing calls domain-entitlement"
+        }
+      ]
+    },
+    {
+      "id": "edge-030",
+      "source": "domain-entitlement",
+      "target": "domain-policy",
+      "kind": "calls",
+      "relation": "calls",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "namespace": "platform-domain",
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-domain/topology.yaml",
+          "start_line": 31,
+          "end_line": 31,
+          "quote": "domain-entitlement calls domain-policy"
+        }
+      ]
+    },
+    {
+      "id": "edge-031",
+      "source": "domain-policy",
+      "target": "domain-risk",
+      "kind": "calls",
+      "relation": "calls",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "namespace": "platform-domain",
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-domain/topology.yaml",
+          "start_line": 32,
+          "end_line": 32,
+          "quote": "domain-policy calls domain-risk"
+        }
+      ]
+    },
+    {
+      "id": "edge-032",
+      "source": "infrastructure-auth",
+      "target": "infrastructure-storage",
+      "kind": "calls",
+      "relation": "calls",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "namespace": "platform-infra",
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-infra/topology.yaml",
+          "start_line": 33,
+          "end_line": 33,
+          "quote": "infrastructure-auth calls infrastructure-storage"
+        }
+      ]
+    },
+    {
+      "id": "edge-033",
+      "source": "infrastructure-storage",
+      "target": "infrastructure-messaging",
+      "kind": "calls",
+      "relation": "calls",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "namespace": "platform-infra",
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-infra/topology.yaml",
+          "start_line": 34,
+          "end_line": 34,
+          "quote": "infrastructure-storage calls infrastructure-messaging"
+        }
+      ]
+    },
+    {
+      "id": "edge-034",
+      "source": "infrastructure-messaging",
+      "target": "infrastructure-search",
+      "kind": "calls",
+      "relation": "calls",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "namespace": "platform-infra",
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-infra/topology.yaml",
+          "start_line": 35,
+          "end_line": 35,
+          "quote": "infrastructure-messaging calls infrastructure-search"
+        }
+      ]
+    },
+    {
+      "id": "edge-035",
+      "source": "infrastructure-search",
+      "target": "infrastructure-payment",
+      "kind": "calls",
+      "relation": "calls",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "namespace": "platform-infra",
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-infra/topology.yaml",
+          "start_line": 36,
+          "end_line": 36,
+          "quote": "infrastructure-search calls infrastructure-payment"
+        }
+      ]
+    },
+    {
+      "id": "edge-036",
+      "source": "infrastructure-payment",
+      "target": "infrastructure-observability",
+      "kind": "calls",
+      "relation": "calls",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "namespace": "platform-infra",
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-infra/topology.yaml",
+          "start_line": 37,
+          "end_line": 37,
+          "quote": "infrastructure-payment calls infrastructure-observability"
+        }
+      ]
+    },
+    {
+      "id": "edge-037",
+      "source": "infrastructure-observability",
+      "target": "infrastructure-scheduler",
+      "kind": "calls",
+      "relation": "calls",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "namespace": "platform-infra",
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-infra/topology.yaml",
+          "start_line": 38,
+          "end_line": 38,
+          "quote": "infrastructure-observability calls infrastructure-scheduler"
+        }
+      ]
+    },
+    {
+      "id": "edge-038",
+      "source": "infrastructure-scheduler",
+      "target": "infrastructure-archive",
+      "kind": "calls",
+      "relation": "calls",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "namespace": "platform-infra",
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-infra/topology.yaml",
+          "start_line": 39,
+          "end_line": 39,
+          "quote": "infrastructure-scheduler calls infrastructure-archive"
+        }
+      ]
+    },
+    {
+      "id": "edge-039",
+      "source": "shared-events",
+      "target": "shared-contracts",
+      "kind": "calls",
+      "relation": "calls",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "namespace": "platform-shared",
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-shared/topology.yaml",
+          "start_line": 40,
+          "end_line": 40,
+          "quote": "shared-events calls shared-contracts"
+        }
+      ]
+    },
+    {
+      "id": "edge-040",
+      "source": "shared-contracts",
+      "target": "shared-security",
+      "kind": "calls",
+      "relation": "calls",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "namespace": "platform-shared",
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-shared/topology.yaml",
+          "start_line": 41,
+          "end_line": 41,
+          "quote": "shared-contracts calls shared-security"
+        }
+      ]
+    },
+    {
+      "id": "edge-041",
+      "source": "shared-security",
+      "target": "shared-kernel",
+      "kind": "calls",
+      "relation": "calls",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "namespace": "platform-shared",
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-shared/topology.yaml",
+          "start_line": 42,
+          "end_line": 42,
+          "quote": "shared-security calls shared-kernel"
+        }
+      ]
+    },
+    {
+      "id": "edge-042",
+      "source": "module-reporting",
+      "target": "module-import",
+      "kind": "calls",
+      "relation": "calls",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "namespace": "platform-ops",
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-ops/topology.yaml",
+          "start_line": 43,
+          "end_line": 43,
+          "quote": "module-reporting calls module-import"
+        }
+      ]
+    },
+    {
+      "id": "edge-043",
+      "source": "module-import",
+      "target": "module-export",
+      "kind": "calls",
+      "relation": "calls",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "namespace": "platform-ops",
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-ops/topology.yaml",
+          "start_line": 44,
+          "end_line": 44,
+          "quote": "module-import calls module-export"
+        }
+      ]
+    },
+    {
+      "id": "edge-044",
+      "source": "module-export",
+      "target": "module-migration",
+      "kind": "calls",
+      "relation": "calls",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "namespace": "platform-ops",
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-ops/topology.yaml",
+          "start_line": 45,
+          "end_line": 45,
+          "quote": "module-export calls module-migration"
+        }
+      ]
+    },
+    {
+      "id": "edge-045",
+      "source": "api-gateway",
+      "target": "application-onboarding",
+      "kind": "calls",
+      "relation": "calls",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "namespace": "platform-edge",
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-edge/topology.yaml",
+          "start_line": 46,
+          "end_line": 46,
+          "quote": "api-gateway calls application-onboarding"
+        }
+      ]
+    },
+    {
+      "id": "edge-046",
+      "source": "api-public",
+      "target": "application-account",
+      "kind": "calls",
+      "relation": "calls",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "namespace": "platform-edge",
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-edge/topology.yaml",
+          "start_line": 47,
+          "end_line": 47,
+          "quote": "api-public calls application-account"
+        }
+      ]
+    },
+    {
+      "id": "edge-047",
+      "source": "api-partner",
+      "target": "application-organization",
+      "kind": "calls",
+      "relation": "calls",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "namespace": "platform-edge",
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-edge/topology.yaml",
+          "start_line": 48,
+          "end_line": 48,
+          "quote": "api-partner calls application-organization"
+        }
+      ]
+    },
+    {
+      "id": "edge-048",
+      "source": "api-admin",
+      "target": "application-compliance",
+      "kind": "calls",
+      "relation": "calls",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "namespace": "platform-edge",
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-edge/topology.yaml",
+          "start_line": 49,
+          "end_line": 49,
+          "quote": "api-admin calls application-compliance"
+        }
+      ]
+    },
+    {
+      "id": "edge-049",
+      "source": "api-catalog",
+      "target": "application-search",
+      "kind": "calls",
+      "relation": "calls",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "namespace": "platform-edge",
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-edge/topology.yaml",
+          "start_line": 50,
+          "end_line": 50,
+          "quote": "api-catalog calls application-search"
+        }
+      ]
+    },
+    {
+      "id": "edge-050",
+      "source": "api-notification",
+      "target": "application-compliance",
+      "kind": "calls",
+      "relation": "calls",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "namespace": "platform-edge",
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-edge/topology.yaml",
+          "start_line": 51,
+          "end_line": 51,
+          "quote": "api-notification calls application-compliance"
+        }
+      ]
+    },
+    {
+      "id": "edge-051",
+      "source": "application-onboarding",
+      "target": "domain-accreditation",
+      "kind": "calls",
+      "relation": "calls",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "namespace": "platform-core",
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-core/topology.yaml",
+          "start_line": 52,
+          "end_line": 52,
+          "quote": "application-onboarding calls domain-accreditation"
+        }
+      ]
+    },
+    {
+      "id": "edge-052",
+      "source": "application-account",
+      "target": "domain-identity",
+      "kind": "calls",
+      "relation": "calls",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "namespace": "platform-core",
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-core/topology.yaml",
+          "start_line": 53,
+          "end_line": 53,
+          "quote": "application-account calls domain-identity"
+        }
+      ]
+    },
+    {
+      "id": "edge-053",
+      "source": "application-user",
+      "target": "domain-user",
+      "kind": "calls",
+      "relation": "calls",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "namespace": "platform-core",
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-core/topology.yaml",
+          "start_line": 54,
+          "end_line": 54,
+          "quote": "application-user calls domain-user"
+        }
+      ]
+    },
+    {
+      "id": "edge-054",
+      "source": "application-organization",
+      "target": "domain-organization",
+      "kind": "calls",
+      "relation": "calls",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "namespace": "platform-core",
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-core/topology.yaml",
+          "start_line": 55,
+          "end_line": 55,
+          "quote": "application-organization calls domain-organization"
+        }
+      ]
+    },
+    {
+      "id": "edge-055",
+      "source": "application-approval",
+      "target": "domain-approval",
+      "kind": "calls",
+      "relation": "calls",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "namespace": "platform-core",
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-core/topology.yaml",
+          "start_line": 56,
+          "end_line": 56,
+          "quote": "application-approval calls domain-approval"
+        }
+      ]
+    },
+    {
+      "id": "edge-056",
+      "source": "application-compliance",
+      "target": "domain-compliance",
+      "kind": "calls",
+      "relation": "calls",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "namespace": "platform-core",
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-core/topology.yaml",
+          "start_line": 57,
+          "end_line": 57,
+          "quote": "application-compliance calls domain-compliance"
+        }
+      ]
+    },
+    {
+      "id": "edge-057",
+      "source": "application-certificate",
+      "target": "domain-certificate",
+      "kind": "calls",
+      "relation": "calls",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "namespace": "platform-core",
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-core/topology.yaml",
+          "start_line": 58,
+          "end_line": 58,
+          "quote": "application-certificate calls domain-certificate"
+        }
+      ]
+    },
+    {
+      "id": "edge-058",
+      "source": "application-workflow",
+      "target": "domain-workflow",
+      "kind": "calls",
+      "relation": "calls",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "namespace": "platform-core",
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-core/topology.yaml",
+          "start_line": 59,
+          "end_line": 59,
+          "quote": "application-workflow calls domain-workflow"
+        }
+      ]
+    },
+    {
+      "id": "edge-059",
+      "source": "application-document",
+      "target": "domain-document",
+      "kind": "calls",
+      "relation": "calls",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "namespace": "platform-core",
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-core/topology.yaml",
+          "start_line": 60,
+          "end_line": 60,
+          "quote": "application-document calls domain-document"
+        }
+      ]
+    },
+    {
+      "id": "edge-060",
+      "source": "application-search",
+      "target": "domain-catalog",
+      "kind": "calls",
+      "relation": "calls",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "namespace": "platform-core",
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-core/topology.yaml",
+          "start_line": 61,
+          "end_line": 61,
+          "quote": "application-search calls domain-catalog"
+        }
+      ]
+    },
+    {
+      "id": "edge-061",
+      "source": "domain-accreditation",
+      "target": "shared-events",
+      "kind": "calls",
+      "relation": "calls",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "namespace": "platform-domain",
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-domain/topology.yaml",
+          "start_line": 62,
+          "end_line": 62,
+          "quote": "domain-accreditation calls shared-events"
+        }
+      ]
+    },
+    {
+      "id": "edge-062",
+      "source": "domain-approval",
+      "target": "shared-contracts",
+      "kind": "calls",
+      "relation": "calls",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "namespace": "platform-domain",
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-domain/topology.yaml",
+          "start_line": 63,
+          "end_line": 63,
+          "quote": "domain-approval calls shared-contracts"
+        }
+      ]
+    },
+    {
+      "id": "edge-063",
+      "source": "domain-compliance",
+      "target": "shared-security",
+      "kind": "calls",
+      "relation": "calls",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "namespace": "platform-domain",
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-domain/topology.yaml",
+          "start_line": 64,
+          "end_line": 64,
+          "quote": "domain-compliance calls shared-security"
+        }
+      ]
+    },
+    {
+      "id": "edge-064",
+      "source": "domain-certificate",
+      "target": "shared-events",
+      "kind": "calls",
+      "relation": "calls",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "namespace": "platform-domain",
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-domain/topology.yaml",
+          "start_line": 65,
+          "end_line": 65,
+          "quote": "domain-certificate calls shared-events"
+        }
+      ]
+    },
+    {
+      "id": "edge-065",
+      "source": "domain-audit",
+      "target": "module-reporting",
+      "kind": "calls",
+      "relation": "calls",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "namespace": "platform-domain",
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-domain/topology.yaml",
+          "start_line": 66,
+          "end_line": 66,
+          "quote": "domain-audit calls module-reporting"
+        }
+      ]
+    },
+    {
+      "id": "edge-066",
+      "source": "infrastructure-auth",
+      "target": "shared-security",
+      "kind": "calls",
+      "relation": "calls",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "namespace": "platform-infra",
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-infra/topology.yaml",
+          "start_line": 67,
+          "end_line": 67,
+          "quote": "infrastructure-auth calls shared-security"
+        }
+      ]
+    },
+    {
+      "id": "edge-067",
+      "source": "infrastructure-storage",
+      "target": "shared-kernel",
+      "kind": "calls",
+      "relation": "calls",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "namespace": "platform-infra",
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-infra/topology.yaml",
+          "start_line": 68,
+          "end_line": 68,
+          "quote": "infrastructure-storage calls shared-kernel"
+        }
+      ]
+    },
+    {
+      "id": "edge-068",
+      "source": "infrastructure-messaging",
+      "target": "shared-events",
+      "kind": "calls",
+      "relation": "calls",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "namespace": "platform-infra",
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-infra/topology.yaml",
+          "start_line": 69,
+          "end_line": 69,
+          "quote": "infrastructure-messaging calls shared-events"
+        }
+      ]
+    },
+    {
+      "id": "edge-069",
+      "source": "infrastructure-search",
+      "target": "shared-contracts",
+      "kind": "calls",
+      "relation": "calls",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "namespace": "platform-infra",
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-infra/topology.yaml",
+          "start_line": 70,
+          "end_line": 70,
+          "quote": "infrastructure-search calls shared-contracts"
+        }
+      ]
+    },
+    {
+      "id": "edge-070",
+      "source": "module-import",
+      "target": "infrastructure-storage",
+      "kind": "calls",
+      "relation": "calls",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "namespace": "platform-ops",
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-ops/topology.yaml",
+          "start_line": 71,
+          "end_line": 71,
+          "quote": "module-import calls infrastructure-storage"
+        }
+      ]
+    },
+    {
+      "id": "edge-071",
+      "source": "module-export",
+      "target": "infrastructure-storage",
+      "kind": "calls",
+      "relation": "calls",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "namespace": "platform-ops",
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-ops/topology.yaml",
+          "start_line": 72,
+          "end_line": 72,
+          "quote": "module-export calls infrastructure-storage"
+        }
+      ]
+    },
+    {
+      "id": "edge-072",
+      "source": "module-reporting",
+      "target": "infrastructure-observability",
+      "kind": "calls",
+      "relation": "calls",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "namespace": "platform-ops",
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-ops/topology.yaml",
+          "start_line": 73,
+          "end_line": 73,
+          "quote": "module-reporting calls infrastructure-observability"
+        }
+      ]
+    },
+    {
+      "id": "edge-073",
+      "source": "module-migration",
+      "target": "infrastructure-storage",
+      "kind": "calls",
+      "relation": "calls",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "namespace": "platform-ops",
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-ops/topology.yaml",
+          "start_line": 74,
+          "end_line": 74,
+          "quote": "module-migration calls infrastructure-storage"
+        }
+      ]
+    },
+    {
+      "id": "edge-074",
+      "source": "application-onboarding",
+      "target": "channel-accreditation-submitted",
+      "kind": "publishes",
+      "relation": "publishes",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "namespace": "platform-infra",
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-infra/topology.yaml",
+          "start_line": 75,
+          "end_line": 75,
+          "quote": "application-onboarding publishes channel-accreditation-submitted"
+        }
+      ]
+    },
+    {
+      "id": "edge-075",
+      "source": "channel-accreditation-submitted",
+      "target": "domain-accreditation",
+      "kind": "consumes",
+      "relation": "consumes",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "namespace": "platform-infra",
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-infra/topology.yaml",
+          "start_line": 76,
+          "end_line": 76,
+          "quote": "channel-accreditation-submitted consumes domain-accreditation"
+        }
+      ]
+    },
+    {
+      "id": "edge-076",
+      "source": "channel-accreditation-submitted",
+      "target": "application-compliance",
+      "kind": "consumes",
+      "relation": "consumes",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "namespace": "platform-infra",
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-infra/topology.yaml",
+          "start_line": 77,
+          "end_line": 77,
+          "quote": "channel-accreditation-submitted consumes application-compliance"
+        }
+      ]
+    },
+    {
+      "id": "edge-077",
+      "source": "application-approval",
+      "target": "channel-approval-decided",
+      "kind": "publishes",
+      "relation": "publishes",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "namespace": "platform-infra",
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-infra/topology.yaml",
+          "start_line": 78,
+          "end_line": 78,
+          "quote": "application-approval publishes channel-approval-decided"
+        }
+      ]
+    },
+    {
+      "id": "edge-078",
+      "source": "channel-approval-decided",
+      "target": "domain-audit",
+      "kind": "consumes",
+      "relation": "consumes",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "namespace": "platform-infra",
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-infra/topology.yaml",
+          "start_line": 79,
+          "end_line": 79,
+          "quote": "channel-approval-decided consumes domain-audit"
+        }
+      ]
+    },
+    {
+      "id": "edge-079",
+      "source": "channel-approval-decided",
+      "target": "application-compliance",
+      "kind": "consumes",
+      "relation": "consumes",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "namespace": "platform-infra",
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-infra/topology.yaml",
+          "start_line": 80,
+          "end_line": 80,
+          "quote": "channel-approval-decided consumes application-compliance"
+        }
+      ]
+    },
+    {
+      "id": "edge-080",
+      "source": "application-certificate",
+      "target": "channel-certificate-issued",
+      "kind": "publishes",
+      "relation": "publishes",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "namespace": "platform-infra",
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-infra/topology.yaml",
+          "start_line": 81,
+          "end_line": 81,
+          "quote": "application-certificate publishes channel-certificate-issued"
+        }
+      ]
+    },
+    {
+      "id": "edge-081",
+      "source": "channel-certificate-issued",
+      "target": "domain-certificate",
+      "kind": "consumes",
+      "relation": "consumes",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "namespace": "platform-infra",
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-infra/topology.yaml",
+          "start_line": 82,
+          "end_line": 82,
+          "quote": "channel-certificate-issued consumes domain-certificate"
+        }
+      ]
+    },
+    {
+      "id": "edge-082",
+      "source": "channel-certificate-issued",
+      "target": "application-compliance",
+      "kind": "consumes",
+      "relation": "consumes",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "namespace": "platform-infra",
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-infra/topology.yaml",
+          "start_line": 83,
+          "end_line": 83,
+          "quote": "channel-certificate-issued consumes application-compliance"
+        }
+      ]
+    },
+    {
+      "id": "edge-083",
+      "source": "domain-compliance",
+      "target": "channel-compliance-alert",
+      "kind": "publishes",
+      "relation": "publishes",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "namespace": "platform-infra",
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-infra/topology.yaml",
+          "start_line": 84,
+          "end_line": 84,
+          "quote": "domain-compliance publishes channel-compliance-alert"
+        }
+      ]
+    },
+    {
+      "id": "edge-084",
+      "source": "channel-compliance-alert",
+      "target": "application-compliance",
+      "kind": "consumes",
+      "relation": "consumes",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "namespace": "platform-infra",
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-infra/topology.yaml",
+          "start_line": 85,
+          "end_line": 85,
+          "quote": "channel-compliance-alert consumes application-compliance"
+        }
+      ]
+    },
+    {
+      "id": "edge-085",
+      "source": "channel-compliance-alert",
+      "target": "module-reporting",
+      "kind": "consumes",
+      "relation": "consumes",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "namespace": "platform-infra",
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-infra/topology.yaml",
+          "start_line": 86,
+          "end_line": 86,
+          "quote": "channel-compliance-alert consumes module-reporting"
+        }
+      ]
+    },
+    {
+      "id": "edge-086",
+      "source": "domain-partner",
+      "target": "channel-partner-updated",
+      "kind": "publishes",
+      "relation": "publishes",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "namespace": "platform-infra",
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-infra/topology.yaml",
+          "start_line": 87,
+          "end_line": 87,
+          "quote": "domain-partner publishes channel-partner-updated"
+        }
+      ]
+    },
+    {
+      "id": "edge-087",
+      "source": "channel-partner-updated",
+      "target": "application-organization",
+      "kind": "consumes",
+      "relation": "consumes",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "namespace": "platform-infra",
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-infra/topology.yaml",
+          "start_line": 88,
+          "end_line": 88,
+          "quote": "channel-partner-updated consumes application-organization"
+        }
+      ]
+    },
+    {
+      "id": "edge-088",
+      "source": "channel-partner-updated",
+      "target": "domain-catalog",
+      "kind": "consumes",
+      "relation": "consumes",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "namespace": "platform-infra",
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-infra/topology.yaml",
+          "start_line": 89,
+          "end_line": 89,
+          "quote": "channel-partner-updated consumes domain-catalog"
+        }
+      ]
+    },
+    {
+      "id": "edge-089",
+      "source": "domain-accreditation",
+      "target": "schema-accreditation",
+      "kind": "writes",
+      "relation": "writes",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "namespace": "platform-data",
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-data/topology.yaml",
+          "start_line": 90,
+          "end_line": 90,
+          "quote": "domain-accreditation writes schema-accreditation"
+        }
+      ]
+    },
+    {
+      "id": "edge-090",
+      "source": "application-onboarding",
+      "target": "schema-accreditation",
+      "kind": "reads",
+      "relation": "reads",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "namespace": "platform-data",
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-data/topology.yaml",
+          "start_line": 91,
+          "end_line": 91,
+          "quote": "application-onboarding reads schema-accreditation"
+        }
+      ]
+    },
+    {
+      "id": "edge-091",
+      "source": "domain-organization",
+      "target": "schema-organization",
+      "kind": "writes",
+      "relation": "writes",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "namespace": "platform-data",
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-data/topology.yaml",
+          "start_line": 92,
+          "end_line": 92,
+          "quote": "domain-organization writes schema-organization"
+        }
+      ]
+    },
+    {
+      "id": "edge-092",
+      "source": "application-organization",
+      "target": "schema-organization",
+      "kind": "reads",
+      "relation": "reads",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "namespace": "platform-data",
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-data/topology.yaml",
+          "start_line": 93,
+          "end_line": 93,
+          "quote": "application-organization reads schema-organization"
+        }
+      ]
+    },
+    {
+      "id": "edge-093",
+      "source": "domain-approval",
+      "target": "schema-approval",
+      "kind": "writes",
+      "relation": "writes",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "namespace": "platform-data",
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-data/topology.yaml",
+          "start_line": 94,
+          "end_line": 94,
+          "quote": "domain-approval writes schema-approval"
+        }
+      ]
+    },
+    {
+      "id": "edge-094",
+      "source": "application-approval",
+      "target": "schema-approval",
+      "kind": "reads",
+      "relation": "reads",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "namespace": "platform-data",
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-data/topology.yaml",
+          "start_line": 95,
+          "end_line": 95,
+          "quote": "application-approval reads schema-approval"
+        }
+      ]
+    },
+    {
+      "id": "edge-095",
+      "source": "domain-certificate",
+      "target": "schema-certificate",
+      "kind": "writes",
+      "relation": "writes",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "namespace": "platform-data",
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-data/topology.yaml",
+          "start_line": 96,
+          "end_line": 96,
+          "quote": "domain-certificate writes schema-certificate"
+        }
+      ]
+    },
+    {
+      "id": "edge-096",
+      "source": "application-certificate",
+      "target": "schema-certificate",
+      "kind": "reads",
+      "relation": "reads",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "namespace": "platform-data",
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-data/topology.yaml",
+          "start_line": 97,
+          "end_line": 97,
+          "quote": "application-certificate reads schema-certificate"
+        }
+      ]
+    },
+    {
+      "id": "edge-097",
+      "source": "domain-audit",
+      "target": "schema-audit",
+      "kind": "writes",
+      "relation": "writes",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "namespace": "platform-data",
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-data/topology.yaml",
+          "start_line": 98,
+          "end_line": 98,
+          "quote": "domain-audit writes schema-audit"
+        }
+      ]
+    },
+    {
+      "id": "edge-098",
+      "source": "module-reporting",
+      "target": "schema-audit",
+      "kind": "reads",
+      "relation": "reads",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "namespace": "platform-data",
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-data/topology.yaml",
+          "start_line": 99,
+          "end_line": 99,
+          "quote": "module-reporting reads schema-audit"
+        }
+      ]
+    }
+  ]
+}

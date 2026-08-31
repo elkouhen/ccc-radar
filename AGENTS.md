@@ -47,11 +47,14 @@ test together.
    behavior change.
 4. Update `docs/SPEC-TECH.md` in the same change as any architectural or data
    model change.
-5. Record durable design decisions in `docs/ADR.md` instead of leaving them only
+5. Update the authoritative documentation in the same pass whenever an
+   algorithm changes, including its invariants, fallback behavior and
+   complexity or performance implications when relevant.
+6. Record durable design decisions in `docs/ADR.md` instead of leaving them only
    in commit messages.
-6. If a change in SystemLens affects the companion skill, update
+7. If a change in SystemLens affects the companion skill, update
    `../systemlens-skill/` in the same pass.
-7. Keep changes consistent with the existing codebase and ensure the code is
+8. Keep changes consistent with the existing codebase and ensure the code is
    correct, including its behavior, contracts, and edge cases.
 
 ## Non-negotiable engineering invariants

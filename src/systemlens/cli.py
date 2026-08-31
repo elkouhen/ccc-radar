@@ -57,6 +57,7 @@ from systemlens.render import (
     render_module_graph_html,
     render_module_graph_json,
     render_module_graph_text,
+    render_software_layers_html,
     render_modules_list_json,
     render_modules_list_text,
 )
@@ -81,7 +82,8 @@ export_app = typer.Typer(
     help=(
         "Exporter les graphes de dépendances d'architecture.\n\n"
         "Exemples : `systemlens export microservices --html graph.html`, "
-        "`systemlens export modules --html modules.html`."
+        "`systemlens export modules --html modules.html`, "
+        "`systemlens export layers --html layers.html`."
     )
 )
 topics_app = typer.Typer(
@@ -1465,16 +1467,27 @@ def export_microservices_cmd(
             ),
         )
     output = outputs[0]
+    fact_nodes = [
+        fact for fact in (getattr(graph_data, "graph_facts", []) or [])
+        if fact.fact_type == "node" and fact.kind in {"service", "microservice"}
+    ]
+    fact_edges = [
+        fact for fact in (getattr(graph_data, "graph_facts", []) or [])
+        if fact.fact_type == "edge"
+    ]
+    fact_service_names = {str(fact.name) for fact in fact_nodes if fact.name}
+    rendered_service_count = len(set(graph_data.services_by_name) | fact_service_names)
+    rendered_edge_count = len(graph_data.edges) + len(fact_edges)
     if c4 is not None:
         typer.echo(
             f"Projet LikeC4 écrit dans {output} "
-            f"({len(graph_data.services_by_name)} services, {len(graph_data.edges)} arêtes)."
+            f"({rendered_service_count} services, {rendered_edge_count} arêtes)."
         )
         typer.echo(f"Démarrer le site : `cd {output} && npm install && npm run dev`.")
     else:
         typer.echo(
             f"Export microservices écrit dans {output} "
-            f"({len(graph_data.services_by_name)} services, {len(graph_data.edges)} arêtes)."
+            f"({rendered_service_count} services, {rendered_edge_count} arêtes)."
         )
     if graph_data.result["note"]:
         typer.echo(str(graph_data.result["note"]))
@@ -1510,6 +1523,48 @@ def export_modules_cmd(
     typer.echo(
         f"Export modules écrit dans {html} "
         f"({len(modules)} modules, {len(dependencies)} dépendances)."
+    )
+
+
+@export_app.command(name="layers")
+def export_layers_cmd(
+    html: Optional[Path] = typer.Option(
+        None, "--html", help="Fichier HTML des couches logicielles à produire."
+    ),
+) -> None:
+    """Exporter une vue dédiée des couches logicielles des modules.
+
+    Les modules ``domain-*`` sont classés dans la couche Domain. Les autres
+    couches sont déduites de préfixes/suffixes explicites et du statut
+    applicatif indexé.
+
+    Exemple : `systemlens export layers --html layers.html`.
+    """
+    if html is None:
+        typer.echo("`systemlens export layers` requiert --html FILE.", err=True)
+        raise typer.Exit(code=2)
+    repo_root = Path.cwd()
+    if not db_path(repo_root).is_file():
+        typer.echo(
+            "Index absent : lancez d'abord `systemlens index` dans ce répertoire.",
+            err=True,
+        )
+        raise typer.Exit(code=2)
+    try:
+        with Store(repo_root, readonly=True) as store:
+            modules = store.all_modules()
+            dependencies = store.all_module_dependencies()
+            endpoints = store.all_endpoints()
+    except StoreError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=2) from exc
+    html.write_text(
+        render_software_layers_html(modules, dependencies, endpoints), encoding="utf-8"
+    )
+    domain_count = sum(module.name.casefold().startswith("domain-") for module in modules)
+    typer.echo(
+        f"Export layers écrit dans {html} "
+        f"({len(modules)} modules, {domain_count} modules Domain, {len(dependencies)} dépendances)."
     )
 
 
