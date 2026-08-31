@@ -744,3 +744,28 @@ def test_graph_html_microservice_complexity_counts_distinct_direct_clients() -> 
     assert nodes["microservice:payments"]["complexity"]["breakdown"] == {
         "http": 1, "kafka": 1, "mongodb": 0
     }
+
+
+def test_graph_html_keeps_kafka_topic_in_producer_namespace_cluster() -> None:
+    producer = _kafka_endpoint("produce", "OrderCreated", "Publisher.java")
+    consumer = _kafka_endpoint("consume", "OrderCreated", "Consumer.java")
+    parent = Path("/workspace/PORTAIL")
+    producer_module = DiscoveredModule(
+        name="orders", path=parent / "orders", build_system="maven", version=None,
+        kind="application", starts_application=True, configuration_example="",
+    )
+    consumer_module = DiscoveredModule(
+        name="payments", path=parent / "payments", build_system="maven", version=None,
+        kind="application", starts_application=True, configuration_example="",
+    )
+    graph_data = _html_graph_data(render_graph_html(
+        {"orders": [producer], "payments": [consumer]},
+        [GraphEdge("kafka", "orders", "payments", producer, consumer)],
+        modules_by_service={"orders": producer_module, "payments": consumer_module},
+        build_modules=[producer_module, consumer_module],
+    ))
+    topic = next(node for node in graph_data["nodes"] if node["kind"] == "kafka_topic")
+    producer_node = next(node for node in graph_data["nodes"] if node["name"] == "orders")
+    assert producer_node["project_namespace"] == "PORTAIL"
+    assert "architecture_namespace" not in topic
+    assert all(topic["id"] not in group["children"] for group in graph_data["groups"])

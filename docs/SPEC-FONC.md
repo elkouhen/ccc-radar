@@ -208,8 +208,10 @@ The cluster view MUST preserve these visual invariants:
   non-overlap rule applies between sibling clusters, not between a parent and
   its descendants.
 - A project-group parent MUST remain attached to the namespace of its owning
-  projects. Relation targets from another namespace MUST NOT enlarge that
-  parent across unrelated namespace clusters.
+  projects and MUST contain only those owning projects. Resources MUST remain
+  in the namespace cluster of their producing microservice; relation targets
+  MUST NOT be added as children of the structural parent or enlarge it across
+  unrelated namespace clusters.
 - Cluster bounds MUST be calculated from graph-coordinate bounds and projected
   after camera changes. Parent bounds MUST be recomputed from the projected
   child bounds, so zooming cannot make a child escape its parent or make the

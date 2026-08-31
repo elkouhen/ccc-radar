@@ -1057,16 +1057,6 @@ def render_graph_html(
         for parent, children in sorted(modules_by_parent.items(), key=lambda item: str(item[0]))
         if len(children) >= 2
     ]
-    service_ids = set(service_node_ids)
-    for group in project_groups:
-        project_ids = set(group["children"])
-        resource_ids = {
-            str(link["target"])
-            for link in links
-            if str(link["source"]) in project_ids
-            and str(link["target"]) not in service_ids
-        }
-        group["children"] = sorted(project_ids | resource_ids)
     if kafka_dto_definitions is None:
         kafka_dtos, project_dto_definitions = kafka_dto_views(endpoints_by_service)
     else:

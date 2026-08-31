@@ -291,8 +291,8 @@ projected child namespace bounds plus title/padding margins; this explicit
 hierarchy prevents a parent from being smaller than a nested cluster after
 zooming. Sibling rectangles remain separated, while parent/descendant
 intersection is intentional. Project groups carry their owning project
-namespace; relation targets are retained as graph children but cannot expand
-the parent box into another namespace. Resource nodes resolve their cluster
+namespace. Structural project groups contain only
+their owning projects; resource nodes resolve their cluster
 from incoming producer edges before consulting resource metadata; this keeps
 topics and collections with their producing microservice. The layered view
 reuses this
@@ -303,7 +303,7 @@ top-to-bottom layer bands. External microservices use the dedicated `external`
 layer at the bottom and are not part of the internal dependency order. ELK may
 provide the initial compound layout, but the deterministic layer-aware pack is
 the final collision guard and remains valid when ELK fails. The layered packer
-checks each cluster envelope after placement. Clusters that exceed the vertical
+ checks each cluster envelope after placement. Clusters that exceed the vertical
 safety envelope are widened by adding columns, then the row width and all
 positions are recomputed. This trades height for diagram width to preserve
 layer separation.
