@@ -216,6 +216,9 @@ enum PaymentStatus { AUTHORIZED, DECLINED }
     assert "layeredClusterView = layout === \"elk\"" in document
     assert "packLayeredClusterGraphPositions();" in document
     assert "const idsByLayer = new Map" in document
+    assert "if (!nodePoints.size)" in document
+    assert "if (!layerCenters.length) return" in document
+    assert "allLayerPoints.length" in document
     assert "if (layeredClusterView)" in document
     assert "const projectedBounds = viewportBoundsFromGraphBounds" in document
     assert "function namespaceForNode(node)" in document

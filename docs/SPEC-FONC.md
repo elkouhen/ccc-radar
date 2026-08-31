@@ -172,6 +172,10 @@ The HTML architecture view MUST preserve these visual invariants:
 - Selecting a layer or namespace MUST rebuild the visible graph without
   turning remaining cards white, losing isolated services, or leaving stale
   containers on screen.
+- Changing node-type or relation filters MUST remain valid when no
+  microservice layer is visible or when the filtered graph is empty; the
+  renderer MUST clear stale layer and cluster containers without producing
+  invalid coordinates.
 - The layered view extends the namespace-cluster packing: each canonical
   software layer is a separate horizontal band ordered from top to bottom,
   and namespaces are packed inside that band. ELK compound-node placement is

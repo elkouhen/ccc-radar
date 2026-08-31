@@ -1351,9 +1351,15 @@
         }));
         const pointsByLayer = new Map(layerCenters.map(layer => [layer.id, layer.items.map(item => item.point)]));
         const idsByLayer = new Map(layerCenters.map(layer => [layer.id, layer.items.map(item => item.id)]));
+        if (!nodePoints.size) {
+          graphLayersOverlay.replaceChildren();
+          graphGroupsOverlay.replaceChildren();
+          return;
+        }
         [...nodePoints.entries()]
           .filter(([id]) => nodeDataById.get(id)?.kind !== "microservice")
           .forEach(([id, point]) => {
+            if (!layerCenters.length) return;
             const nearest = layerCenters.reduce((best, layer) => (
               Math.abs(layer.center - point.y) < Math.abs(best.center - point.y) ? layer : best
             ), layerCenters[0]);
@@ -1363,8 +1369,12 @@
             }
           });
         const allLayerPoints = [...pointsByLayer.values()].flat();
-        const globalMinX = Math.max(0, Math.min(...allLayerPoints.map(point => point.x)) - 92);
-        const globalMaxX = Math.min(window.innerWidth, Math.max(...allLayerPoints.map(point => point.x)) + 92);
+        const globalMinX = allLayerPoints.length
+          ? Math.max(0, Math.min(...allLayerPoints.map(point => point.x)) - 92)
+          : 0;
+        const globalMaxX = allLayerPoints.length
+          ? Math.min(window.innerWidth, Math.max(...allLayerPoints.map(point => point.x)) + 92)
+          : window.innerWidth;
         const viewportBoundsFromGraphBounds = (bounds) => {
           const corners = [
             graphPointToViewport({ x: bounds.minX, y: bounds.minY }),
@@ -1405,6 +1415,9 @@
             contentBottom: Math.max(...points.map(point => point.y)) + 44,
           };
         });
+        if (!layerCenters.length) {
+          graphLayersOverlay.replaceChildren();
+        }
         if (!clusteredView || layeredClusterView) layerCenters.forEach((layer, index) => {
           const bounds = layerBounds[index];
           const previous = layerBounds[index - 1];
