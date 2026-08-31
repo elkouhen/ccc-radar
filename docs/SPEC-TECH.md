@@ -290,6 +290,9 @@ Camera updates during pan and zoom are coalesced to the next animation frame.
 The Sigma canvas and the HTML card/cluster overlays are therefore recomputed
 from one camera state per frame, preventing partially rebuilt containers from
 appearing while the user drags the namespace view.
+The ELK layer layout loads independently from the ForceAtlas2 and Noverlap
+modules used by the graph layouts, so unrelated dynamic imports cannot keep
+the layer view in a pending state.
 After force-based placement, the graph view runs a projected-card collision pass
 against the HTML card envelope; this covers residual diagonal intersections that
 Sigma's compact node-radius no-overlap pass cannot detect.

@@ -2449,7 +2449,15 @@
       // Cluster placement is deterministic and local; it does not need any
       // external layout library. Keep the library loading requirement for
       // ForceAtlas2/Noverlap and the ELK layer view only.
-      const libraries = layout === "cluster" ? {} : await layoutLibraries;
+      // The layer view only needs ELK. Do not make it wait for the dynamic
+      // ForceAtlas2/Noverlap imports used by the other views: while those
+      // imports are pending, ELK layout completion (and therefore stable pan
+      // interaction) could be delayed indefinitely.
+      const libraries = layout === "cluster"
+        ? {}
+        : layout === "elk"
+          ? { elk: typeof window.ELK === "function" ? new window.ELK() : null }
+          : await layoutLibraries;
       if (request !== layoutRequest) return;
       if (libraries === null && layout !== "cluster") {
         layoutStatus.textContent = "Les dispositions du graphe sont indisponibles ; la disposition initiale est conservee.";

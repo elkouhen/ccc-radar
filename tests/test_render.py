@@ -241,7 +241,9 @@ enum PaymentStatus { AUTHORIZED, DECLINED }
     assert 'group.namespace === "root" ? "ROOT" : group.namespace' in document
     assert "left: 50%; max-width: calc(100% - 20px)" in document
     assert "left: 50%; max-width: calc(100% - 26px)" in document
-    assert 'const libraries = layout === "cluster" ? {} : await layoutLibraries' in document
+    assert 'const libraries = layout === "cluster"' in document
+    assert '? { elk: typeof window.ELK === "function" ? new window.ELK() : null }' in document
+    assert ': await layoutLibraries;' in document
     assert "async function applyFcoseClusterLayout()" in document
     assert 'const nextLayout = !layeredView' in document
     assert '? "cluster"' in document
