@@ -253,6 +253,8 @@ enum PaymentStatus { AUTHORIZED, DECLINED }
     assert "enableCameraPanning: false" in document
     assert "inertiaDuration: 0" in document
     assert "inertiaRatio: 0" in document
+    assert "const cameraZoomedOut = lastCameraRatio !== null" in document
+    assert "if (cameraZoomedOut && requiredZoomIn > 1.001" in document
     assert "Connectivité relative :" in document
     assert "const visualNodeKind = node" in document
     assert "Namespace architectural" not in document

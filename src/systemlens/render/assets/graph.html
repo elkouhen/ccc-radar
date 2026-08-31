@@ -1188,6 +1188,7 @@
     let layeredClusterView = false;
     let clusterLayoutPositions = new Map();
     let cameraFitAdjusting = false;
+    let lastCameraRatio = null;
     let graphPanCleanup = null;
     let activeLayout = "forceatlas2-noverlap";
     function rebuildGraph() {
@@ -1305,6 +1306,10 @@
         // Keep the shared card size stable. If a manual zoom-out would make
         // two projected card envelopes intersect, clamp the camera instead
         // of shrinking the cards or changing the layout unexpectedly.
+        const cameraRatio = renderer.getCamera().getState().ratio;
+        const cameraZoomedOut = lastCameraRatio !== null
+          && cameraRatio > lastCameraRatio + 0.0001;
+        lastCameraRatio = cameraRatio;
         const cardWidth = 110 * .4;
         const cardHeight = 70 * .4;
         const cardGap = 4;
@@ -1326,7 +1331,7 @@
             );
           }
         }
-        if (requiredZoomIn > 1.001 && !cameraFitAdjusting) {
+        if (cameraZoomedOut && requiredZoomIn > 1.001 && !cameraFitAdjusting) {
           cameraFitAdjusting = true;
           const camera = renderer.getCamera();
           const state = camera.getState();
@@ -2434,6 +2439,7 @@
     async function applyLayout(layout) {
       const request = ++layoutRequest;
       activeLayout = layout;
+      lastCameraRatio = null;
       const label = layoutLabels.get(layout);
       const nextLayeredView = ["elk", "cluster"].includes(layout);
       const switchingView = layeredView !== nextLayeredView || clusteredView !== (layout === "cluster");

@@ -142,6 +142,8 @@ Double-clicking MUST NOT change the camera zoom accidentally after a pan;
 zoom remains available through the wheel and the explicit zoom controls.
 Releasing a pan MUST stop the camera immediately; no inertial continuation is
 allowed.
+Automatic collision protection MUST NOT zoom the camera during a pan; it may
+only constrain an explicit zoom-out operation.
 For the graph export, a namespace is the parent directory containing one or
 more projects/modules; Kubernetes namespaces are retained as metadata only.
 Projects located directly at the indexed repository root are assigned to the

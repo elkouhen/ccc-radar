@@ -286,6 +286,8 @@ The HTML renderer keeps graph coordinates as the source of truth for layout.
 The shared card size remains stable during navigation; when a zoom-out would
 make projected card envelopes intersect, the camera ratio is clamped to the
 last safe level instead of shrinking cards or moving the layout.
+This protection is gated on an actual increase of the camera ratio (zoom-out),
+so camera translations caused by panning never trigger an automatic zoom.
 Camera updates during pan and zoom are coalesced to the next animation frame.
 The Sigma canvas and the HTML card/cluster overlays are therefore recomputed
 from one camera state per frame, preventing partially rebuilt containers from
