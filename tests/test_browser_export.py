@@ -142,9 +142,11 @@ def _assert_pan_moves_cluster_overlays_as_one_surface(page) -> None:
         })"""
     )
     assert before
-    page.mouse.move(980, 80)
+    start = page.locator(".graph-node-card-label").first.bounding_box()
+    assert start
+    page.mouse.move(start["x"] + start["width"] / 2, start["y"] + start["height"] / 2)
     page.mouse.down()
-    page.mouse.move(900, 145, steps=10)
+    page.mouse.move(start["x"] + start["width"] / 2 - 80, start["y"] + start["height"] / 2 + 65, steps=10)
     page.mouse.up()
     page.wait_for_timeout(250)
     after = page.evaluate(

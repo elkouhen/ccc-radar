@@ -1659,34 +1659,14 @@
           label.append(icon);
           label.append(name, kind);
           // Cards sit above Sigma's canvas and therefore normally consume the
-          // pointer stream. Relay a drag to the canvas so panning also works
-          // when it starts on a card, while preserving a plain click for node
-          // selection.
+          // pointer stream. Pan the camera directly when a drag starts on a
+          // card, while preserving a plain click for node selection. Keeping
+          // the initial camera state fixed avoids jumps when overlays are
+          // rebuilt during the drag.
           let forwardedPointer = null;
           let suppressNextCardClick = false;
-          const graphCanvas = document.getElementById("graph");
-          const relayPointer = (type, event) => {
-            graphCanvas.dispatchEvent(new PointerEvent(type, {
-              bubbles: true,
-              cancelable: true,
-              pointerId: event.pointerId,
-              pointerType: event.pointerType,
-              isPrimary: event.isPrimary,
-              button: event.button,
-              buttons: event.buttons,
-              clientX: event.clientX,
-              clientY: event.clientY,
-              screenX: event.screenX,
-              screenY: event.screenY,
-              ctrlKey: event.ctrlKey,
-              shiftKey: event.shiftKey,
-              altKey: event.altKey,
-              metaKey: event.metaKey,
-            }));
-          };
           const finishForwardedPointer = event => {
             if (!forwardedPointer) return;
-            relayPointer("pointerup", event);
             const wasDrag = forwardedPointer.moved;
             forwardedPointer = null;
             suppressNextCardClick = wasDrag;
@@ -1702,7 +1682,16 @@
               event.clientX - forwardedPointer.startX,
               event.clientY - forwardedPointer.startY,
             ) > 3) forwardedPointer.moved = true;
-            relayPointer("pointermove", event);
+            if (!forwardedPointer.moved) return;
+            const camera = renderer.getCamera();
+            const state = forwardedPointer.cameraState;
+            const width = Math.max(renderer.width, 1);
+            const height = Math.max(renderer.height, 1);
+            camera.setState({
+              ...state,
+              x: state.x - (2 * (event.clientX - forwardedPointer.startX) * state.ratio) / width,
+              y: state.y + (2 * (event.clientY - forwardedPointer.startY) * state.ratio) / height,
+            });
           };
           label.addEventListener("pointerdown", event => {
             if (event.button !== 0 || forwardedPointer) return;
@@ -1711,11 +1700,11 @@
               startX: event.clientX,
               startY: event.clientY,
               moved: false,
+              cameraState: renderer.getCamera().getState(),
             };
             event.preventDefault();
             event.stopPropagation();
             nodeLabelOverlay.style.pointerEvents = "none";
-            relayPointer("pointerdown", event);
             window.addEventListener("pointermove", moveForwardedPointer, true);
             window.addEventListener("pointerup", finishForwardedPointer, true);
             window.addEventListener("pointercancel", finishForwardedPointer, true);
