@@ -150,10 +150,11 @@ attributed to the module containing the declaration while the contract source
 path stays evidence.
 
 With Strategy1, software-layer classification additionally maps project
-namespace `PORTAIL` to the API layer and the `DOMAIN-*` module convention to
-the Domain layer. Project namespaces are parent directories containing
-projects; Kubernetes namespaces are not used for this classification. These
-mappings are disabled for the default profile.
+namespace `PORTAIL` to API, `CYCLE-DE-VIE` to Orchestration, `DOMAIN-*` to
+Domain, and the documented layer-name prefixes/suffixes to their matching
+layers. Project namespaces are parent directories containing projects;
+Kubernetes namespaces are not used for this classification. These mappings
+are disabled for the default profile.
 
 Module discovery also inventories every valid YAML or JSON OpenAPI document
 under a module's own `src/main/resources/openapi/` directory, regardless of
@@ -296,9 +297,10 @@ from incoming producer edges before consulting resource metadata; this keeps
 topics and collections with their producing microservice. The layered view
 reuses this
 packer with an additional grouping key: namespaces are first grouped by the
-canonical software-layer order (`api`, `application`, `orchestration`,
-`infrastructure`, `shared`, `module`, `domain`, `persistence`), producing top-to-bottom layer
-bands. ELK may
+canonical internal software-layer order (`api`, `orchestration`, `application`,
+`infrastructure`, `domain`, `persistence`), producing
+top-to-bottom layer bands. External microservices use the dedicated `external`
+layer and are not part of the internal dependency order. ELK may
 provide the initial compound layout, but the deterministic layer-aware pack is
 the final collision guard and remains valid when ELK fails.
 

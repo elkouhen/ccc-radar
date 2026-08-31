@@ -1084,7 +1084,7 @@
       // Preserve the architectural reading after the force calculation:
       // each software layer occupies a horizontal row, with domain at the
       // bottom. Resources without a layer follow the services they connect.
-      const layerOrder = ["api", "application", "orchestration", "infrastructure", "shared", "module", "domain", "persistence"];
+      const layerOrder = ["external", "api", "orchestration", "application", "infrastructure", "domain", "persistence"];
       const cardSpacingX = 4.0;
       const cardSpacingY = 2.6;
       const nodesByLayer = new Map(layerOrder.map(layer => [layer, []]));
@@ -1096,7 +1096,7 @@
           .filter(link => link.source === node?.id || link.target === node?.id)
           .map(link => layoutById.get(link.source === node.id ? link.target : link.source)?.layer)
           .filter(layer => nodesByLayer.has(layer));
-        return relatedLayers[0] || "module";
+        return relatedLayers[0] || "application";
       };
       layoutNodes.forEach(node => {
         if (node.kind === "microservice" && nodesByLayer.has(node.layer)) nodesByLayer.get(node.layer).push(node);
@@ -1253,7 +1253,7 @@
         // actual graph geometry, while cards use a deterministic screen grid
         // with five columns and a measured gap, so their HTML rectangles do
         // not overlap even when the graph is dense.
-        const layerOrder = ["api", "application", "orchestration", "infrastructure", "shared", "module", "domain", "persistence"];
+        const layerOrder = ["external", "api", "orchestration", "application", "infrastructure", "domain", "persistence"];
         if (!layeredView) {
           overlayLayoutApplied = false;
         } else if (clusteredView || layeredClusterView) {
@@ -1275,7 +1275,7 @@
         });
         const nearestLayer = point => [...serviceCenters.entries()].reduce((best, entry) => (
           Math.abs(entry[1] - point.y) < Math.abs(best[1] - point.y) ? entry : best
-        ), [...serviceCenters.entries()][0])?.[0] || "module";
+        ), [...serviceCenters.entries()][0])?.[0] || "application";
         nodePoints.forEach((point, id) => {
           const node = nodeDataById.get(id);
           const layer = node?.architecture_layer && layerItems.has(node.architecture_layer)
@@ -1338,7 +1338,7 @@
           graphGroupsOverlay.replaceChildren();
         } else {
         graphLayersOverlay.replaceChildren();
-        const layerColors = { api: "#0891b2", application: "#2563eb", orchestration: "#9333ea", infrastructure: "#d97706", shared: "#64748b", module: "#475569", domain: "#7c3aed", persistence: "#0f766e" };
+        const layerColors = { external: "#64748b", api: "#0891b2", application: "#2563eb", orchestration: "#9333ea", infrastructure: "#d97706", shared: "#64748b", module: "#475569", domain: "#7c3aed", persistence: "#0f766e" };
         const visibleServices = [...nodePoints.entries()]
           .map(([id, point]) => ({ id, point, node: nodeDataById.get(id) }))
           .filter(item => item.node?.kind === "microservice" && item.node.layer);
@@ -1730,7 +1730,7 @@
       });
     }
     function packLayeredClusterGraphPositions() {
-      const layerOrder = ["api", "application", "orchestration", "infrastructure", "shared", "module", "domain", "persistence"];
+      const layerOrder = ["external", "api", "orchestration", "application", "infrastructure", "domain", "persistence"];
       const groupsByLayer = new Map(layerOrder.map(layer => [layer, new Map()]));
       const layerForNode = node => {
         const data = nodeDataById.get(node);
@@ -1739,7 +1739,7 @@
         const neighbourLayer = network.neighbors(node)
           .map(neighbour => nodeDataById.get(neighbour)?.layer)
           .find(layer => groupsByLayer.has(layer));
-        return neighbourLayer || "module";
+        return neighbourLayer || "application";
       };
       network.forEachNode(node => {
         const layer = layerForNode(node);
@@ -1883,7 +1883,7 @@
       }
     }
     async function applyElkLayout(libraries) {
-      const layerOrder = ["api", "application", "orchestration", "infrastructure", "shared", "module", "domain", "persistence"];
+      const layerOrder = ["external", "api", "orchestration", "application", "infrastructure", "domain", "persistence"];
       const groups = new Map(layerOrder.map(layer => [layer, new Map()]));
       const layerForNode = node => {
         const data = nodeDataById.get(node);
@@ -1892,7 +1892,7 @@
         const neighbourLayers = network.neighbors(node)
           .map(neighbour => nodeDataById.get(neighbour)?.layer)
           .filter(layer => groups.has(layer));
-        return neighbourLayers[0] || "module";
+        return neighbourLayers[0] || "application";
       };
       network.forEachNode(node => {
         const layer = layerForNode(node);

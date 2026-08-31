@@ -206,6 +206,7 @@ enum PaymentStatus { AUTHORIZED, DECLINED }
     assert "function packLayeredClusterGraphPositions()" in document
     assert '"persistence"]' in document
     assert '"orchestration"' in document
+    assert 'external: "#64748b"' in document
     assert "layeredClusterView = layout === \"elk\"" in document
     assert "packLayeredClusterGraphPositions();" in document
     assert "function namespaceForNode(node)" in document

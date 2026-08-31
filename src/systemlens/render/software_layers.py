@@ -12,25 +12,23 @@ _SOFTWARE_LAYERS_HTML_TEMPLATE = (
 ).read_text(encoding="utf-8")
 
 # Render order is top-to-bottom. Persistence is deliberately the lowest layer.
-_LAYER_ORDER = ("api", "application", "orchestration", "infrastructure", "shared", "module", "domain", "persistence")
+_LAYER_ORDER = ("external", "api", "orchestration", "application", "infrastructure", "domain", "persistence")
 _LAYER_LABELS = {
     "application": "Application",
+    "external": "External services",
     "domain": "Domain",
     "api": "API / contracts",
     "orchestration": "Orchestration",
     "infrastructure": "Infrastructure",
-    "shared": "Shared",
-    "module": "Other modules",
     "persistence": "Persistence",
 }
 _LAYER_COLORS = {
     "application": "#2563eb",
+    "external": "#64748b",
     "domain": "#7c3aed",
     "api": "#0891b2",
     "orchestration": "#9333ea",
     "infrastructure": "#d97706",
-    "shared": "#64748b",
-    "module": "#475569",
     "persistence": "#0f766e",
 }
 
@@ -43,28 +41,34 @@ def software_layer(
 ) -> str:
     """Classify a module conservatively for the dedicated layer view.
 
-    Strategy1 adds repository-specific conventions: the ``PORTAIL`` project
-    namespace identifies API modules and the ``DOMAIN-*`` name identifies
-    Domain modules. Without Strategy1, these names remain ordinary module
-    names and do not alter the portable default classification.
+    Strategy1 adds repository-specific conventions: project namespaces
+    ``PORTAIL`` and ``CYCLE-DE-VIE`` identify API and Orchestration modules,
+    ``DOMAIN-*`` identifies Domain modules, and layer-name prefixes/suffixes
+    identify their matching layers. Without Strategy1, these names remain
+    ordinary module names and do not alter the portable default classification.
     """
     name = module.name.casefold()
     if strategy1 and project_namespace(module, root_path).casefold() == "portail":
         return "api"
     if strategy1 and project_namespace(module, root_path).casefold() == "cycle-de-vie":
         return "orchestration"
+    if strategy1 and name.startswith(("persistence-", "repository-", "storage-", "data-")) or (
+        strategy1 and name.endswith(("-persistence", "-repository", "-storage", "-data"))
+    ):
+        return "persistence"
     if strategy1 and name.startswith("domain-"):
         return "domain"
-    if name.startswith(("persistence-", "repository-", "storage-", "data-")) or name.endswith(("-persistence", "-repository", "-storage", "-data")):
-        return "persistence"
+    if strategy1 and (
+        name.startswith(("api-", "contract-", "contracts-", "infra-", "infrastructure-", "shared-", "common-", "lib-", "library-"))
+        or name.endswith(("-api", "-contract", "-contracts", "-infra", "-infrastructure"))
+    ):
+        if name.startswith(("api-", "contract-", "contracts-")) or name.endswith(("-api", "-contract", "-contracts")):
+            return "api"
+        if name.startswith(("infra-", "infrastructure-")) or name.endswith(("-infra", "-infrastructure")):
+            return "infrastructure"
+        return "shared"
     if module.starts_application:
         return "application"
-    if name.startswith(("api-", "contract-", "contracts-")) or name.endswith(("-api", "-contract", "-contracts")):
-        return "api"
-    if name.startswith(("infra-", "infrastructure-")) or name.endswith(("-infra", "-infrastructure")):
-        return "infrastructure"
-    if name.startswith(("shared-", "common-", "lib-", "library-")):
-        return "shared"
     return "module"
 
 
@@ -77,8 +81,12 @@ def render_software_layers_html(
     root_path: Path | None = None,
 ) -> str:
     """Render modules in explicit software-layer columns."""
+    classified_modules = [
+        (module, software_layer(module, strategy1=strategy1, root_path=root_path))
+        for module in modules
+    ]
     ordered_modules = sorted(
-        modules,
+        [module for module, layer in classified_modules if layer in _LAYER_ORDER],
         key=lambda item: (
             software_layer(item, strategy1=strategy1, root_path=root_path),
             module_identity(item),

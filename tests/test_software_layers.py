@@ -34,12 +34,19 @@ def test_strategy1_layer_conventions_are_opt_in() -> None:
     assert software_layer(portail, strategy1=True) == "api"
     assert software_layer(cycle, strategy1=True) == "orchestration"
     assert software_layer(_module("orders-service", starts_application=True)) == "application"
-    assert software_layer(_module("orders-api")) == "api"
-    assert software_layer(_module("orders-repository")) == "persistence"
+    assert software_layer(_module("orders-api")) == "module"
+    assert software_layer(_module("orders-api"), strategy1=True) == "api"
+    assert software_layer(_module("orders-repository")) == "module"
+    assert software_layer(_module("orders-repository"), strategy1=True) == "persistence"
 
 
 def test_software_layers_render_contains_layer_metadata_and_dependencies() -> None:
-    modules = [_module("orders-service", starts_application=True), _module("domain-orders"), _module("orders-repository")]
+    modules = [
+        _module("orders-service", starts_application=True),
+        _module("domain-orders"),
+        _module("orders-repository"),
+        _module("shared-kernel"),
+    ]
     dependencies = [ModuleDependency(source="orders-service", target="domain-orders")]
     html = render_software_layers_html(modules, dependencies, [MessageEndpoint(
         id="endpoint-1",
@@ -62,7 +69,9 @@ def test_software_layers_render_contains_layer_metadata_and_dependencies() -> No
     assert '"name": "domain-orders"' in html
     assert '"source": "orders-service"' in html
     assert '"namespace_groups"' in html
-    assert '"y": -6' in html
+    assert '"y": -5' in html
+    assert '"name": "orders-repository"' in html
+    assert '"name": "shared-kernel"' not in html
     assert "Software layers" in html
 
 

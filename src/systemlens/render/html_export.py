@@ -638,7 +638,7 @@ def render_graph_html(
         contract_resources: dict[str, set[str]] = {}
         contract_owner_identity: dict[str, str] = {}
         module = module_details.get(name)
-        module_layer = software_layer(module, strategy1=strategy1, root_path=root_path) if module else "unknown"
+        module_layer = software_layer(module, strategy1=strategy1, root_path=root_path) if module else "external"
         module_namespaces = sorted({
             workload.namespace
             for workload in (module.kubernetes_workloads if module else ())
@@ -694,12 +694,11 @@ def render_graph_html(
                 "layer_label": module_layer.replace("_", " ").title(),
                 "color": {
                     "application": "#2563eb",
+                    "external": "#64748b",
                     "domain": "#7c3aed",
                     "api": "#0891b2",
                     "orchestration": "#9333ea",
                     "infrastructure": "#d97706",
-                    "shared": "#64748b",
-                    "module": "#475569",
                     "persistence": "#0f766e",
                     "unknown": "#94a3b8",
                 }.get(module_layer, "#94a3b8"),
@@ -825,13 +824,12 @@ def render_graph_html(
                         node["layer"] = layer
                         node["layer_label"] = layer.replace("_", " ").title()
                         node["color"] = {
-                            "application": "#2563eb",
+                    "application": "#2563eb",
+                    "external": "#64748b",
                             "domain": "#7c3aed",
                     "api": "#0891b2",
                     "orchestration": "#9333ea",
                             "infrastructure": "#d97706",
-                            "shared": "#64748b",
-                            "module": "#475569",
                             "persistence": "#0f766e",
                         }.get(layer, "#94a3b8")
                     namespaces = fact.metadata.get("namespaces")

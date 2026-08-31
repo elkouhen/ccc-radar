@@ -47,7 +47,7 @@ but does not alter AST endpoint extraction.
 | `systemlens analyze request-reply [--root DIR] [--json]` | Lists Strategy1 Kafka request/reply candidates. |
 | `systemlens export microservices (--html FILE | --c4 DIRECTORY | --json) [--graph FILE] [--root-path DIRECTORY]` | Exports the deployable microservice, API, data-schema and message-channel topology. Non-deployable indexed modules (libraries and aggregators without an application entry point) are excluded from this view and remain available to `export modules` and `export layers`. Persisted MCP graph facts are included in the HTML export. `--graph FILE` reads a validated `systemlens-ai-graph-v1` manifest; `--root-path` provides the local source root for HTML source links. |
 | `systemlens export modules --html FILE` | Exports the Maven/Gradle build-dependency view. |
-| `systemlens export layers --html FILE` | Exports a dedicated software-layer view. With the persisted Strategy1 profile, modules in project namespace `PORTAIL` are rendered in API/contracts and modules named `DOMAIN-*` in Domain; without Strategy1 these repository-specific conventions are disabled. |
+| `systemlens export layers --html FILE` | Exports a dedicated software-layer view. With the persisted Strategy1 profile, project namespaces `PORTAIL` and `CYCLE-DE-VIE` are rendered in API/contracts and Orchestration, `DOMAIN-*` modules in Domain, and the documented layer-name prefixes/suffixes in their matching layers; shared libraries and other non-deployable modules are omitted, and without Strategy1 the repository-specific conventions are disabled. |
 | `systemlens export namespaces --html FILE` | Exports a namespace view where each parent directory containing projects is shown as a container containing its indexed modules. Kubernetes namespaces remain secondary module metadata and do not define these containers. |
 | `systemlens export request-reply --html FILE` | Exports Strategy1 Kafka request/reply candidates. |
 | `systemlens web [--host HOST] [--port PORT]` | Starts the local Python web application at `http://127.0.0.1:8765/` by default. Its home page links to Architecture. Architecture renders the persisted snapshot for each request, excluding test-fixture microservices and every relation attached to them; when no index exists, it offers an explicit local button that creates the default configuration when needed and indexes the repository. The default loopback host prevents network exposure unless the user explicitly changes `--host`. |
@@ -116,10 +116,13 @@ grouped, airy, balanced, and architectural layouts; the architectural layout
 uses ELK.js compound nodes to arrange resources in a deterministic hierarchy:
 software layers are stacked vertically, namespaces are nested inside their
 layer, and services/resources are placed inside each namespace without
-overlap. The canonical order is `api`, `application`, `orchestration`,
-`infrastructure`, `shared`, `module`, `domain`, then `persistence`;
+overlap. The internal canonical order is `api`, `orchestration`, `application`,
+`infrastructure`, `domain`, then `persistence`;
 `persistence` is always the lowest layer. In Strategy1, the `CYCLE-DE-VIE`
 project namespace is rendered in the Orchestration layer.
+External microservices are rendered in a dedicated `External services` layer,
+outside the internal layer order.
+Shared libraries and other non-deployable modules are not rendered as layers.
 For the graph export, a namespace is the parent directory containing one or
 more projects/modules; Kubernetes namespaces are retained as metadata only.
 Projects located directly at the indexed repository root are assigned to the
@@ -303,8 +306,8 @@ Independently of Strategy1, each build module inventories every valid YAML or
 JSON OpenAPI document under its own `src/main/resources/openapi/` directory;
 contract file names do not need to follow an `openapi.*` or `swagger.*`
 pattern.
-It may also derive a high-confidence request/reply pair
-when both sides follow the `retour_<request-topic>` convention.
+With Strategy1, it may also derive a high-confidence request/reply pair when
+both sides follow the `retour_<request-topic>` convention.
 
 ## Incrementality and freshness
 
