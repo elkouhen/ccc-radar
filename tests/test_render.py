@@ -208,6 +208,10 @@ enum PaymentStatus { AUTHORIZED, DECLINED }
     assert "packLayeredClusterGraphPositions();" in document
     assert "function namespaceForNode(node)" in document
     assert "? [namespaceForNode(id)]" in document
+    assert "const viewportBoundsFromGraphBounds" in document
+    assert "const namespaceBounds = new Map()" in document
+    assert "const childNamespaceBounds" in document
+    assert "parent group is defined by its rendered children" in document
     assert 'const libraries = layout === "cluster" ? {} : await layoutLibraries' in document
     assert "async function applyFcoseClusterLayout()" in document
     assert 'const nextLayout = !layeredView' in document

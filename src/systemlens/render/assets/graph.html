@@ -1406,6 +1406,21 @@
             group.points.push(point); group.ids.push(id); namespaces.set(key, group);
           });
         });
+        const viewportBoundsFromGraphBounds = (bounds) => {
+          const corners = [
+            graphPointToViewport({ x: bounds.minX, y: bounds.minY }),
+            graphPointToViewport({ x: bounds.minX, y: bounds.maxY }),
+            graphPointToViewport({ x: bounds.maxX, y: bounds.minY }),
+            graphPointToViewport({ x: bounds.maxX, y: bounds.maxY }),
+          ];
+          return {
+            minX: Math.min(...corners.map(point => point.x)),
+            maxX: Math.max(...corners.map(point => point.x)),
+            minY: Math.min(...corners.map(point => point.y)),
+            maxY: Math.max(...corners.map(point => point.y)),
+          };
+        };
+        const namespaceBounds = new Map();
         namespaces.forEach(group => {
           let minX = Math.min(...group.points.map(point => point.x)) - 68;
           let maxX = Math.max(...group.points.map(point => point.x)) + 68;
@@ -1413,21 +1428,15 @@
           let maxY = Math.max(...group.points.map(point => point.y)) + 44;
           if (clusteredView || layeredClusterView) {
             const graphPoints = group.ids.map(id => network.getNodeAttributes(id));
-            const graphMinX = Math.min(...graphPoints.map(point => point.x)) - 120;
-            const graphMaxX = Math.max(...graphPoints.map(point => point.x)) + 120;
-            const graphMinY = Math.min(...graphPoints.map(point => point.y)) - 100;
-            const graphMaxY = Math.max(...graphPoints.map(point => point.y)) + 100;
-            const corners = [
-              graphPointToViewport({ x: graphMinX, y: graphMinY }),
-              graphPointToViewport({ x: graphMinX, y: graphMaxY }),
-              graphPointToViewport({ x: graphMaxX, y: graphMinY }),
-              graphPointToViewport({ x: graphMaxX, y: graphMaxY }),
-            ];
-            minX = Math.min(...corners.map(point => point.x));
-            maxX = Math.max(...corners.map(point => point.x));
-            minY = Math.min(...corners.map(point => point.y));
-            maxY = Math.max(...corners.map(point => point.y));
+            const graphBounds = {
+              minX: Math.min(...graphPoints.map(point => point.x)) - 120,
+              maxX: Math.max(...graphPoints.map(point => point.x)) + 120,
+              minY: Math.min(...graphPoints.map(point => point.y)) - 100,
+              maxY: Math.max(...graphPoints.map(point => point.y)) + 100,
+            };
+            ({ minX, maxX, minY, maxY } = viewportBoundsFromGraphBounds(graphBounds));
           }
+          namespaceBounds.set(`${group.layer}:${group.namespace}`, { minX, maxX, minY, maxY });
           const box = document.createElement("div"); box.className = "graph-namespace-group";
           box.style.left = `${minX}px`; box.style.top = `${minY}px`;
           box.style.width = `${Math.max(clusteredView || layeredClusterView ? 0 : 150, maxX - minX)}px`;
@@ -1437,13 +1446,32 @@
           box.append(title); graphLayersOverlay.append(box);
         });
         if (!showProjectGroups.checked) return;
+        const namespaceGroupEntries = [...namespaces.entries()];
         (graphData.groups || []).forEach(group => {
-          const points = group.children.map(id => nodePoints.get(id)).filter(Boolean);
-          if (points.length < 2) return;
-          const minX = Math.min(...points.map(point => point.x)) - 68;
-          const maxX = Math.max(...points.map(point => point.x)) + 68;
-          const minY = Math.min(...points.map(point => point.y)) - 52;
-          const maxY = Math.max(...points.map(point => point.y)) + 52;
+          const children = group.children || [];
+          const childNamespaceBounds = namespaceGroupEntries
+            .filter(([, namespaceGroup]) => namespaceGroup.ids.some(id => children.includes(id)))
+            .map(([key]) => namespaceBounds.get(key))
+            .filter(Boolean);
+          let minX;
+          let maxX;
+          let minY;
+          let maxY;
+          if (childNamespaceBounds.length) {
+            // A parent group is defined by its rendered children. This keeps
+            // nested boxes aligned after zoom/pan and guarantees containment.
+            minX = Math.min(...childNamespaceBounds.map(bounds => bounds.minX)) - 22;
+            maxX = Math.max(...childNamespaceBounds.map(bounds => bounds.maxX)) + 22;
+            minY = Math.min(...childNamespaceBounds.map(bounds => bounds.minY)) - 28;
+            maxY = Math.max(...childNamespaceBounds.map(bounds => bounds.maxY)) + 22;
+          } else {
+            const points = children.map(id => nodePoints.get(id)).filter(Boolean);
+            if (points.length < 2) return;
+            minX = Math.min(...points.map(point => point.x)) - 68;
+            maxX = Math.max(...points.map(point => point.x)) + 68;
+            minY = Math.min(...points.map(point => point.y)) - 52;
+            maxY = Math.max(...points.map(point => point.y)) + 52;
+          }
           const container = document.createElement("div");
           container.className = "graph-project-group";
           container.style.left = `${minX}px`;

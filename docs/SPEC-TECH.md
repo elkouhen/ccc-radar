@@ -277,7 +277,13 @@ its evidence is intended for a human or an AI to assess a conservative rule.
 
 The HTML renderer keeps graph coordinates as the source of truth for layout.
 The namespace-cluster packer places resources on separated grids and then
-packs namespace rectangles with positive margins. The layered view reuses this
+packs namespace rectangles with positive margins. Container geometry is kept
+in graph coordinates until it is projected to the viewport. When project or
+other parent groups are enabled, their bounds are the union of the already
+projected child namespace bounds plus title/padding margins; this explicit
+hierarchy prevents a parent from being smaller than a nested cluster after
+zooming. Sibling rectangles remain separated, while parent/descendant
+intersection is intentional. The layered view reuses this
 packer with an additional grouping key: namespaces are first grouped by the
 canonical software-layer order (`api`, `application`, `infrastructure`,
 `shared`, `module`, `domain`, `persistence`), producing top-to-bottom layer

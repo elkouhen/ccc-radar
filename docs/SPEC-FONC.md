@@ -189,6 +189,15 @@ The cluster view MUST preserve these visual invariants:
   horizontal and vertical gap greater than the projected card size.
 - Namespace rectangles MUST be packed with a positive gap and MUST NOT overlap
   each other.
+- When a second grouping level is displayed, each parent cluster MUST be the
+  union of its visible child cluster rectangles plus its own title/padding
+  margin. Parent bounds MUST contain the complete child boxes; the
+  non-overlap rule applies between sibling clusters, not between a parent and
+  its descendants.
+- Cluster bounds MUST be calculated from graph-coordinate bounds and projected
+  after camera changes. Parent bounds MUST be recomputed from the projected
+  child bounds, so zooming cannot make a child escape its parent or make the
+  hierarchy drift.
 - The layout MUST NOT depend on the software-layer order. Narrow viewports MAY
   use additional rows to keep clusters inside the visible graph area.
 
