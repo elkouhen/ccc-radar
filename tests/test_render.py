@@ -207,12 +207,16 @@ enum PaymentStatus { AUTHORIZED, DECLINED }
     assert "layeredClusterView = layout === \"elk\"" in document
     assert "packLayeredClusterGraphPositions();" in document
     assert "function namespaceForNode(node)" in document
+    assert 'link.target === node' in document
+    assert 'producer?.kind === "microservice"' in document
+    assert 'if (data?.kind !== "microservice") return "root"' in document
     assert "? [namespaceForNode(id)]" in document
     assert "const viewportBoundsFromGraphBounds" in document
     assert "const namespaceBounds = new Map()" in document
     assert "const childNamespaceBounds" in document
     assert "parent group is defined by its rendered children" in document
     assert "namespaceGroup.namespace === group.namespace" in document
+    assert 'group.namespace === "root" ? "ROOT" : group.namespace' in document
     assert "left: 50%; max-width: calc(100% - 20px)" in document
     assert "left: 50%; max-width: calc(100% - 26px)" in document
     assert 'const libraries = layout === "cluster" ? {} : await layoutLibraries' in document

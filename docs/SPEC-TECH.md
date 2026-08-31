@@ -285,7 +285,10 @@ hierarchy prevents a parent from being smaller than a nested cluster after
 zooming. Sibling rectangles remain separated, while parent/descendant
 intersection is intentional. Project groups carry their owning project
 namespace; relation targets are retained as graph children but cannot expand
-the parent box into another namespace. The layered view reuses this
+the parent box into another namespace. Resource nodes resolve their cluster
+from incoming producer edges before consulting resource metadata; this keeps
+topics and collections with their producing microservice. The layered view
+reuses this
 packer with an additional grouping key: namespaces are first grouped by the
 canonical software-layer order (`api`, `application`, `infrastructure`,
 `shared`, `module`, `domain`, `persistence`), producing top-to-bottom layer

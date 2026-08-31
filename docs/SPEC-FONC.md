@@ -185,6 +185,11 @@ The cluster view MUST preserve these visual invariants:
 
 - Namespace membership MUST use the same resolver for placement and for the
   visible namespace rectangle.
+- A Kafka topic, message channel, collection, or other resource MUST be
+  assigned first to the namespace of its producing microservice, using the
+  incoming source relation. A consumer namespace MUST NOT move the resource
+  into its cluster. Resources without an identifiable producer remain in
+  `ROOT`.
 - Resources inside one namespace MUST be placed on a grid with a positive
   horizontal and vertical gap greater than the projected card size.
 - Namespace rectangles MUST be packed with a positive gap and MUST NOT overlap

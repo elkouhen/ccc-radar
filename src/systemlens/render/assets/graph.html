@@ -1442,7 +1442,8 @@
           box.style.width = `${Math.max(clusteredView || layeredClusterView ? 0 : 150, maxX - minX)}px`;
           box.style.height = `${Math.max(clusteredView || layeredClusterView ? 0 : 92, maxY - minY)}px`;
           box.style.setProperty("--namespace-accent", layerColors[group.layer] || "#64748b");
-          const title = document.createElement("span"); title.className = "graph-namespace-title"; title.textContent = group.namespace;
+          const title = document.createElement("span"); title.className = "graph-namespace-title";
+          title.textContent = group.namespace === "root" ? "ROOT" : group.namespace;
           box.append(title); graphLayersOverlay.append(box);
         });
         if (!showProjectGroups.checked) return;
@@ -1657,10 +1658,21 @@
     }
     function namespaceForNode(node) {
       const data = nodeDataById.get(node);
+      if (data?.kind !== "microservice") {
+        const producerNamespaces = graphData.links
+          .filter(link => link.target === node)
+          .map(link => nodeDataById.get(link.source))
+          .filter(producer => producer?.kind === "microservice")
+          .map(producer => producer.project_namespace || producer.architecture_namespace)
+          .filter(Boolean)
+          .sort();
+        if (producerNamespaces.length) return producerNamespaces[0];
+      }
       if (data?.project_namespace) return data.project_namespace;
       if (data?.architecture_namespace) return data.architecture_namespace;
       const namespaces = [...(data?.runtime_namespaces || []), ...(data?.fact_namespaces || [])];
       if (namespaces.length) return namespaces[0];
+      if (data?.kind !== "microservice") return "root";
       const neighbourNamespaces = network.neighbors(node).flatMap(neighbour => {
         const neighbourData = nodeDataById.get(neighbour);
         return [...(neighbourData?.runtime_namespaces || []), ...(neighbourData?.fact_namespaces || [])];
