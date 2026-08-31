@@ -166,6 +166,8 @@ def _assert_pan_moves_cluster_overlays_as_one_surface(page) -> None:
         assert new[1] - old[1] == pytest.approx(delta_y, abs=1.5)
         assert new[2] - old[2] == pytest.approx(delta_x, abs=1.5)
         assert new[3] - old[3] == pytest.approx(delta_y, abs=1.5)
+    assert delta_x == pytest.approx(-80, abs=2)
+    assert delta_y == pytest.approx(65, abs=2)
 
 
 def _assert_clusters_only_overlap_when_nested(page) -> None:

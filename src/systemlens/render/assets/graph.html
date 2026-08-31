@@ -1685,12 +1685,19 @@
             if (!forwardedPointer.moved) return;
             const camera = renderer.getCamera();
             const state = forwardedPointer.cameraState;
-            const width = Math.max(renderer.width, 1);
-            const height = Math.max(renderer.height, 1);
+            // Sigma's internal drawing buffer can use a device-pixel ratio;
+            // camera panning, however, is driven by CSS viewport pixels.
+            const viewport = document.getElementById("graph").getBoundingClientRect();
+            const width = Math.max(viewport.width, 1);
+            const height = Math.max(viewport.height, 1);
             camera.setState({
               ...state,
-              x: state.x - (2 * (event.clientX - forwardedPointer.startX) * state.ratio) / width,
-              y: state.y + (2 * (event.clientY - forwardedPointer.startY) * state.ratio) / height,
+              // Sigma's camera coordinates use the graph's square viewport
+              // normalization for both axes. Use the rendered graph width as
+              // the common pixel-to-camera scale; using 2*ratio/height here
+              // amplifies a vertical drag and makes a pan feel like zooming.
+              x: state.x - (event.clientX - forwardedPointer.startX) / width,
+              y: state.y + (event.clientY - forwardedPointer.startY) / width,
             });
           };
           label.addEventListener("pointerdown", event => {
@@ -1708,6 +1715,14 @@
             window.addEventListener("pointermove", moveForwardedPointer, true);
             window.addEventListener("pointerup", finishForwardedPointer, true);
             window.addEventListener("pointercancel", finishForwardedPointer, true);
+          });
+          // Sigma also listens to the legacy mouse stream. Without stopping
+          // it, a card drag would be handled once by our direct pan and once
+          // by Sigma's native mouse pan, producing an amplified movement.
+          label.addEventListener("mousedown", event => {
+            if (event.button !== 0) return;
+            event.preventDefault();
+            event.stopImmediatePropagation();
           });
           label.addEventListener("click", event => {
             event.stopPropagation();
