@@ -40,7 +40,7 @@
     .graph-project-group { position: absolute; padding: 25px 13px 13px; border: 1px dashed var(--group-accent, #64748b); border-radius: 12px; background: color-mix(in srgb, var(--group-accent, #64748b) 4%, transparent); color: var(--group-accent, #64748b); font-size: 10px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
     .graph-project-group-title { position: absolute; top: 8px; left: 50%; max-width: calc(100% - 26px); padding: 2px 7px; box-sizing: border-box; overflow: hidden; background: color-mix(in srgb, #f8fafc 94%, var(--group-accent, #64748b)); border-radius: 5px; text-align: center; text-overflow: ellipsis; transform: translateX(-50%); white-space: nowrap; }
     :root[data-theme="dark"] .graph-project-group { background: color-mix(in srgb, var(--group-accent, #64748b) 8%, transparent); }
-    .graph-node-card-label { position: absolute; width: 110px; height: 70px; min-height: 70px; display: grid; grid-template-columns: 22px minmax(0, 1fr); grid-template-rows: auto auto; align-content: center; column-gap: 7px; padding: 8px 9px; box-sizing: border-box; transform: translate(-50%, -50%) scale(.5); transform-origin: center; pointer-events: auto; cursor: pointer; border: 1px solid var(--card-accent, #64748b); border-radius: 8px; color: #172033; background: #ffffff; box-shadow: 0 5px 16px rgba(15, 23, 42, .12); font-size: 11px; line-height: 1.15; text-align: left; overflow-wrap: anywhere; overflow: hidden; }
+    .graph-node-card-label { position: absolute; width: 110px; height: 70px; min-height: 70px; display: grid; grid-template-columns: 22px minmax(0, 1fr); grid-template-rows: auto auto; align-content: center; column-gap: 7px; padding: 8px 9px; box-sizing: border-box; transform: translate(-50%, -50%) scale(.4); transform-origin: center; pointer-events: auto; cursor: pointer; border: 1px solid var(--card-accent, #64748b); border-radius: 8px; color: #172033; background: #ffffff; box-shadow: 0 5px 16px rgba(15, 23, 42, .12); font-size: 11px; line-height: 1.15; text-align: left; overflow-wrap: anywhere; overflow: hidden; }
     .graph-node-card-icon { position: static; grid-row: 1 / 3; display: grid; place-items: center; width: 20px; height: 20px; border: 0; border-radius: 0; color: var(--card-accent, #64748b); line-height: 1; }
     .graph-node-card-icon::before { display: block; width: 16px; height: 16px; box-sizing: border-box; }
     .graph-node-card-icon.is-service::before { content: "⚙"; width: 16px; height: 16px; font-size: 21px; line-height: 16px; text-align: center; }
@@ -1610,8 +1610,8 @@
           // The HTML cards are the same visual object in every view. Keep
           // their projected size aligned with the default graph view; the
           // cluster/layer geometry is responsible for providing the space.
-          const clusterCardScale = .5;
-          label.style.transform = `translate(-50%, -50%) scale(${clusteredView || layeredClusterView ? clusterCardScale : .5})`;
+          const clusterCardScale = .4;
+          label.style.transform = `translate(-50%, -50%) scale(${clusteredView || layeredClusterView ? clusterCardScale : .4})`;
           label.style.setProperty("--card-accent", node.color || "#64748b");
           const icon = document.createElement("span");
           icon.className = `graph-node-card-icon ${isTopic ? "is-topic" : isDatabase ? "is-database" : "is-service"}`;
@@ -1850,8 +1850,8 @@
         namespaceGroups.get(namespace).push(node);
       });
       const groups = [...namespaceGroups.entries()].sort(([left], [right]) => left.localeCompare(right));
-      const nodeGapX = 320;
-      const nodeGapY = 220;
+      const nodeGapX = 1000;
+      const nodeGapY = 700;
       const clusterPaddingX = 120;
       const clusterPaddingY = 100;
       const clusterGapX = 260;
@@ -1867,7 +1867,7 @@
         const microservices = orderedNodes.filter(node => nodeDataById.get(node)?.kind === "microservice");
         const resources = orderedNodes.filter(node => nodeDataById.get(node)?.kind !== "microservice");
         const subLayers = SystemLensLayerGeometry.computeClusterSubLayers(
-          microservices, resources, { nodeGapX, nodeGapY, subLayerGapY: 160, maxColumns: 5 }
+          microservices, resources, { nodeGapX, nodeGapY, subLayerGapY: 700, maxColumns: 5 }
         );
         // The overlay envelope is deliberately larger than the node grid:
         // refreshNodeLabels adds 120px horizontally and 100px vertically on
@@ -1936,8 +1936,8 @@
         if (!namespaces.has(namespace)) namespaces.set(namespace, []);
         namespaces.get(namespace).push(node);
       });
-      const nodeGapX = 360;
-      const nodeGapY = 220;
+      const nodeGapX = 1000;
+      const nodeGapY = 700;
       const clusterPaddingX = 100;
       const clusterPaddingY = 120;
       const clusterGapX = 220;
@@ -1976,7 +1976,7 @@
             group.subLayers = SystemLensLayerGeometry.computeClusterSubLayers(
               group.microservices,
               group.resources,
-              { nodeGapX, nodeGapY, subLayerGapY: 160, maxColumns: group.columns },
+              { nodeGapX, nodeGapY, subLayerGapY: 700, maxColumns: group.columns },
             );
             group.width = group.subLayers.width;
             group.height = Math.abs(group.subLayers.height);
