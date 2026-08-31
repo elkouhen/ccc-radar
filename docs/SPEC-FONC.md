@@ -194,6 +194,9 @@ The cluster view MUST preserve these visual invariants:
   margin. Parent bounds MUST contain the complete child boxes; the
   non-overlap rule applies between sibling clusters, not between a parent and
   its descendants.
+- A project-group parent MUST remain attached to the namespace of its owning
+  projects. Relation targets from another namespace MUST NOT enlarge that
+  parent across unrelated namespace clusters.
 - Cluster bounds MUST be calculated from graph-coordinate bounds and projected
   after camera changes. Parent bounds MUST be recomputed from the projected
   child bounds, so zooming cannot make a child escape its parent or make the

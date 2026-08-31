@@ -1040,17 +1040,18 @@ def render_graph_html(
     # separate from architecture relations: they are visual ownership/grouping
     # hints, not inferred runtime dependencies.
     service_node_ids = {f"microservice:{name}" for name in ordered_services}
-    modules_by_parent: dict[Path, list[str]] = {}
+    modules_by_parent: dict[Path, list[tuple[str, DiscoveredModule]]] = {}
     for module in all_modules:
         identity = module_identity(module)
         node_id = f"microservice:{identity}"
         if node_id not in service_node_ids:
             continue
-        modules_by_parent.setdefault(module.path.resolve().parent, []).append(node_id)
+        modules_by_parent.setdefault(module.path.resolve().parent, []).append((node_id, module))
     project_groups = [
         {
             "name": parent.name,
-            "children": sorted(children),
+            "namespace": project_namespace(children[0][1], root_path),
+            "children": sorted(node_id for node_id, _module in children),
         }
         for parent, children in sorted(modules_by_parent.items(), key=lambda item: str(item[0]))
         if len(children) >= 2

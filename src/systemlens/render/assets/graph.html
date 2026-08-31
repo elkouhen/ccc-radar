@@ -1450,7 +1450,10 @@
         (graphData.groups || []).forEach(group => {
           const children = group.children || [];
           const childNamespaceBounds = namespaceGroupEntries
-            .filter(([, namespaceGroup]) => namespaceGroup.ids.some(id => children.includes(id)))
+            .filter(([, namespaceGroup]) => (
+              (!group.namespace || namespaceGroup.namespace === group.namespace)
+              && namespaceGroup.ids.some(id => children.includes(id))
+            ))
             .map(([key]) => namespaceBounds.get(key))
             .filter(Boolean);
           let minX;
