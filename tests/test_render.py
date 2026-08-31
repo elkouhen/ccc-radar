@@ -204,6 +204,10 @@ enum PaymentStatus { AUTHORIZED, DECLINED }
     assert '"elk.algorithm": "layered"' in document
     assert "async function applyElkLayout(libraries)" in document
     assert "function packLayeredClusterGraphPositions()" in document
+    assert "layoutLayerGroups" in document
+    assert "const overflowing = groups.filter" in document
+    assert "group.columns += 1" in document
+    assert "outer width is recomputed" in document
     assert '"external"]' in document
     assert '"orchestration"' in document
     assert 'external: "#64748b"' in document

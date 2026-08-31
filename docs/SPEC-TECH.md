@@ -302,7 +302,11 @@ canonical internal software-layer order (`api`, `application`, `orchestration`,
 top-to-bottom layer bands. External microservices use the dedicated `external`
 layer at the bottom and are not part of the internal dependency order. ELK may
 provide the initial compound layout, but the deterministic layer-aware pack is
-the final collision guard and remains valid when ELK fails.
+the final collision guard and remains valid when ELK fails. The layered packer
+checks each cluster envelope after placement. Clusters that exceed the vertical
+safety envelope are widened by adding columns, then the row width and all
+positions are recomputed. This trades height for diagram width to preserve
+layer separation.
 
 ## Persistence and compatibility
 

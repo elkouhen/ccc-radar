@@ -179,6 +179,10 @@ The HTML architecture view MUST preserve these visual invariants:
   is the final collision guard. If ELK is unavailable or fails, the fallback
   MUST retain the same layer order, namespace containment and non-overlap
   guarantees.
+- If a namespace cluster becomes too tall and risks crossing a neighbouring
+  layer, the renderer MUST add columns to that cluster and recompute the
+  layout. The additional horizontal space MUST expand the diagram rather than
+  overlap another layer or cluster.
 Every layout switch MUST refit the camera to the resulting graph; it MUST NOT
 apply an additional automatic zoom-out that makes the layout unnecessarily
 small.
