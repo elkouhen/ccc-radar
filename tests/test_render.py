@@ -212,6 +212,8 @@ enum PaymentStatus { AUTHORIZED, DECLINED }
     assert "const namespaceBounds = new Map()" in document
     assert "const childNamespaceBounds" in document
     assert "parent group is defined by its rendered children" in document
+    assert "left: 50%; max-width: calc(100% - 20px)" in document
+    assert "left: 50%; max-width: calc(100% - 26px)" in document
     assert 'const libraries = layout === "cluster" ? {} : await layoutLibraries' in document
     assert "async function applyFcoseClusterLayout()" in document
     assert 'const nextLayout = !layeredView' in document
