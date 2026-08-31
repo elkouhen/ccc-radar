@@ -425,6 +425,16 @@ def test_html_export_resources_are_usable_in_a_constrained_browser_viewport(tmp_
             page.wait_for_timeout(400)
             _assert_architecture_cards_have_uniform_size(page)
             _assert_architecture_cards_do_not_overlap(page)
+            page.mouse.move(800, 300)
+            page.mouse.down()
+            page.mouse.move(930, 390, steps=8)
+            page.mouse.up()
+            page.wait_for_timeout(400)
+            _assert_architecture_cards_have_uniform_size(page)
+            _assert_architecture_cards_do_not_overlap(page)
+            _assert_architecture_cards_are_contained_in_clusters(page)
+            _assert_architecture_clusters_do_not_overlap(page)
+            assert graph.get_attribute("data-invalid-coordinates") == "false"
             page.set_viewport_size({"width": 800, "height": 450})
             page.wait_for_timeout(400)
         assert not errors
