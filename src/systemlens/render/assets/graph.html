@@ -29,6 +29,7 @@
     .graph-layer-band { position: absolute; border-top: 2px solid color-mix(in srgb, var(--layer-accent, #64748b) 58%, transparent); border-bottom: 1px solid color-mix(in srgb, var(--layer-accent, #64748b) 30%, transparent); background: color-mix(in srgb, var(--layer-accent, #64748b) 5%, transparent); }
     .graph-layer-title { position: absolute; top: 8px; left: 14px; min-width: 154px; padding: 3px 8px; box-sizing: border-box; color: var(--layer-accent, #64748b); background: color-mix(in srgb, #f8fafc 94%, var(--layer-accent, #64748b)); border-radius: 5px; font-size: 11px; font-weight: 850; letter-spacing: .08em; text-transform: uppercase; white-space: nowrap; }
     .graph-namespace-group { position: absolute; border: 1px dashed color-mix(in srgb, var(--namespace-accent, #64748b) 72%, transparent); border-radius: 10px; background: color-mix(in srgb, var(--namespace-accent, #64748b) 8%, transparent); }
+    .graph-cluster-sublayer-title { position: absolute; left: 10px; padding: 2px 6px; color: var(--namespace-accent, #64748b); background: color-mix(in srgb, #f8fafc 94%, var(--namespace-accent, #64748b)); border-radius: 4px; font-size: 9px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
     .graph-namespace-title { position: absolute; top: 7px; left: 50%; max-width: calc(100% - 20px); padding: 2px 7px; box-sizing: border-box; overflow: hidden; color: var(--namespace-accent, #64748b); background: color-mix(in srgb, #f8fafc 92%, var(--namespace-accent, #64748b)); border-radius: 5px; font-size: 10px; font-weight: 750; text-align: center; text-overflow: ellipsis; transform: translateX(-50%); white-space: nowrap; }
     .graph-project-group { position: absolute; padding: 25px 13px 13px; border: 1px dashed var(--group-accent, #64748b); border-radius: 12px; background: color-mix(in srgb, var(--group-accent, #64748b) 4%, transparent); color: var(--group-accent, #64748b); font-size: 10px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
     .graph-project-group-title { position: absolute; top: 8px; left: 50%; max-width: calc(100% - 26px); padding: 2px 7px; box-sizing: border-box; overflow: hidden; background: color-mix(in srgb, #f8fafc 94%, var(--group-accent, #64748b)); border-radius: 5px; text-align: center; text-overflow: ellipsis; transform: translateX(-50%); white-space: nowrap; }
@@ -1484,7 +1485,26 @@
           box.style.setProperty("--namespace-accent", layerColors[group.layer] || "#64748b");
           const title = document.createElement("span"); title.className = "graph-namespace-title";
           title.textContent = group.namespace === "root" ? "ROOT" : group.namespace;
-          box.append(title); graphLayersOverlay.append(box);
+          box.append(title);
+          if (clusteredView) {
+            const graphPoints = group.ids.map(id => ({
+              point: nodePoints.get(id),
+              kind: nodeDataById.get(id)?.kind,
+            })).filter(item => item.point);
+            const servicePoints = graphPoints.filter(item => item.kind === "microservice");
+            const resourcePoints = graphPoints.filter(item => item.kind !== "microservice");
+            const addSubLayerTitle = (label, points) => {
+              if (!points.length) return;
+              const subTitle = document.createElement("span");
+              subTitle.className = "graph-cluster-sublayer-title";
+              subTitle.textContent = label;
+              subTitle.style.top = `${Math.max(28, Math.min(...points.map(item => item.point.y)) - minY - 38)}px`;
+              box.append(subTitle);
+            };
+            addSubLayerTitle("Microservices", servicePoints);
+            addSubLayerTitle("Ressources", resourcePoints);
+          }
+          graphLayersOverlay.append(box);
         });
         if (!showProjectGroups.checked) return;
         const namespaceGroupEntries = [...namespaces.entries()];
@@ -1809,11 +1829,17 @@
           const position = group.subLayers.positions[node];
           network.setNodeAttribute(node, "x", clusterX - group.width / 2 + position.x);
           network.setNodeAttribute(node, "y", clusterY + position.y);
+          network.setNodeAttribute(node, "clusterSubLayer", position.group === 0 ? "microservices" : "resources");
         });
         if (column === outerColumns - 1 || index === packedGroups.length - 1) {
           cursorY += rowHeights[row] + clusterGapY;
         }
       });
+      const graphElement = document.getElementById("graph");
+      graphElement.dataset.clusterSubLayers = "microservices-first,resources-second";
+      graphElement.dataset.clusterSubLayerPositions = JSON.stringify(
+        [...new Set([...network.nodes()].map(node => network.getNodeAttribute(node, "clusterSubLayer")))]
+      );
     }
     function packLayeredClusterGraphPositions() {
       const layerOrder = ["api", "application", "orchestration", "infrastructure", "domain", "persistence", "external"];
