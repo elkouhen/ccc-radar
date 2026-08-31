@@ -37,6 +37,8 @@
     const { nodeGapX = 240, nodeGapY = 160, subLayerGapY = 120, maxColumns = 5 } = options;
     const positions = {};
     const groups = [microservices, resources].filter(group => group.length);
+    // Sigma's graph Y axis grows upwards.  Keep services at the upper
+    // sub-layer (higher graph Y) and move resources towards negative Y.
     let cursorY = 0;
     let width = 0;
     groups.forEach((group, groupIndex) => {
@@ -46,12 +48,12 @@
       group.forEach((id, index) => {
         positions[id] = {
           x: (index % columns) * nodeGapX,
-          y: cursorY + Math.floor(index / columns) * nodeGapY,
+          y: cursorY - Math.floor(index / columns) * nodeGapY,
           group: groupIndex,
         };
       });
-      cursorY += (rows - 1) * nodeGapY;
-      if (groupIndex === 0 && groups.length > 1) cursorY += subLayerGapY;
+      cursorY -= (rows - 1) * nodeGapY;
+      if (groupIndex === 0 && groups.length > 1) cursorY -= subLayerGapY;
     });
     return { positions, width, height: cursorY };
   }

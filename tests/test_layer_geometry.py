@@ -61,6 +61,6 @@ console.log(JSON.stringify(geometry.computeClusterSubLayers(
     layout = json.loads(result.stdout)
     assert all(layout["positions"][service]["group"] == 0 for service in ["service-a", "service-b"])
     assert all(layout["positions"][resource]["group"] == 1 for resource in ["topic-a", "collection-a"])
-    assert max(layout["positions"][service]["y"] for service in ["service-a", "service-b"]) < min(
+    assert min(layout["positions"][service]["y"] for service in ["service-a", "service-b"]) > max(
         layout["positions"][resource]["y"] for resource in ["topic-a", "collection-a"]
     )
