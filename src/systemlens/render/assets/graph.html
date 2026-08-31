@@ -1545,14 +1545,15 @@
           let minY = Math.min(...group.points.map(point => point.y)) - 44;
           let maxY = Math.max(...group.points.map(point => point.y)) + 44;
           if (clusteredView || layeredClusterView) {
-            const graphPoints = group.ids.map(id => network.getNodeAttributes(id));
-            const graphBounds = {
-              minX: Math.min(...graphPoints.map(point => point.x)) - 120,
-              maxX: Math.max(...graphPoints.map(point => point.x)) + 120,
-              minY: Math.min(...graphPoints.map(point => point.y)) - 100,
-              maxY: Math.max(...graphPoints.map(point => point.y)) + 100,
-            };
-            ({ minX, maxX, minY, maxY } = viewportBoundsFromGraphBounds(graphBounds));
+            // The cards are HTML rectangles in viewport coordinates. Build
+            // the namespace envelope from those projected centers so graph
+            // zoom cannot make a cluster smaller than its visible children.
+            const cardHalfWidth = 110 * .4 / 2;
+            const cardHalfHeight = 70 * .4 / 2;
+            minX = Math.min(...group.points.map(point => point.x)) - cardHalfWidth - 24;
+            maxX = Math.max(...group.points.map(point => point.x)) + cardHalfWidth + 24;
+            minY = Math.min(...group.points.map(point => point.y)) - cardHalfHeight - 24;
+            maxY = Math.max(...group.points.map(point => point.y)) + cardHalfHeight + 10;
           }
           namespaceBounds.set(`${group.layer}:${group.namespace}`, { minX, maxX, minY, maxY });
           const box = document.createElement("div"); box.className = "graph-namespace-group";
@@ -1975,8 +1976,8 @@
       const clusterPaddingX = 100;
       const clusterPaddingY = 120;
       const clusterGapX = 220;
-      const namespaceGapY = 120;
-      const layerGapY = 220;
+      const namespaceGapY = 300;
+      const layerGapY = 970;
       let cursorY = 0;
       layerOrder.forEach(layer => {
         const groups = [...groupsByLayer.get(layer).entries()]
