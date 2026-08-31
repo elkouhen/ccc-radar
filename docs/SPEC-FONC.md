@@ -138,6 +138,10 @@ cards and their containing rectangles move together without transient partial
 redraws.
 Panning MUST also work when the drag starts on a node card; a simple click on
 the same card MUST continue to select the node.
+Double-clicking MUST NOT change the camera zoom accidentally after a pan;
+zoom remains available through the wheel and the explicit zoom controls.
+Releasing a pan MUST stop the camera immediately; no inertial continuation is
+allowed.
 For the graph export, a namespace is the parent directory containing one or
 more projects/modules; Kubernetes namespaces are retained as metadata only.
 Projects located directly at the indexed repository root are assigned to the

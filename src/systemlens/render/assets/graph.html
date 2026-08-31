@@ -1253,6 +1253,16 @@
         enableNodeHoverEvents: true,
         hoverRenderer: () => {},
         renderEdgeLabels: false, labelDensity: .06, labelGridCellSize: 160, labelRenderedSizeThreshold: 10,
+        // A drag can end close enough to a second click to trigger Sigma's
+        // double-click zoom. Zoom remains available through the wheel and the
+        // explicit controls, so disable this ambiguous gesture.
+        doubleClickZoomingRatio: 1,
+        // Panning is handled by the shared camera controller below. Disable
+        // Sigma's native inertia so releasing the pointer cannot continue the
+        // gesture with an unexpected drift.
+        enableCameraPanning: false,
+        inertiaDuration: 0,
+        inertiaRatio: 0,
         labelAlignment: "center",
         nodeReducer: (node, data) => {
           if (!isVisibleNodeId(node)) return { ...data, hidden: true, label: "" };
@@ -1761,6 +1771,8 @@
       renderer.on("leaveNode", () => { hoveredId = null; refreshNodeLabels(); });
       renderer.on("clickNode", ({ node }) => selectNode(node));
       renderer.on("clickStage", reset);
+      renderer.on("doubleClickStage", event => event.preventSigmaDefault?.());
+      renderer.on("doubleClickNode", event => event.preventSigmaDefault?.());
       const graphCanvas = document.getElementById("graph");
       let graphPan = null;
       const finishGraphPan = event => {

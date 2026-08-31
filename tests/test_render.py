@@ -249,6 +249,10 @@ enum PaymentStatus { AUTHORIZED, DECLINED }
     assert '? "cluster"' in document
     assert "labelGridCellSize: 160" in document
     assert "labelRenderedSizeThreshold: 10" in document
+    assert "doubleClickZoomingRatio: 1" in document
+    assert "enableCameraPanning: false" in document
+    assert "inertiaDuration: 0" in document
+    assert "inertiaRatio: 0" in document
     assert "Connectivité relative :" in document
     assert "const visualNodeKind = node" in document
     assert "Namespace architectural" not in document
