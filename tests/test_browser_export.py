@@ -170,6 +170,22 @@ def _assert_pan_moves_cluster_overlays_as_one_surface(page) -> None:
     assert delta_y == pytest.approx(65, abs=2)
 
 
+def _assert_background_pan_has_one_to_one_scale(page) -> None:
+    before = page.locator(".graph-namespace-group").first.bounding_box()
+    assert before
+    page.mouse.move(1100, 500)
+    page.mouse.down()
+    page.mouse.move(1000, 580, steps=10)
+    page.mouse.up()
+    page.wait_for_timeout(250)
+    after = page.locator(".graph-namespace-group").first.bounding_box()
+    assert after
+    assert after["x"] - before["x"] == pytest.approx(-100, abs=2)
+    assert after["y"] - before["y"] == pytest.approx(80, abs=2)
+    assert after["width"] == pytest.approx(before["width"], abs=0.1)
+    assert after["height"] == pytest.approx(before["height"], abs=0.1)
+
+
 def _assert_clusters_only_overlap_when_nested(page) -> None:
     assert page.evaluate(
         """() => {
@@ -464,6 +480,7 @@ def test_html_export_resources_are_usable_in_a_constrained_browser_viewport(tmp_
             _assert_architecture_cards_have_uniform_size(page)
             _assert_architecture_cards_do_not_overlap(page)
             if view_name == "Namespaces":
+                _assert_background_pan_has_one_to_one_scale(page)
                 _assert_pan_moves_cluster_overlays_as_one_surface(page)
             else:
                 page.mouse.move(980, 80)

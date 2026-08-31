@@ -1188,6 +1188,7 @@
     let layeredClusterView = false;
     let clusterLayoutPositions = new Map();
     let cameraFitAdjusting = false;
+    let graphPanCleanup = null;
     let activeLayout = "forceatlas2-noverlap";
     function rebuildGraph() {
       const visibleLinks = graphData.links.filter(link => (
@@ -1206,6 +1207,8 @@
         ...positionedConnectedNodes,
         ...layoutIsolatedNodes(isolatedNodes, positionedConnectedNodes),
       ];
+      graphPanCleanup?.();
+      graphPanCleanup = null;
       renderer?.kill();
       network = new graphology.MultiDirectedGraph();
       const visualNodeKind = node => {
@@ -1756,6 +1759,45 @@
       renderer.on("clickNode", ({ node }) => selectNode(node));
       renderer.on("clickStage", reset);
       const graphCanvas = document.getElementById("graph");
+      let graphPan = null;
+      const finishGraphPan = event => {
+        if (!graphPan || event.pointerId !== graphPan.pointerId) return;
+        graphPan = null;
+        window.removeEventListener("pointermove", moveGraphPan, true);
+        window.removeEventListener("pointerup", finishGraphPan, true);
+        window.removeEventListener("pointercancel", finishGraphPan, true);
+      };
+      const moveGraphPan = event => {
+        if (!graphPan || event.pointerId !== graphPan.pointerId) return;
+        const state = graphPan.cameraState;
+        const width = Math.max(graphCanvas.getBoundingClientRect().width, 1);
+        renderer.getCamera().setState({
+          ...state,
+          x: state.x - (event.clientX - graphPan.startX) / width,
+          y: state.y + (event.clientY - graphPan.startY) / width,
+        });
+      };
+      const startGraphPan = event => {
+        if (event.button !== 0 || event.target.closest(".graph-node-card-label")) return;
+        graphPan = {
+          pointerId: event.pointerId,
+          startX: event.clientX,
+          startY: event.clientY,
+          cameraState: renderer.getCamera().getState(),
+        };
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        window.addEventListener("pointermove", moveGraphPan, true);
+        window.addEventListener("pointerup", finishGraphPan, true);
+        window.addEventListener("pointercancel", finishGraphPan, true);
+      };
+      graphCanvas.addEventListener("pointerdown", startGraphPan, true);
+      graphPanCleanup = () => {
+        graphCanvas.removeEventListener("pointerdown", startGraphPan, true);
+        window.removeEventListener("pointermove", moveGraphPan, true);
+        window.removeEventListener("pointerup", finishGraphPan, true);
+        window.removeEventListener("pointercancel", finishGraphPan, true);
+      };
       graphCanvas.dataset.relationCount = String(visibleLinks.length);
       graphCanvas.dataset.visibleNodeCount = String(layoutNodes.length);
       graphCanvas.dataset.visibleNodeKinds = [...new Set(layoutNodes.map(node => node.kind))].sort().join(",");
