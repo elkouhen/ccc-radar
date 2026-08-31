@@ -192,6 +192,7 @@ enum PaymentStatus { AUTHORIZED, DECLINED }
     assert 'appendList("Stockee par", [node.owner], relationsGroup)' not in document
     assert "function rebuildGraph()" in document
     assert "const visibleLinks = graphData.links.filter(link => (" in document
+    assert "renderer?.refresh();" in document
     assert 'id="node-suggestions"' in document
     assert 'id="inventory-status"' in document
     assert "const isolatedNodeIds = new Set(" in document

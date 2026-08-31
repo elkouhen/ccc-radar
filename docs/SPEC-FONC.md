@@ -176,6 +176,8 @@ The HTML architecture view MUST preserve these visual invariants:
   microservice layer is visible or when the filtered graph is empty; the
   renderer MUST clear stale layer and cluster containers without producing
   invalid coordinates.
+- Changing a node-type filter MUST refresh the main graph renderer and its
+  overlays immediately.
 - The layered view extends the namespace-cluster packing: each canonical
   software layer is a separate horizontal band ordered from top to bottom,
   and namespaces are packed inside that band. ELK compound-node placement is

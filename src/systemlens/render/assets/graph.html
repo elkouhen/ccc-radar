@@ -3616,6 +3616,7 @@
         return;
       }
       reset();
+      renderer?.refresh();
       dependencyRenderer?.refresh();
     }));
     openApiReferencesFilter.addEventListener("input", renderReferences);
