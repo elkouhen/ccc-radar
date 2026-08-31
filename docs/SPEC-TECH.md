@@ -303,7 +303,9 @@ The layered view reuses this packer with an additional grouping key: namespaces 
 canonical internal software-layer order (`api`, `application`, `orchestration`,
 `infrastructure`, `domain`, `persistence`), producing
 top-to-bottom layer bands. External microservices use the dedicated `external`
-layer at the bottom and are not part of the internal dependency order. ELK may
+layer at the bottom and are not part of the internal dependency order. The
+same canonical resolver is used for layer placement, namespace boxes, and band
+bounds, so a namespace cannot be placed in a band different from its nodes. ELK may
 provide the initial compound layout, but the deterministic layer-aware pack is
 the final collision guard and remains valid when ELK fails. The layered packer
 checks each cluster envelope after placement. Clusters that exceed the vertical

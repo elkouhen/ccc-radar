@@ -1374,7 +1374,9 @@
               idsByLayer.get(nearest.id).push(id);
             }
           });
-        const allLayerPoints = [...pointsByLayer.values()].flat();
+        const allLayerPoints = layeredClusterView
+          ? [...nodePoints.values()]
+          : [...pointsByLayer.values()].flat();
         // Reserve a left gutter inside every layer band for its title.  The
         // cluster rectangles keep their graph-space positions, while the
         // widened band starts earlier so the overlay title never sits on top
@@ -1403,15 +1405,17 @@
         const layerBounds = layerCenters.map(layer => {
           const points = pointsByLayer.get(layer.id) || [];
           if (layeredClusterView) {
-            const graphPoints = (idsByLayer.get(layer.id) || [])
+            const graphPoints = (layeredClusterView
+              ? [...nodePoints.keys()].filter(id => layeredLayerForNode(id) === layer.id)
+              : (idsByLayer.get(layer.id) || []))
               .map(id => id && network.getNodeAttributes(id))
               .filter(Boolean);
             if (graphPoints.length) {
               const projectedBounds = viewportBoundsFromGraphBounds({
-                minX: Math.min(...graphPoints.map(point => point.x)) - 120,
-                maxX: Math.max(...graphPoints.map(point => point.x)) + 120,
-                minY: Math.min(...graphPoints.map(point => point.y)) - 100,
-                maxY: Math.max(...graphPoints.map(point => point.y)) + 100,
+                minX: Math.min(...graphPoints.map(point => point.x)) - 180,
+                maxX: Math.max(...graphPoints.map(point => point.x)) + 180,
+                minY: Math.min(...graphPoints.map(point => point.y)) - 240,
+                maxY: Math.max(...graphPoints.map(point => point.y)) + 240,
               });
               return {
                 ...layer,
@@ -1451,7 +1455,9 @@
           const node = nodeDataById.get(id);
           const layer = clusteredView && !layeredClusterView
             ? "namespaces"
-            : node?.architecture_layer || (node?.kind === "microservice" ? node.layer : null);
+            : layeredClusterView
+              ? layeredLayerForNode(id)
+              : node?.architecture_layer || (node?.kind === "microservice" ? node.layer : null);
           const values = clusteredView || layeredClusterView
             ? [namespaceForNode(id)]
             : node?.architecture_namespace
@@ -1777,6 +1783,16 @@
       const owner = preferredOwnerForNode(node);
       return owner?.layer_label || owner?.layer || "Unknown";
     }
+    function layeredLayerForNode(node) {
+      const layerOrder = ["api", "application", "orchestration", "infrastructure", "domain", "persistence", "external"];
+      const data = nodeDataById.get(node);
+      if (data?.architecture_layer && layerOrder.includes(data.architecture_layer)) return data.architecture_layer;
+      if (data?.kind === "microservice" && layerOrder.includes(data.layer)) return data.layer;
+      const neighbourLayer = network.neighbors(node)
+        .map(neighbour => nodeDataById.get(neighbour)?.layer)
+        .find(layer => layerOrder.includes(layer));
+      return neighbourLayer || "application";
+    }
     function clusterPathForNode(node) {
       const data = nodeDataById.get(node);
       const owner = ownerCandidatesForNode(node)
@@ -1871,15 +1887,7 @@
     function packLayeredClusterGraphPositions() {
       const layerOrder = ["api", "application", "orchestration", "infrastructure", "domain", "persistence", "external"];
       const groupsByLayer = new Map(layerOrder.map(layer => [layer, new Map()]));
-      const layerForNode = node => {
-        const data = nodeDataById.get(node);
-        if (data?.architecture_layer && groupsByLayer.has(data.architecture_layer)) return data.architecture_layer;
-        if (data?.kind === "microservice" && groupsByLayer.has(data.layer)) return data.layer;
-        const neighbourLayer = network.neighbors(node)
-          .map(neighbour => nodeDataById.get(neighbour)?.layer)
-          .find(layer => groupsByLayer.has(layer));
-        return neighbourLayer || "application";
-      };
+      const layerForNode = node => layeredLayerForNode(node);
       network.forEachNode(node => {
         const layer = layerForNode(node);
         const namespace = namespaceForNode(node);
@@ -1890,7 +1898,7 @@
       const nodeGapX = 300;
       const nodeGapY = 160;
       const clusterPaddingX = 100;
-      const clusterPaddingY = 84;
+      const clusterPaddingY = 120;
       const clusterGapX = 220;
       const namespaceGapY = 120;
       const layerGapY = 220;
@@ -1923,10 +1931,10 @@
             group.width = (group.columns - 1) * nodeGapX;
             group.height = (Math.ceil(group.nodes.length / group.columns) - 1) * nodeGapY;
           });
-          const outerWidth = Math.max(...groups.map(group => group.width + clusterPaddingX * 2));
+          const outerWidth = Math.max(...groups.map(group => group.width + 240 + clusterPaddingX * 2));
           const rowHeights = Array.from({ length: rows }, (_, row) => Math.max(
             ...groups.slice(row * columns, (row + 1) * columns)
-              .map(group => group.height + clusterPaddingY * 2),
+              .map(group => group.height + 200 + clusterPaddingY * 2),
           ));
           let layerCursorY = cursorY;
           groups.forEach((group, index) => {
