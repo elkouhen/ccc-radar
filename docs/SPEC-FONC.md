@@ -126,8 +126,9 @@ at the bottom, after the internal layer order.
 Shared libraries and other non-deployable modules are not rendered as layers.
 The three primary views are presented as a single view selector; placement
 strategies are secondary controls. The graph viewport reserves the space used
-by the navigation panel and refits the camera to that available area after a
-view or window-size change. In the layers and namespaces views, relations are
+by the navigation panel and uses a readable initial camera framing after a
+view or window-size change; the complete graph does not have to fit at once.
+Users can pan and zoom to explore the remaining graph. In the layers and namespaces views, relations are
 visually subdued. In every view, microservice, Kafka topic, message channel,
 MongoDB collection, data schema, and equivalent resource cards share the same
 rendered width, height, and scale. Their semantic differences are conveyed by

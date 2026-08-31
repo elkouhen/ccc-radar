@@ -2371,16 +2371,24 @@
       }
       if (request !== layoutRequest) return;
       renderer.refresh();
-      renderer.getCamera().animatedReset({ duration: 260 });
+      const layoutCamera = renderer.getCamera();
+      layoutCamera.animatedReset({ duration: 260 });
+      // The whole graph does not need to fit in the first viewport. Favor a
+      // readable, collision-free working area and let users pan or zoom out
+      // to explore the remaining graph.
+      await new Promise(resolve => setTimeout(resolve, 300));
       // Sigma's noverlap solver works with Sigma node radii, while the
       // readable labels are larger HTML rectangles. Resolve any residual
       // collision using the actual projected card envelope after the camera
       // has fitted the layout.
       if (!layeredView) {
-        await new Promise(resolve => setTimeout(resolve, 300));
         resolveGraphCardOverlaps();
         renderer.refresh();
       }
+      const cameraState = layoutCamera.getState();
+      layoutCamera.setState({ ...cameraState, ratio: cameraState.ratio * .8 });
+      await new Promise(resolve => setTimeout(resolve, 80));
+      refreshNodeLabels();
       layoutStatus.textContent = `${label} actif.`;
     }
     const nodesByNormalizedName = new Map();

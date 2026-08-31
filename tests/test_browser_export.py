@@ -132,6 +132,28 @@ def _assert_architecture_clusters_do_not_overlap(page) -> None:
     )
 
 
+def _assert_clusters_only_overlap_when_nested(page) -> None:
+    assert page.evaluate(
+        """() => {
+            const rects = [...document.querySelectorAll(
+                '.graph-namespace-group, .graph-project-group'
+            )].map(element => element.getBoundingClientRect());
+            const contains = (outer, inner) => (
+                inner.left >= outer.left && inner.right <= outer.right
+                && inner.top >= outer.top && inner.bottom <= outer.bottom
+            );
+            return rects.every((left, leftIndex) => rects.every((right, rightIndex) => {
+                if (leftIndex === rightIndex
+                    || left.right <= right.left
+                    || right.right <= left.left
+                    || left.bottom <= right.top
+                    || right.bottom <= left.top) return true;
+                return contains(left, right) || contains(right, left);
+            }));
+        }"""
+    )
+
+
 @pytest.mark.slow
 def test_html_export_resources_are_usable_in_a_constrained_browser_viewport(tmp_path: Path) -> None:
     source_root = tmp_path / "orders" / "src" / "main" / "java" / "com" / "example"
@@ -242,6 +264,7 @@ def test_html_export_resources_are_usable_in_a_constrained_browser_viewport(tmp_
         _assert_architecture_cards_do_not_overlap(page)
         _assert_architecture_cards_are_contained_in_clusters(page)
         _assert_architecture_clusters_do_not_overlap(page)
+        _assert_clusters_only_overlap_when_nested(page)
         full_node_count = _assert_filtered_graph_is_valid(page)
 
         # Changing node types must rebuild the graph and its layer overlays.
@@ -294,6 +317,7 @@ def test_html_export_resources_are_usable_in_a_constrained_browser_viewport(tmp_
         _assert_architecture_cards_do_not_overlap(page)
         _assert_architecture_cards_are_contained_in_clusters(page)
         _assert_architecture_clusters_do_not_overlap(page)
+        _assert_clusters_only_overlap_when_nested(page)
         assert page.evaluate(
             """() => {
                 const boxes = [...document.querySelectorAll('#graph-layers .graph-namespace-group')]
