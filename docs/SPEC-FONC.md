@@ -116,7 +116,8 @@ uses ELK.js compound nodes to arrange resources in a deterministic hierarchy:
 software layers are stacked vertically, namespaces are nested inside their
 layer, and services/resources are placed inside each namespace without
 overlap. The canonical order is `api`, `application`, `infrastructure`,
-`shared`, `module`, then `domain`; `domain` is always the lowest layer.
+`shared`, `module`, `domain`, then `persistence`; `persistence` is always the
+lowest layer.
 The namespace-cluster layout is independent of the layer order and uses a
 deterministic two-level packing without ELK: fCoSE first computes the local
 compound layout of resources inside each namespace, then a deterministic
@@ -148,7 +149,7 @@ The HTML architecture view MUST preserve these visual invariants:
   band starts immediately above its highest visible namespace content, and the
   last band ends immediately below its lowest visible namespace content.
 - Layers MUST be stacked vertically in the canonical order above, with the
-  Domain layer at the bottom.
+  Persistence layer at the bottom.
 - Each Kubernetes or fact namespace MUST be represented by a bounded rectangle
   fully contained inside its owning layer, including its header and padding.
 - A namespace MAY use several rows. The default placement uses at most five

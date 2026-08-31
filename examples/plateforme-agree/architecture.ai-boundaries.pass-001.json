@@ -1161,6 +1161,29 @@
       ]
     },
     {
+      "id": "persistence-orders",
+      "kind": "service",
+      "name": "persistence-orders",
+      "status": "confirmed",
+      "confidence": "high",
+      "metadata": {
+        "layer": "persistence",
+        "namespace": "platform-data",
+        "namespaces": [
+          "platform-data"
+        ],
+        "domain": "approved-platform"
+      },
+      "evidence": [
+        {
+          "path": "demo/platform-data/persistence-orders/service.yaml",
+          "start_line": 1,
+          "end_line": 20,
+          "quote": "persistence-orders deployment boundary"
+        }
+      ]
+    },
+    {
       "id": "channel-accreditation-submitted",
       "kind": "message_channel",
       "name": "channel-accreditation-submitted",

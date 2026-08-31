@@ -280,7 +280,8 @@ The namespace-cluster packer places resources on separated grids and then
 packs namespace rectangles with positive margins. The layered view reuses this
 packer with an additional grouping key: namespaces are first grouped by the
 canonical software-layer order (`api`, `application`, `infrastructure`,
-`shared`, `module`, `domain`), producing top-to-bottom layer bands. ELK may
+`shared`, `module`, `domain`, `persistence`), producing top-to-bottom layer
+bands. ELK may
 provide the initial compound layout, but the deterministic layer-aware pack is
 the final collision guard and remains valid when ELK fails.
 

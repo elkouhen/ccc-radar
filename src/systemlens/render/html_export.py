@@ -697,6 +697,7 @@ def render_graph_html(
                     "infrastructure": "#d97706",
                     "shared": "#64748b",
                     "module": "#475569",
+                    "persistence": "#0f766e",
                     "unknown": "#94a3b8",
                 }.get(module_layer, "#94a3b8"),
                 "runtime_namespaces": module_namespaces,
@@ -826,6 +827,7 @@ def render_graph_html(
                             "infrastructure": "#d97706",
                             "shared": "#64748b",
                             "module": "#475569",
+                            "persistence": "#0f766e",
                         }.get(layer, "#94a3b8")
                     namespaces = fact.metadata.get("namespaces")
                     if not isinstance(namespaces, list):

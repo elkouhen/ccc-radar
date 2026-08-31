@@ -21,10 +21,11 @@ def test_domain_prefix_has_priority_over_application_classification() -> None:
     assert software_layer(_module("domain-orders", starts_application=True)) == "domain"
     assert software_layer(_module("orders-service", starts_application=True)) == "application"
     assert software_layer(_module("orders-api")) == "api"
+    assert software_layer(_module("orders-repository")) == "persistence"
 
 
 def test_software_layers_render_contains_layer_metadata_and_dependencies() -> None:
-    modules = [_module("orders-service", starts_application=True), _module("domain-orders")]
+    modules = [_module("orders-service", starts_application=True), _module("domain-orders"), _module("orders-repository")]
     dependencies = [ModuleDependency(source="orders-service", target="domain-orders")]
     html = render_software_layers_html(modules, dependencies, [MessageEndpoint(
         id="endpoint-1",

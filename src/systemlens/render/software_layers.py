@@ -10,8 +10,8 @@ _SOFTWARE_LAYERS_HTML_TEMPLATE = (
     Path(__file__).parent / "assets" / "software_layers.html"
 ).read_text(encoding="utf-8")
 
-# Render order is top-to-bottom. Domain is deliberately the lowest layer.
-_LAYER_ORDER = ("api", "application", "infrastructure", "shared", "module", "domain")
+# Render order is top-to-bottom. Persistence is deliberately the lowest layer.
+_LAYER_ORDER = ("api", "application", "infrastructure", "shared", "module", "domain", "persistence")
 _LAYER_LABELS = {
     "application": "Application",
     "domain": "Domain",
@@ -19,6 +19,7 @@ _LAYER_LABELS = {
     "infrastructure": "Infrastructure",
     "shared": "Shared",
     "module": "Other modules",
+    "persistence": "Persistence",
 }
 _LAYER_COLORS = {
     "application": "#2563eb",
@@ -27,6 +28,7 @@ _LAYER_COLORS = {
     "infrastructure": "#d97706",
     "shared": "#64748b",
     "module": "#475569",
+    "persistence": "#0f766e",
 }
 
 
@@ -40,6 +42,8 @@ def software_layer(module: DiscoveredModule) -> str:
     name = module.name.casefold()
     if name.startswith("domain-"):
         return "domain"
+    if name.startswith(("persistence-", "repository-", "storage-", "data-")) or name.endswith(("-persistence", "-repository", "-storage", "-data")):
+        return "persistence"
     if module.starts_application:
         return "application"
     if name.startswith(("api-", "contract-", "contracts-")) or name.endswith(("-api", "-contract", "-contracts")):
