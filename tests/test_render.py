@@ -208,6 +208,8 @@ enum PaymentStatus { AUTHORIZED, DECLINED }
     assert "const overflowing = groups.filter" in document
     assert "group.columns += 1" in document
     assert "outer width is recomputed" in document
+    assert "const maxClusterRows = 3" in document
+    assert "group.minY = clusterY - group.height - clusterPaddingY" in document
     assert '"external"]' in document
     assert '"orchestration"' in document
     assert 'external: "#64748b"' in document

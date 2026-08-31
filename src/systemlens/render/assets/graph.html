@@ -1797,7 +1797,7 @@
             };
           });
         if (!groups.length) return;
-        const maxClusterRows = 4;
+        const maxClusterRows = 3;
         const maxColumns = group => Math.min(12, group.nodes.length);
         const layoutLayerGroups = () => {
           const columns = Math.min(10, Math.max(1, groups.length));
@@ -1817,8 +1817,11 @@
             const column = index % columns;
             const clusterX = (column - (columns - 1) / 2) * (outerWidth + clusterGapX);
             const clusterY = -(layerCursorY + clusterPaddingY);
-            group.minY = clusterY - group.height / 2 - clusterPaddingY;
-            group.maxY = clusterY + group.height / 2 + clusterPaddingY;
+            // Nodes are laid out from the first row towards negative graph Y.
+            // The envelope must therefore extend by the full row span from
+            // the first node, not by half of that span on either side.
+            group.minY = clusterY - group.height - clusterPaddingY;
+            group.maxY = clusterY + clusterPaddingY;
             group.nodes.forEach((node, nodeIndex) => {
               network.setNodeAttribute(node, "x", clusterX - group.width / 2 + (nodeIndex % group.columns) * nodeGapX);
               network.setNodeAttribute(node, "y", clusterY - Math.floor(nodeIndex / group.columns) * nodeGapY);
@@ -1836,7 +1839,7 @@
           layoutLayerGroups();
           const overflowing = groups.filter(group => (
             Math.ceil(group.nodes.length / group.columns) > maxClusterRows
-            || group.maxY - group.minY > maxClusterRows * nodeGapY + clusterPaddingY
+            || group.maxY - group.minY > (maxClusterRows - 1) * nodeGapY + 2 * clusterPaddingY
           ));
           if (!overflowing.length) break;
           const changed = overflowing.some(group => {
