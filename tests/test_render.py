@@ -240,6 +240,8 @@ enum PaymentStatus { AUTHORIZED, DECLINED }
     assert "Connectivité relative :" in document
     assert "const visualNodeKind = node" in document
     assert "Namespace architectural : ${node.project_namespace}" in document
+    assert "Namespace architectural : ${architecturalNamespace === \"root\" ? \"ROOT\" : architecturalNamespace}" in document
+    assert 'appendList("Namespace architectural", [architecturalNamespace === "root" ? "ROOT" : architecturalNamespace], architectureGroup)' in document
     assert 'appendList("Namespace architectural", node.project_namespace ? [node.project_namespace] : [], architectureGroup)' in document
     assert 'labelAlignment: "center"' in document
     assert "legend-resource-mark collection" in document

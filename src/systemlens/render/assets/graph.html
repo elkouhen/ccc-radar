@@ -3252,6 +3252,14 @@
           `${publishedTopicCount} topic${publishedTopicCount > 1 ? "s" : ""} publie${publishedTopicCount > 1 ? "s" : ""}`,
           `${collectionCount} collection${collectionCount > 1 ? "s" : ""} utilisee${collectionCount > 1 ? "s" : ""}`,
         ].forEach(label => { const badge = document.createElement("span"); badge.className = "detail-badge"; badge.textContent = label; meta.append(badge); });
+      } else {
+        const architecturalNamespace = namespaceForNode(id);
+        if (architecturalNamespace) {
+          const namespaceBadge = document.createElement("span");
+          namespaceBadge.className = "detail-badge";
+          namespaceBadge.textContent = `Namespace architectural : ${architecturalNamespace === "root" ? "ROOT" : architecturalNamespace}`;
+          meta.append(namespaceBadge);
+        }
       }
       const confidenceLabels = { proved: "prouvee", inferred: "inferee", conventional: "conventionnelle" };
       ["proved", "inferred", "conventional"].forEach(confidence => {
@@ -3274,6 +3282,14 @@
       }
       header.append(kicker, title, meta);
       details.append(header);
+      if (!isMicroservice) {
+        const architecturalNamespace = namespaceForNode(id);
+        if (architecturalNamespace) {
+          const architectureGroup = createDetailsGroup("Architecture");
+          appendList("Namespace architectural", [architecturalNamespace === "root" ? "ROOT" : architecturalNamespace], architectureGroup);
+          discardEmptyDetailsGroup(architectureGroup);
+        }
+      }
       if (node.kind === "microservice") {
         if (node.vscode_uri) {
           const moduleAction = document.createElement("a");
