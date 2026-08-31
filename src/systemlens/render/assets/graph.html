@@ -1084,7 +1084,7 @@
       // Preserve the architectural reading after the force calculation:
       // each software layer occupies a horizontal row, with domain at the
       // bottom. Resources without a layer follow the services they connect.
-      const layerOrder = ["external", "api", "orchestration", "application", "infrastructure", "domain", "persistence"];
+      const layerOrder = ["api", "application", "orchestration", "infrastructure", "domain", "persistence", "external"];
       const cardSpacingX = 4.0;
       const cardSpacingY = 2.6;
       const nodesByLayer = new Map(layerOrder.map(layer => [layer, []]));
@@ -1253,7 +1253,7 @@
         // actual graph geometry, while cards use a deterministic screen grid
         // with five columns and a measured gap, so their HTML rectangles do
         // not overlap even when the graph is dense.
-        const layerOrder = ["external", "api", "orchestration", "application", "infrastructure", "domain", "persistence"];
+        const layerOrder = ["api", "application", "orchestration", "infrastructure", "domain", "persistence", "external"];
         if (!layeredView) {
           overlayLayoutApplied = false;
         } else if (clusteredView || layeredClusterView) {
@@ -1730,7 +1730,7 @@
       });
     }
     function packLayeredClusterGraphPositions() {
-      const layerOrder = ["external", "api", "orchestration", "application", "infrastructure", "domain", "persistence"];
+      const layerOrder = ["api", "application", "orchestration", "infrastructure", "domain", "persistence", "external"];
       const groupsByLayer = new Map(layerOrder.map(layer => [layer, new Map()]));
       const layerForNode = node => {
         const data = nodeDataById.get(node);
@@ -1883,7 +1883,7 @@
       }
     }
     async function applyElkLayout(libraries) {
-      const layerOrder = ["external", "api", "orchestration", "application", "infrastructure", "domain", "persistence"];
+      const layerOrder = ["api", "application", "orchestration", "infrastructure", "domain", "persistence", "external"];
       const groups = new Map(layerOrder.map(layer => [layer, new Map()]));
       const layerForNode = node => {
         const data = nodeDataById.get(node);

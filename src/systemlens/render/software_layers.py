@@ -12,7 +12,7 @@ _SOFTWARE_LAYERS_HTML_TEMPLATE = (
 ).read_text(encoding="utf-8")
 
 # Render order is top-to-bottom. Persistence is deliberately the lowest layer.
-_LAYER_ORDER = ("external", "api", "orchestration", "application", "infrastructure", "domain", "persistence")
+_LAYER_ORDER = ("api", "application", "orchestration", "infrastructure", "domain", "persistence", "external")
 _LAYER_LABELS = {
     "application": "Application",
     "external": "External services",

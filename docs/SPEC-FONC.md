@@ -116,12 +116,12 @@ grouped, airy, balanced, and architectural layouts; the architectural layout
 uses ELK.js compound nodes to arrange resources in a deterministic hierarchy:
 software layers are stacked vertically, namespaces are nested inside their
 layer, and services/resources are placed inside each namespace without
-overlap. The internal canonical order is `api`, `orchestration`, `application`,
+overlap. The internal canonical order is `api`, `application`, `orchestration`,
 `infrastructure`, `domain`, then `persistence`;
 `persistence` is always the lowest layer. In Strategy1, the `CYCLE-DE-VIE`
 project namespace is rendered in the Orchestration layer.
-External microservices are rendered in a dedicated `External services` layer,
-outside the internal layer order.
+External microservices are rendered in a dedicated `External services` layer
+at the bottom, after the internal layer order.
 Shared libraries and other non-deployable modules are not rendered as layers.
 For the graph export, a namespace is the parent directory containing one or
 more projects/modules; Kubernetes namespaces are retained as metadata only.

@@ -297,10 +297,10 @@ from incoming producer edges before consulting resource metadata; this keeps
 topics and collections with their producing microservice. The layered view
 reuses this
 packer with an additional grouping key: namespaces are first grouped by the
-canonical internal software-layer order (`api`, `orchestration`, `application`,
+canonical internal software-layer order (`api`, `application`, `orchestration`,
 `infrastructure`, `domain`, `persistence`), producing
 top-to-bottom layer bands. External microservices use the dedicated `external`
-layer and are not part of the internal dependency order. ELK may
+layer at the bottom and are not part of the internal dependency order. ELK may
 provide the initial compound layout, but the deterministic layer-aware pack is
 the final collision guard and remains valid when ELK fails.
 
