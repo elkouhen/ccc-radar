@@ -259,9 +259,11 @@ enum PaymentStatus { AUTHORIZED, DECLINED }
     assert "const clusterBoundsOverlap =" in document
     assert "renderedClusterRects" in document
     assert "renderer.getCamera().setState(lastSafeCameraState)" in document
-    assert "zoomOutButton.disabled = clusteredView" in document
-    assert "if (clusteredView) return;" in document
-    assert "blockClusterZoomOut" in document
+    assert "zoomOutButton.disabled = false" in document
+    assert "zoomOutButton.disabled = clusteredView" not in document
+    assert "blockClusterZoomOut" not in document
+    assert "if (cameraFitAdjusting) return;" in document
+    assert "refreshNodeLabels?.();" in document
     assert "Connectivité relative :" in document
     assert "const visualNodeKind = node" in document
     assert "Namespace architectural" not in document

@@ -1622,10 +1622,14 @@
             && left.right > right.left && right.right > left.left
             && left.bottom > right.top && right.bottom > left.top)
         ));
-        if (cameraZoomedOut && clusterBoundsOverlap && lastSafeCameraState && !cameraFitAdjusting) {
+        if (cameraFitAdjusting) return;
+        if (cameraZoomedOut && clusterBoundsOverlap && lastSafeCameraState) {
           cameraFitAdjusting = true;
           renderer.getCamera().setState(lastSafeCameraState);
-          setTimeout(() => { cameraFitAdjusting = false; }, 120);
+          setTimeout(() => {
+            cameraFitAdjusting = false;
+            refreshNodeLabels?.();
+          }, 160);
           return;
         }
         lastSafeCameraState = { ...renderer.getCamera().getState() };
@@ -1836,15 +1840,8 @@
         window.addEventListener("pointercancel", finishGraphPan, true);
       };
       graphCanvas.addEventListener("pointerdown", startGraphPan, true);
-      const blockClusterZoomOut = event => {
-        if (!clusteredView || event.deltaY <= 0) return;
-        event.preventDefault();
-        event.stopImmediatePropagation();
-      };
-      graphCanvas.addEventListener("wheel", blockClusterZoomOut, true);
       graphPanCleanup = () => {
         graphCanvas.removeEventListener("pointerdown", startGraphPan, true);
-        graphCanvas.removeEventListener("wheel", blockClusterZoomOut, true);
         window.removeEventListener("pointermove", moveGraphPan, true);
         window.removeEventListener("pointerup", finishGraphPan, true);
         window.removeEventListener("pointercancel", finishGraphPan, true);
@@ -2490,10 +2487,8 @@
       layeredClusterView = layout === "elk";
       overlayLayoutApplied = false;
       const zoomOutButton = document.getElementById("zoom-out");
-      zoomOutButton.disabled = clusteredView;
-      zoomOutButton.title = clusteredView
-        ? "Le dézoom est désactivé dans la vue namespaces pour préserver la séparation des clusters"
-        : "Dézoomer";
+      zoomOutButton.disabled = false;
+      zoomOutButton.title = "Dézoomer";
       const nextView = !layeredView ? "couches" : !clusteredView ? "clusters" : "graphe";
       const nextViewLabel = {
         couches: "Afficher le rendu en couches",
@@ -3991,7 +3986,6 @@
       setTimeout(() => refreshNodeLabels?.(), 240);
     });
     document.getElementById("zoom-out").addEventListener("click", () => {
-      if (clusteredView) return;
       const renderer = activeRenderer();
       renderer.getCamera().animatedUnzoom({ duration: 180 });
       setTimeout(() => refreshNodeLabels?.(), 240);
