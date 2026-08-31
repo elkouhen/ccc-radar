@@ -1271,8 +1271,6 @@
         },
       });
       const refreshNodeLabels = () => {
-        graphGroupsOverlay.replaceChildren();
-        nodeLabelOverlay.replaceChildren();
         const nodePoints = new Map();
         const graphPointToViewport = graphPoint => {
           return renderer.graphToViewport(graphPoint);
@@ -1326,6 +1324,11 @@
           setTimeout(() => { cameraFitAdjusting = false; }, 120);
           return;
         }
+        // Keep the previous frame visible until the camera correction above
+        // has settled and the complete replacement overlay is ready. Clearing
+        // first made cluster boxes flicker during zoom and pan updates.
+        graphGroupsOverlay.replaceChildren();
+        nodeLabelOverlay.replaceChildren();
         // Pack the readable overlay by layer and namespace. Sigma keeps the
         // actual graph geometry, while cards use a deterministic screen grid
         // with five columns and a measured gap, so their HTML rectangles do
