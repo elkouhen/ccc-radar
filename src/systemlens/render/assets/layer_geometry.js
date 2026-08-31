@@ -34,7 +34,7 @@
   }
 
   function computeClusterSubLayers(microservices, resources, options) {
-    const { nodeGapX = 240, nodeGapY = 160, subLayerGapY = 120, maxColumns = 5 } = options;
+    const { nodeGapX = 320, nodeGapY = 220, subLayerGapY = 160, maxColumns = 5 } = options;
     const positions = {};
     const groups = [microservices, resources].filter(group => group.length);
     // Sigma's graph Y axis grows upwards.  Keep services at the upper

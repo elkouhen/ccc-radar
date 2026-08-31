@@ -1850,8 +1850,8 @@
         namespaceGroups.get(namespace).push(node);
       });
       const groups = [...namespaceGroups.entries()].sort(([left], [right]) => left.localeCompare(right));
-      const nodeGapX = 240;
-      const nodeGapY = 160;
+      const nodeGapX = 320;
+      const nodeGapY = 220;
       const clusterPaddingX = 120;
       const clusterPaddingY = 100;
       const clusterGapX = 260;
@@ -1867,7 +1867,7 @@
         const microservices = orderedNodes.filter(node => nodeDataById.get(node)?.kind === "microservice");
         const resources = orderedNodes.filter(node => nodeDataById.get(node)?.kind !== "microservice");
         const subLayers = SystemLensLayerGeometry.computeClusterSubLayers(
-          microservices, resources, { nodeGapX, nodeGapY, subLayerGapY: 120, maxColumns: 5 }
+          microservices, resources, { nodeGapX, nodeGapY, subLayerGapY: 160, maxColumns: 5 }
         );
         // The overlay envelope is deliberately larger than the node grid:
         // refreshNodeLabels adds 120px horizontally and 100px vertically on
@@ -1936,8 +1936,8 @@
         if (!namespaces.has(namespace)) namespaces.set(namespace, []);
         namespaces.get(namespace).push(node);
       });
-      const nodeGapX = 300;
-      const nodeGapY = 160;
+      const nodeGapX = 360;
+      const nodeGapY = 220;
       const clusterPaddingX = 100;
       const clusterPaddingY = 120;
       const clusterGapX = 220;
@@ -1976,7 +1976,7 @@
             group.subLayers = SystemLensLayerGeometry.computeClusterSubLayers(
               group.microservices,
               group.resources,
-              { nodeGapX, nodeGapY, subLayerGapY: 120, maxColumns: group.columns },
+              { nodeGapX, nodeGapY, subLayerGapY: 160, maxColumns: group.columns },
             );
             group.width = group.subLayers.width;
             group.height = Math.abs(group.subLayers.height);

@@ -83,6 +83,22 @@ def _assert_architecture_cards_match_size(page, expected: tuple[float, float]) -
     assert actual[1] == pytest.approx(expected[1], abs=0.01)
 
 
+def _assert_architecture_cards_do_not_overlap(page) -> None:
+    assert page.evaluate(
+        """() => {
+            const rects = [...document.querySelectorAll('.graph-node-card-label')]
+                .map(card => card.getBoundingClientRect());
+            return rects.every((left, leftIndex) => rects.every((right, rightIndex) => (
+                leftIndex === rightIndex
+                || left.right <= right.left
+                || right.right <= left.left
+                || left.bottom <= right.top
+                || right.bottom <= left.top
+            )));
+        }"""
+    )
+
+
 @pytest.mark.slow
 def test_html_export_resources_are_usable_in_a_constrained_browser_viewport(tmp_path: Path) -> None:
     source_root = tmp_path / "orders" / "src" / "main" / "java" / "com" / "example"
@@ -188,6 +204,7 @@ def test_html_export_resources_are_usable_in_a_constrained_browser_viewport(tmp_
         page.locator("#layout-status").filter(has_text="vue couches").wait_for(state="visible")
         assert not errors, errors
         _assert_architecture_cards_match_size(page, card_size)
+        _assert_architecture_cards_do_not_overlap(page)
         full_node_count = _assert_filtered_graph_is_valid(page)
 
         # Changing node types must rebuild the graph and its layer overlays.
@@ -237,6 +254,7 @@ def test_html_export_resources_are_usable_in_a_constrained_browser_viewport(tmp_
         assert page.locator("#graph-layers .graph-namespace-group").count() >= 1
         assert page.locator("#graph-layers .graph-cluster-sublayer-title").count() >= 2
         _assert_architecture_cards_match_size(page, card_size)
+        _assert_architecture_cards_do_not_overlap(page)
         assert page.evaluate(
             """() => {
                 const boxes = [...document.querySelectorAll('#graph-layers .graph-namespace-group')]

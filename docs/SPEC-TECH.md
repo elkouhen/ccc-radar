@@ -289,8 +289,10 @@ packs namespace rectangles with positive margins that include the complete
 projected card/title envelope, not only the node-grid dimensions. Container geometry is kept
 in graph coordinates until it is projected to the viewport. When project or
 other parent groups are enabled, their bounds are the union of the already
-projected child namespace bounds plus title/padding margins; this explicit
-hierarchy prevents a parent from being smaller than a nested cluster after
+projected child namespace bounds plus title/padding margins; node-grid gaps are
+calibrated for the shared 110×70 card at the common 0.5 display scale so the
+larger cards do not overlap after projection. This explicit hierarchy prevents
+a parent from being smaller than a nested cluster after
 zooming. Sibling rectangles remain separated, while parent/descendant
 intersection is intentional. Project groups carry their owning project
 namespace and full namespace path. Structural project groups contain only
