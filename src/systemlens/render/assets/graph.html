@@ -1347,9 +1347,9 @@
         const layerColors = { external: "#64748b", api: "#0891b2", application: "#2563eb", orchestration: "#9333ea", infrastructure: "#d97706", shared: "#64748b", module: "#475569", domain: "#7c3aed", persistence: "#0f766e" };
         const visibleServices = [...nodePoints.entries()]
           .map(([id, point]) => ({ id, point, node: nodeDataById.get(id) }))
-          .filter(item => item.node?.kind === "microservice" && item.node.layer);
+          .filter(item => item.node?.kind === "microservice" && layeredLayerForNode(item.id));
         const layers = layerOrder
-          .map(id => ({ id, items: visibleServices.filter(item => item.node.layer === id) }))
+          .map(id => ({ id, items: visibleServices.filter(item => layeredLayerForNode(item.id) === id) }))
           .filter(layer => layer.items.length);
         const layerCenters = layers.map(layer => ({
           ...layer,
@@ -1786,7 +1786,8 @@
     function layeredLayerForNode(node) {
       const layerOrder = ["api", "application", "orchestration", "infrastructure", "domain", "persistence", "external"];
       const data = nodeDataById.get(node);
-      if (data?.architecture_layer && layerOrder.includes(data.architecture_layer)) return data.architecture_layer;
+      const declaredLayer = data?.architecture_layer || data?.layer_label;
+      if (declaredLayer && layerOrder.includes(declaredLayer)) return declaredLayer;
       if (data?.kind === "microservice" && layerOrder.includes(data.layer)) return data.layer;
       const neighbourLayer = network.neighbors(node)
         .map(neighbour => nodeDataById.get(neighbour)?.layer)
