@@ -3229,6 +3229,12 @@
         layerBadge.className = "detail-badge";
         layerBadge.textContent = `Layer : ${node.layer_label || "Unknown"}`;
         meta.append(layerBadge);
+        if (node.project_namespace) {
+          const projectNamespaceBadge = document.createElement("span");
+          projectNamespaceBadge.className = "detail-badge";
+          projectNamespaceBadge.textContent = `Namespace architectural : ${node.project_namespace}`;
+          meta.append(projectNamespaceBadge);
+        }
         (node.runtime_namespaces || []).forEach(namespace => {
           const namespaceBadge = document.createElement("span");
           namespaceBadge.className = "detail-badge";
@@ -3285,9 +3291,10 @@
         const openApiContracts = node.openapi_contracts || [];
         const kubernetesWorkloads = node.kubernetes_workloads || [];
         appendFindings(node.findings || []);
-        if (node.runtime_namespaces?.length || node.fact_namespaces?.length) {
+        if (node.project_namespace || node.runtime_namespaces?.length || node.fact_namespaces?.length) {
           const architectureGroup = createDetailsGroup("Architecture");
           appendList("Layer", [node.layer_label || "Unknown"], architectureGroup);
+          appendList("Namespace architectural", node.project_namespace ? [node.project_namespace] : [], architectureGroup);
           appendList("Namespaces Kubernetes", node.runtime_namespaces || [], architectureGroup);
           appendList("Namespaces de faits", node.fact_namespaces || [], architectureGroup);
           discardEmptyDetailsGroup(architectureGroup);

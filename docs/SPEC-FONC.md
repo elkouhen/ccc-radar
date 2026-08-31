@@ -187,6 +187,10 @@ Every layout switch MUST refit the camera to the resulting graph; it MUST NOT
 apply an additional automatic zoom-out that makes the layout unnecessarily
 small.
 
+The microservice details panel MUST display its architectural namespace (the
+cluster grouping such as `clusterA` or `clusterB`) separately from Kubernetes
+namespaces and fact namespaces.
+
 ### Rules for the namespace-cluster rendering
 
 The cluster view MUST preserve these visual invariants:

@@ -239,6 +239,8 @@ enum PaymentStatus { AUTHORIZED, DECLINED }
     assert "labelRenderedSizeThreshold: 10" in document
     assert "Connectivité relative :" in document
     assert "const visualNodeKind = node" in document
+    assert "Namespace architectural : ${node.project_namespace}" in document
+    assert 'appendList("Namespace architectural", node.project_namespace ? [node.project_namespace] : [], architectureGroup)' in document
     assert 'labelAlignment: "center"' in document
     assert "legend-resource-mark collection" in document
     assert 'class="brand-mark">SL</span>' in document
