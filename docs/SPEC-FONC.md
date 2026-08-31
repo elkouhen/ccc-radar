@@ -133,6 +133,9 @@ visually subdued. In every view, microservice, Kafka topic, message channel,
 MongoDB collection, data schema, and equivalent resource cards share the same
 rendered width, height, and scale. Their semantic differences are conveyed by
 icon, border, and color.
+During pan and zoom, the graph and its cluster overlays remain synchronized so
+cards and their containing rectangles move together without transient partial
+redraws.
 For the graph export, a namespace is the parent directory containing one or
 more projects/modules; Kubernetes namespaces are retained as metadata only.
 Projects located directly at the indexed repository root are assigned to the

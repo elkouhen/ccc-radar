@@ -286,6 +286,10 @@ The HTML renderer keeps graph coordinates as the source of truth for layout.
 The shared card size remains stable during navigation; when a zoom-out would
 make projected card envelopes intersect, the camera ratio is clamped to the
 last safe level instead of shrinking cards or moving the layout.
+Camera updates during pan and zoom are coalesced to the next animation frame.
+The Sigma canvas and the HTML card/cluster overlays are therefore recomputed
+from one camera state per frame, preventing partially rebuilt containers from
+appearing while the user drags the namespace view.
 After force-based placement, the graph view runs a projected-card collision pass
 against the HTML card envelope; this covers residual diagonal intersections that
 Sigma's compact node-radius no-overlap pass cannot detect.

@@ -1665,8 +1665,21 @@
           nodeLabelOverlay.append(label);
         });
       };
-      renderer.on("afterRender", refreshNodeLabels);
-      renderer.getCamera().on("updated", refreshNodeLabels);
+      // Camera updates can fire several times during one drag. Coalesce them
+      // into the next animation frame so the canvas and its HTML overlays are
+      // repainted from the same camera state. Rebuilding synchronously for
+      // every intermediate pan state can briefly expose partial cluster boxes.
+      let labelRefreshScheduled = false;
+      const scheduleNodeLabelRefresh = () => {
+        if (labelRefreshScheduled) return;
+        labelRefreshScheduled = true;
+        requestAnimationFrame(() => {
+          labelRefreshScheduled = false;
+          refreshNodeLabels();
+        });
+      };
+      renderer.on("afterRender", scheduleNodeLabelRefresh);
+      renderer.getCamera().on("updated", scheduleNodeLabelRefresh);
       refreshNodeLabels();
       renderer.on("enterNode", ({ node }) => { hoveredId = node; refreshNodeLabels(); });
       renderer.on("leaveNode", () => { hoveredId = null; refreshNodeLabels(); });

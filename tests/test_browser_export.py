@@ -132,6 +132,40 @@ def _assert_architecture_clusters_do_not_overlap(page) -> None:
     )
 
 
+def _assert_pan_moves_cluster_overlays_as_one_surface(page) -> None:
+    before = page.evaluate(
+        """() => [...document.querySelectorAll(
+            '.graph-node-card-label, .graph-namespace-group, .graph-project-group'
+        )].map(element => {
+            const rect = element.getBoundingClientRect();
+            return [rect.left, rect.top, rect.right, rect.bottom];
+        })"""
+    )
+    assert before
+    page.mouse.move(980, 80)
+    page.mouse.down()
+    page.mouse.move(900, 145, steps=10)
+    page.mouse.up()
+    page.wait_for_timeout(250)
+    after = page.evaluate(
+        """() => [...document.querySelectorAll(
+            '.graph-node-card-label, .graph-namespace-group, .graph-project-group'
+        )].map(element => {
+            const rect = element.getBoundingClientRect();
+            return [rect.left, rect.top, rect.right, rect.bottom];
+        })"""
+    )
+    assert len(after) == len(before)
+    delta_x = after[0][0] - before[0][0]
+    delta_y = after[0][1] - before[0][1]
+    assert abs(delta_x) > 1 or abs(delta_y) > 1
+    for old, new in zip(before, after):
+        assert new[0] - old[0] == pytest.approx(delta_x, abs=1.5)
+        assert new[1] - old[1] == pytest.approx(delta_y, abs=1.5)
+        assert new[2] - old[2] == pytest.approx(delta_x, abs=1.5)
+        assert new[3] - old[3] == pytest.approx(delta_y, abs=1.5)
+
+
 def _assert_clusters_only_overlap_when_nested(page) -> None:
     assert page.evaluate(
         """() => {
@@ -425,11 +459,14 @@ def test_html_export_resources_are_usable_in_a_constrained_browser_viewport(tmp_
             page.wait_for_timeout(400)
             _assert_architecture_cards_have_uniform_size(page)
             _assert_architecture_cards_do_not_overlap(page)
-            page.mouse.move(800, 300)
-            page.mouse.down()
-            page.mouse.move(930, 390, steps=8)
-            page.mouse.up()
-            page.wait_for_timeout(400)
+            if view_name == "Namespaces":
+                _assert_pan_moves_cluster_overlays_as_one_surface(page)
+            else:
+                page.mouse.move(980, 80)
+                page.mouse.down()
+                page.mouse.move(900, 145, steps=10)
+                page.mouse.up()
+                page.wait_for_timeout(250)
             _assert_architecture_cards_have_uniform_size(page)
             _assert_architecture_cards_do_not_overlap(page)
             _assert_architecture_cards_are_contained_in_clusters(page)
