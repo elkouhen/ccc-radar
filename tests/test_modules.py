@@ -20,7 +20,7 @@ from systemlens.modules import (
     discover_modules,
     module_identity,
 )
-from systemlens.store import Store
+from systemlens.store import Store, StoreError
 from systemlens.workspace import discover_workspace_services, load_federation
 
 runner = CliRunner()
@@ -907,6 +907,15 @@ def test_modules_are_read_from_the_persisted_index_snapshot(tmp_path: Path) -> N
         persisted = store.all_modules()
 
     assert [(item.name, item.version) for item in persisted] == [("orders-api", "3.1.0")]
+
+
+def test_store_rejects_unknown_schema_version(tmp_path: Path) -> None:
+    with Store(tmp_path) as store:
+        store.set_meta("schema_version", "future")
+
+    with pytest.raises(StoreError, match="version invalide"):
+        with Store(tmp_path):
+            pass
 
 
 def test_index_repo_materializes_modules_snapshot(

@@ -67,7 +67,9 @@ default AST extractor. Strategy1 also enables the repository-specific layer
 conventions: project namespace `PORTAIL` identifies API modules, project
 namespace `CYCLE-DE-VIE` identifies Orchestration modules, and the `DOMAIN-*`
 module prefix identifies Domain modules. A project namespace is a parent
-directory containing projects, not a Kubernetes namespace.
+directory containing projects, not a Kubernetes namespace. Other layer-name
+prefixes and suffixes (`api-*`, `infra-*`, `shared-*`, `repository-*`, and
+related forms) are also Strategy1-only conventions.
 
 **Consequences:** Default indexing remains framework-oriented and portable;
 Strategy1 facts are explicitly identified as convention-derived.

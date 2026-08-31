@@ -141,9 +141,8 @@ is used without the local fCoSE ordering.
 ELK is used only for the architectural layer layout, while Sigma.js provides
 the interactive rendering for both views. Architecture relations remain
 visible even when they are not used as placement edges.
-It also provides dedicated
-OpenAPI, Kafka, Mongo, Request/reply, and Build views keep their domain
-inventories separate. Changing a relation-type filter rebuilds and relayouts
+It also provides dedicated OpenAPI, Kafka, Mongo, Request/reply, and Build
+views, which keep their domain inventories separate. Changing a relation-type filter rebuilds and relayouts
 the graph from only the selected dependency types; excluded relations do not
 influence the resulting graph layout.
 

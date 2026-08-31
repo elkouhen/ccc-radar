@@ -176,6 +176,25 @@ class Store:
         return self._conn
 
     def _create_schema(self) -> None:
+        # Read the version before running CREATE/ALTER statements.  Unknown
+        # versions must never be silently relabelled as the current schema:
+        # that would make an incomplete or future database appear compatible.
+        try:
+            existing_version = self.get_meta("schema_version")
+        except sqlite3.OperationalError:
+            existing_version = None
+        if existing_version is not None:
+            try:
+                version_number = int(existing_version)
+            except ValueError as exc:
+                raise StoreError(
+                    f"Schéma incompatible ({self._db_path}) : version invalide {existing_version!r}."
+                ) from exc
+            if version_number < 1 or version_number > int(SCHEMA_VERSION):
+                raise StoreError(
+                    f"Schéma incompatible ({self._db_path}) : version {existing_version!r} "
+                    f"non prise en charge, attendu entre 1 et {SCHEMA_VERSION}."
+                )
         self.conn.executescript(
             """
             CREATE TABLE IF NOT EXISTS meta (

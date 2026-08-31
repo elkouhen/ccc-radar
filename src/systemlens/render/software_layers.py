@@ -5,7 +5,7 @@ from pathlib import Path
 
 from systemlens.models import MessageEndpoint
 from systemlens.modules import DiscoveredModule, ModuleDependency, module_identity
-from systemlens.render.namespaces import project_namespace
+from systemlens.render.namespaces import project_namespace, project_namespace_path
 
 _SOFTWARE_LAYERS_HTML_TEMPLATE = (
     Path(__file__).parent / "assets" / "software_layers.html"
@@ -102,7 +102,7 @@ def render_software_layers_html(
     for layer, items in by_layer.items():
         by_namespace: dict[str, list[DiscoveredModule]] = {}
         for module in items:
-            by_namespace.setdefault(project_namespace(module, root_path), []).append(module)
+            by_namespace.setdefault(project_namespace_path(module, root_path), []).append(module)
         namespace_cursor = 0
         for namespace, namespace_modules in sorted(by_namespace.items()):
             start = namespace_cursor

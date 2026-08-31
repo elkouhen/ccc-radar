@@ -9,6 +9,7 @@ import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import yaml
 
@@ -18,7 +19,13 @@ from systemlens.graph import (
     external_microservice_names,
     resolve_rest_target_service,
 )
-from systemlens.models import ExtractionDiagnostic, Finding, GraphFact, MessageEndpoint
+from systemlens.models import (
+    ArchitectureRelation,
+    ExtractionDiagnostic,
+    Finding,
+    GraphFact,
+    MessageEndpoint,
+)
 from systemlens.modules import (
     DiscoveredModule,
     ModuleDependency,
@@ -43,6 +50,24 @@ from systemlens.render.likec4_export import _complexity_ranking
 from systemlens.render_snapshot import kafka_dto_views
 
 _GRAPH_HTML_TEMPLATE = (Path(__file__).parent / "assets" / "graph.html").read_text(encoding="utf-8")
+
+
+def _fact_runtime_namespaces(fact: GraphFact) -> list[str]:
+    """Return runtime namespaces from an enrichment fact without guessing."""
+    metadata: dict[str, Any] = fact.metadata or {}
+    values = metadata.get("namespaces")
+    if not isinstance(values, list):
+        values = [metadata.get("namespace")]
+    return [str(value) for value in values if value]
+
+
+def _canonical_resource_kind(kind: str | None) -> str:
+    """Map persisted relation vocabulary to the visual resource vocabulary."""
+    return {
+        "topic": "kafka_topic",
+        "collection": "mongodb_collection",
+        "data_schema": "data_schema",
+    }.get(kind or "", kind or "")
 
 
 def _indexing_issues(
@@ -492,6 +517,7 @@ def render_graph_html(
     openapi_contracts: list[dict[str, object]] | None = None,
     graph_facts: list[GraphFact] | None = None,
     strategy1: bool = False,
+    architecture_relations: list[ArchitectureRelation] | None = None,
 ) -> str:
     """Render an interactive Sigma.js graph as a self-contained HTML document.
 
@@ -615,7 +641,12 @@ def render_graph_html(
                         for field in item.fields
                     ],
                 })
-    nodes: list[dict[str, object]] = []
+    # This JSON is deliberately assembled as a mutable object graph before it
+    # is serialized.  ``Any`` is used at this boundary because the browser
+    # contract contains heterogeneous node shapes; keeping that boundary
+    # explicit prevents mypy from treating every nested value as an opaque
+    # ``object`` while the rest of the renderer is being built.
+    nodes: list[dict[str, Any]] = []
     runtime_namespaces = sorted({
         workload.namespace
         for module in all_modules
@@ -624,11 +655,7 @@ def render_graph_html(
     } | {
         str(namespace)
         for fact in graph_facts or []
-        for namespace in (
-            (fact.metadata or {}).get("namespaces", [])
-            if isinstance((fact.metadata or {}).get("namespaces", []), list)
-            else [(fact.metadata or {}).get("namespace")]
-        )
+        for namespace in _fact_runtime_namespaces(fact)
         if namespace
     })
     fact_namespaces = sorted({fact.namespace for fact in graph_facts or [] if fact.namespace})
@@ -707,6 +734,7 @@ def render_graph_html(
                 **({"architecture_namespace": module_namespaces[0]} if module_namespaces else {}),
                 **({"project_namespace": project_namespace(module, root_path)} if module else {}),
                 **({"project_namespace_path": project_namespace_path(module, root_path)} if module else {}),
+                **({"cluster_path": project_namespace_path(module, root_path)} if module else {}),
                 "architecture_layer": module_layer,
                 "kafka_endpoints": [
                     {
@@ -833,26 +861,33 @@ def render_graph_html(
                             "infrastructure": "#d97706",
                             "persistence": "#0f766e",
                         }.get(layer, "#94a3b8")
-                    namespaces = fact.metadata.get("namespaces")
+                    metadata: dict[str, Any] = fact.metadata
+                    namespaces = metadata.get("namespaces")
                     if not isinstance(namespaces, list):
-                        namespaces = [fact.metadata.get("namespace")]
+                        namespaces = [metadata.get("namespace")]
                     node["runtime_namespaces"] = sorted({
                         str(namespace) for namespace in namespaces if namespace
                     })
-                    if node["runtime_namespaces"]:
-                        node["architecture_namespace"] = node["runtime_namespaces"][0]
+                    runtime_values = node["runtime_namespaces"]
+                    if isinstance(runtime_values, list) and runtime_values:
+                        node["architecture_namespace"] = runtime_values[0]
                     if node.get("layer"):
                         node["architecture_layer"] = node["layer"]
+                    if node.get("project_namespace_path"):
+                        node["cluster_path"] = node["project_namespace_path"]
             if fact_visual_kind == "microservice":
-                node.setdefault("fact_namespaces", [])
-                if fact.namespace not in node["fact_namespaces"]:
-                    node["fact_namespaces"].append(fact.namespace)
+                fact_values = node.setdefault("fact_namespaces", [])
+                if not isinstance(fact_values, list):
+                    fact_values = []
+                    node["fact_namespaces"] = fact_values
+                if fact.namespace not in fact_values:
+                    fact_values.append(fact.namespace)
 
     # A resource belongs visually to the boundary of the service that writes
     # or publishes it.  The namespace on a data/topic fact often describes
     # the broker or database infrastructure, which is useful as provenance
     # but is not the architectural ownership boundary used by this view.
-    service_architecture = {
+    service_architecture: dict[str, dict[str, Any]] = {
         str(node["name"]): {
             "layer": node.get("layer", "unknown"),
             "namespace": node.get("project_namespace"),
@@ -872,7 +907,32 @@ def render_graph_html(
         source_kind = "microservice" if fact.source_kind == "service" else fact.source_kind
         if source_kind != "microservice" or not fact.source_name or not fact.target_name:
             continue
-        add_resource_owner((fact.target_kind or "", fact.target_name), fact.source_name)
+        target_kind = _canonical_resource_kind(fact.target_kind)
+        add_resource_owner((target_kind, fact.target_name), fact.source_name)
+    # Prefer the canonical persisted relation projection when the caller has
+    # one.  The graph edges remain a rendering adapter, while ownership is
+    # resolved from the same architecture model used by query APIs.
+    for relation in architecture_relations or []:
+        if relation.relation not in {"publishes", "writes"}:
+            continue
+        source_kind = "microservice" if relation.source_kind == "service" else relation.source_kind
+        if source_kind == "microservice":
+            add_resource_owner(
+                (_canonical_resource_kind(relation.target_kind), relation.target_name),
+                relation.source_name,
+            )
+    # Mongo methods are persisted as architecture relations, but older
+    # callers of this renderer may not provide those relations as graph
+    # facts.  Reuse the same source evidence here so ownership does not depend
+    # on which export entry point was used.
+    for module in all_modules:
+        service = module_identity(module)
+        for method in module.mongo_methods:
+            if method.collection and method.operation in {
+                "bulkOps", "findAndModify", "findAndReplace", "insert", "remove",
+                "save", "updateFirst", "updateMulti", "upsert",
+            }:
+                add_resource_owner(("mongodb_collection", method.collection), service)
     for edge in edges:
         if edge.kind == "kafka" and edge.from_endpoint.topic:
             add_resource_owner(("kafka_topic", edge.from_endpoint.topic), edge.from_service)
@@ -886,7 +946,7 @@ def render_graph_html(
         for key, owners in resource_owner_candidates.items()
     }
     for node in nodes:
-        owner = resource_owners.get((str(node.get("kind")), str(node.get("name"))))
+        owner = resource_owners.get((_canonical_resource_kind(str(node.get("kind"))), str(node.get("name"))))
         if owner is None and node.get("kind") == "mongodb_collection":
             owner = str(node.get("owner") or "") or None
         if owner is None:
@@ -934,7 +994,9 @@ def render_graph_html(
         if not all((fact.source_kind, fact.source_name, fact.target_kind, fact.target_name)):
             continue
         source_kind = "microservice" if fact.source_kind == "service" else fact.source_kind
-        target_kind = "microservice" if fact.target_kind == "service" else fact.target_kind
+        target_kind = (
+            "microservice" if fact.target_kind == "service" else str(fact.target_kind)
+        )
         source_id = f"{source_kind}:{fact.source_name}"
         target_id = f"{target_kind}:{fact.target_name}"
         for node_id, node_kind, node_name in (
@@ -1065,7 +1127,7 @@ def render_graph_html(
     project_groups = [
         {
             "name": parent.name,
-            "namespace": project_namespace(children[0][1], root_path),
+            "namespace": project_namespace_path(children[0][1], root_path),
             "children": sorted(node_id for node_id, _module in children),
         }
         for parent, children in sorted(modules_by_parent.items(), key=lambda item: str(item[0]))

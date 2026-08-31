@@ -36,7 +36,10 @@ def render_namespaces_html(
     """Render namespaces as containers containing their indexed modules."""
     by_namespace: dict[str, list[DiscoveredModule]] = {}
     for module in modules:
-        namespace = project_namespace(module, root_path)
+        # The hierarchy export is the canonical cluster-path view.  Keep
+        # ``project_namespace`` as the legacy immediate-parent API, but do not
+        # discard parent directories when building the hierarchy.
+        namespace = project_namespace_path(module, root_path)
         by_namespace.setdefault(namespace, []).append(module)
 
     namespace_names = sorted(by_namespace)

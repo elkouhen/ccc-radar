@@ -101,3 +101,13 @@ def test_project_namespace_path_keeps_nested_cluster_directories() -> None:
         path=Path("/workspace/cluster1/cluster2/orders-service"),
     )
     assert project_namespace_path(module, Path("/workspace")) == "cluster1/cluster2"
+
+
+def test_namespace_export_uses_full_cluster_path() -> None:
+    module = replace(
+        _module("orders-service", starts_application=True),
+        path=Path("/workspace/cluster1/cluster2/orders-service"),
+    )
+    html = render_namespaces_html([module], Path("/workspace"))
+    assert '"name": "cluster1/cluster2"' in html
+    assert '"parent": "cluster1"' in html

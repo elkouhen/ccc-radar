@@ -11,6 +11,7 @@ from systemlens.modules import (
     ModuleDependency,
     MongoField,
     MongoPersistenceClass,
+    MongoMethod,
     discover_modules,
 )
 from systemlens.render import _vscode_file_uri, render_graph_html
@@ -783,3 +784,56 @@ def test_graph_html_keeps_kafka_topic_in_producer_namespace_cluster() -> None:
     assert producer_node["project_namespace"] == "PORTAIL"
     assert topic["architecture_namespace"] == producer_node["project_namespace"]
     assert all(topic["id"] not in group["children"] for group in graph_data["groups"])
+
+
+def test_graph_html_uses_canonical_cluster_path_for_services_and_topics() -> None:
+    producer = _kafka_endpoint("produce", "OrderCreated", "Publisher.java")
+    consumer = _kafka_endpoint("consume", "OrderCreated", "Consumer.java")
+    producer_module = DiscoveredModule(
+        name="orders", path=Path("/workspace/cluster1/cluster2/orders"),
+        build_system="maven", version=None, kind="application", starts_application=True,
+        configuration_example="",
+    )
+    consumer_module = DiscoveredModule(
+        name="payments", path=Path("/workspace/cluster1/cluster3/payments"),
+        build_system="maven", version=None, kind="application", starts_application=True,
+        configuration_example="",
+    )
+    graph_data = _html_graph_data(render_graph_html(
+        {"orders": [producer], "payments": [consumer]},
+        [GraphEdge("kafka", "orders", "payments", producer, consumer)],
+        modules_by_service={"orders": producer_module, "payments": consumer_module},
+        build_modules=[producer_module, consumer_module], root_path=Path("/workspace"),
+    ))
+    nodes = {node["name"]: node for node in graph_data["nodes"]}
+    topic = next(node for node in graph_data["nodes"] if node["kind"] == "kafka_topic")
+    assert nodes["orders"]["cluster_path"] == "cluster1/cluster2"
+    assert nodes["payments"]["cluster_path"] == "cluster1/cluster3"
+    assert topic["architecture_namespace_path"] == "cluster1/cluster2"
+
+
+def test_mongodb_resource_owner_uses_lowest_writing_service_layer() -> None:
+    writer_domain = DiscoveredModule(
+        name="domain-orders", path=Path("/workspace/DOMAIN/domain-orders"),
+        build_system="maven", version=None, kind="application", starts_application=True,
+        configuration_example="", mongo_collections=("orders",),
+        mongo_methods=(MongoMethod("save", "mongoTemplate", "Store.java", 1, "orders"),),
+    )
+    writer_persistence = DiscoveredModule(
+        name="orders-repository", path=Path("/workspace/PERSISTENCE/orders-repository"),
+        build_system="maven", version=None, kind="application", starts_application=True,
+        configuration_example="", mongo_collections=("orders",),
+        mongo_methods=(MongoMethod("save", "mongoTemplate", "Store.java", 1, "orders"),),
+    )
+    graph_data = _html_graph_data(render_graph_html(
+        {"domain-orders": [], "orders-repository": []}, [],
+        collections_by_service={"domain-orders": ["orders"], "orders-repository": ["orders"]},
+        modules_by_service={
+            "domain-orders": writer_domain, "orders-repository": writer_persistence,
+        },
+        build_modules=[writer_domain, writer_persistence],
+        root_path=Path("/workspace"), strategy1=True,
+    ))
+    collection_nodes = [node for node in graph_data["nodes"] if node["kind"] == "mongodb_collection"]
+    assert collection_nodes
+    assert {node["owner_service"] for node in collection_nodes} == {"orders-repository"}

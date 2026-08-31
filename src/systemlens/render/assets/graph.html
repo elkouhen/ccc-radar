@@ -1696,9 +1696,12 @@
       const data = nodeDataById.get(node);
       if (data?.kind !== "microservice") {
         const producer = preferredOwnerForNode(node);
-        const producerNamespace = producer?.project_namespace || producer?.architecture_namespace;
+        const producerNamespace = producer?.cluster_path || producer?.project_namespace_path
+          || producer?.project_namespace || producer?.architecture_namespace;
         if (producerNamespace) return producerNamespace;
       }
+      if (data?.cluster_path) return data.cluster_path;
+      if (data?.project_namespace_path) return data.project_namespace_path;
       if (data?.project_namespace) return data.project_namespace;
       if (data?.architecture_namespace) return data.architecture_namespace;
       const namespaces = [...(data?.runtime_namespaces || []), ...(data?.fact_namespaces || [])];
