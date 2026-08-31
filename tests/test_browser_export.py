@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 
@@ -184,6 +185,21 @@ def test_html_export_resources_are_usable_in_a_constrained_browser_viewport(tmp_
         assert page.locator("#graph").get_attribute("data-cluster-sub-layers") == (
             "microservices-first,resources-second"
         )
+        cluster_layout = json.loads(
+            page.locator("#graph").get_attribute("data-cluster-layout") or "{}"
+        )
+        assert cluster_layout
+        for cluster in {item["cluster"] for item in cluster_layout.values()}:
+            services = [
+                item["y"] for item in cluster_layout.values()
+                if item["cluster"] == cluster and item["subLayer"] == "microservices"
+            ]
+            resources = [
+                item["y"] for item in cluster_layout.values()
+                if item["cluster"] == cluster and item["subLayer"] == "resources"
+            ]
+            if services and resources:
+                assert min(services) > max(resources)
         assert page.locator("#graph").get_attribute("data-invalid-coordinates") == "false"
 
         page.get_by_role("tab", name="Kafka").click()

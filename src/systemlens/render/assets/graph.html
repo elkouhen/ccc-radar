@@ -1745,6 +1745,10 @@
     function ownerCandidatesForNode(node) {
       const data = nodeDataById.get(node);
       if (data?.kind === "microservice") return [node];
+      if (data?.owner_service) {
+        const ownerId = `microservice:${data.owner_service}`;
+        if (nodeDataById.get(ownerId)) return [ownerId];
+      }
       return [
         node,
         ...graphData.links
@@ -1839,6 +1843,14 @@
       graphElement.dataset.clusterSubLayers = "microservices-first,resources-second";
       graphElement.dataset.clusterSubLayerPositions = JSON.stringify(
         [...new Set([...network.nodes()].map(node => network.getNodeAttribute(node, "clusterSubLayer")))]
+      );
+      graphElement.dataset.clusterLayout = JSON.stringify(
+        Object.fromEntries([...network.nodes()].map(node => [node, {
+          cluster: namespaceForNode(node),
+          subLayer: network.getNodeAttribute(node, "clusterSubLayer"),
+          x: network.getNodeAttribute(node, "x"),
+          y: network.getNodeAttribute(node, "y"),
+        }]))
       );
     }
     function packLayeredClusterGraphPositions() {
