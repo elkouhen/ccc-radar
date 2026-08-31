@@ -220,7 +220,8 @@ enum PaymentStatus { AUTHORIZED, DECLINED }
     assert "const projectedBounds = viewportBoundsFromGraphBounds" in document
     assert "function namespaceForNode(node)" in document
     assert 'link.target === node' in document
-    assert 'producer?.kind === "microservice"' in document
+    assert "preferredOwnerForNode" in document
+    assert "layerRank.get(right.layer)" in document
     assert 'if (data?.kind !== "microservice") return "root"' in document
     assert "? [namespaceForNode(id)]" in document
     assert "const viewportBoundsFromGraphBounds" in document

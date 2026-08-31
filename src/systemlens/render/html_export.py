@@ -861,17 +861,30 @@ def render_graph_html(
         for node in nodes
         if node.get("kind") == "microservice"
     }
-    resource_owners: dict[tuple[str, str], str] = {}
+    resource_owner_candidates: dict[tuple[str, str], set[str]] = {}
+
+    def add_resource_owner(key: tuple[str, str], owner: str) -> None:
+        resource_owner_candidates.setdefault(key, set()).add(owner)
+
     for fact in graph_facts or []:
         if fact.fact_type != "edge" or fact.relation not in {"publishes", "writes"}:
             continue
         source_kind = "microservice" if fact.source_kind == "service" else fact.source_kind
         if source_kind != "microservice" or not fact.source_name or not fact.target_name:
             continue
-        resource_owners[(fact.target_kind or "", fact.target_name)] = fact.source_name
+        add_resource_owner((fact.target_kind or "", fact.target_name), fact.source_name)
     for edge in edges:
         if edge.kind == "kafka" and edge.from_endpoint.topic:
-            resource_owners.setdefault(("kafka_topic", edge.from_endpoint.topic), edge.from_service)
+            add_resource_owner(("kafka_topic", edge.from_endpoint.topic), edge.from_service)
+    layer_order = ["api", "application", "orchestration", "infrastructure", "domain", "persistence", "external"]
+    layer_rank = {layer: index for index, layer in enumerate(layer_order)}
+    resource_owners = {
+        key: sorted(
+            owners,
+            key=lambda owner: (-layer_rank.get(service_architecture.get(owner, {}).get("layer", "unknown"), -1), owner),
+        )[0]
+        for key, owners in resource_owner_candidates.items()
+    }
     for node in nodes:
         owner = resource_owners.get((str(node.get("kind")), str(node.get("name"))))
         if owner is None and node.get("kind") == "mongodb_collection":

@@ -295,6 +295,9 @@ namespace and full namespace path. Structural project groups contain only
 their owning projects; resource nodes resolve their cluster
 from incoming producer edges before consulting resource metadata; this keeps
 topics and collections with their producing microservice. The layered view
+When several services write the same resource, ownership is selected by the
+lowest service layer in the canonical order; ties are resolved by service name
+for deterministic exports.
 reuses this
 packer with an additional grouping key: namespaces are first grouped by the
 canonical internal software-layer order (`api`, `application`, `orchestration`,

@@ -1681,14 +1681,9 @@
     function namespaceForNode(node) {
       const data = nodeDataById.get(node);
       if (data?.kind !== "microservice") {
-        const producerNamespaces = graphData.links
-          .filter(link => link.target === node)
-          .map(link => nodeDataById.get(link.source))
-          .filter(producer => producer?.kind === "microservice")
-          .map(producer => producer.project_namespace || producer.architecture_namespace)
-          .filter(Boolean)
-          .sort();
-        if (producerNamespaces.length) return producerNamespaces[0];
+        const producer = preferredOwnerForNode(node);
+        const producerNamespace = producer?.project_namespace || producer?.architecture_namespace;
+        if (producerNamespace) return producerNamespace;
       }
       if (data?.project_namespace) return data.project_namespace;
       if (data?.architecture_namespace) return data.architecture_namespace;
@@ -1712,12 +1707,21 @@
           .filter(candidate => nodeDataById.get(candidate)?.kind === "microservice"),
       ];
     }
+    function preferredOwnerForNode(node) {
+      const layerOrder = ["api", "application", "orchestration", "infrastructure", "domain", "persistence", "external"];
+      const layerRank = new Map(layerOrder.map((layer, index) => [layer, index]));
+      return ownerCandidatesForNode(node)
+        .map(candidate => nodeDataById.get(candidate))
+        .filter(candidate => candidate?.kind === "microservice")
+        .sort((left, right) => (
+          (layerRank.get(right.layer) ?? -1) - (layerRank.get(left.layer) ?? -1)
+          || left.name.localeCompare(right.name)
+        ))[0];
+    }
     function architectureLayerForNode(node) {
       const data = nodeDataById.get(node);
       if (data?.layer_label || data?.layer) return data.layer_label || data.layer;
-      const owner = ownerCandidatesForNode(node)
-        .map(candidate => nodeDataById.get(candidate))
-        .find(candidate => candidate?.kind === "microservice" && (candidate.layer_label || candidate.layer));
+      const owner = preferredOwnerForNode(node);
       return owner?.layer_label || owner?.layer || "Unknown";
     }
     function clusterPathForNode(node) {

@@ -193,6 +193,9 @@ resources). The cluster path MUST be the slash-separated path of cluster
 directories, such as `cluster1/cluster2`, without a structural-group prefix.
 For a resource modified in writing, the path MUST be inherited from its
 producing or owning microservice.
+If several microservices modify the same resource in writing, the renderer
+MUST associate the resource with the microservice belonging to the lowest
+software layer in the canonical visual order.
 
 ### Rules for the namespace-cluster rendering
 
