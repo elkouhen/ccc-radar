@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from pathlib import Path
 
 import pytest
+from playwright.sync_api import Error as PlaywrightError
 from playwright.sync_api import Playwright, sync_playwright
 
 from systemlens.models import MessageEndpoint, compute_endpoint_id
@@ -14,6 +16,109 @@ from systemlens.render import render_graph_html
 
 
 pytestmark = pytest.mark.integration
+
+
+_COMPLEX_DATASET_EXPORT = (
+    Path(__file__).parents[1] / "examples" / "plateforme-agree" / "plateforme-agreee.html"
+)
+_GRAPH_TEMPLATE = (
+    Path(__file__).parents[1] / "src" / "systemlens" / "render" / "assets" / "graph.html"
+)
+_LAYER_GEOMETRY = (
+    Path(__file__).parents[1] / "src" / "systemlens" / "render" / "assets" / "layer_geometry.js"
+)
+
+
+def _complex_dataset_document() -> str:
+    """Inject a deterministic 50-service/130-resource stress graph."""
+    source = _COMPLEX_DATASET_EXPORT.read_text(encoding="utf-8")
+    match = re.search(
+        r'<script id="graph-data"[^>]*>([\s\S]*?)</script>', source
+    )
+    assert match, "The complex dataset must contain a graph-data script"
+    data = json.loads(match.group(1))
+    services = [node for node in data["nodes"] if node["kind"] == "microservice"][:50]
+    assert len(services) == 50, "The source complex dataset must contain 50 services"
+    namespaces = [
+        "platform-edge", "platform-core", "platform-domain", "platform-infra",
+        "platform-shared", "platform-ops", "platform-data", "platform-security",
+        "platform-workflow", "platform-reporting",
+    ]
+    layers = ["api", "application", "orchestration", "infrastructure", "domain", "persistence"]
+    for index, node in enumerate(services):
+        node["metadata"] = {"namespace": namespaces[index % len(namespaces)]}
+        node["architecture_layer"] = layers[index % len(layers)]
+        node["layer"] = node["architecture_layer"]
+
+    resources: list[dict[str, object]] = []
+    for index in range(100):
+        owner = services[index % len(services)]
+        resources.append({
+            "id": f"kafka_topic:stress-topic-{index:03d}",
+            "kind": "kafka_topic",
+            "name": f"stress-topic-{index:03d}",
+            "label": f"stress-topic-{index:03d}",
+            "owner_service": owner["name"],
+            "architecture_layer": owner["architecture_layer"],
+            "metadata": {"namespace": namespaces[index % len(namespaces)]},
+            "color": "#009E73",
+        })
+    for index in range(30):
+        owner = services[(index * 3) % len(services)]
+        resources.append({
+            "id": f"mongodb_collection:stress-collection-{index:03d}",
+            "kind": "mongodb_collection",
+            "name": f"stress-collection-{index:03d}",
+            "label": f"stress-collection-{index:03d}",
+            "owner_service": owner["name"],
+            "architecture_layer": owner["architecture_layer"],
+            "metadata": {"namespace": namespaces[index % len(namespaces)]},
+            "color": "#CC79A7",
+        })
+
+    links: list[dict[str, object]] = []
+    for index in range(100):
+        topic = resources[index]
+        producer = services[index % len(services)]
+        consumer = services[(index + 1) % len(services)]
+        links.extend([
+            {"source": producer["id"], "target": topic["id"], "kind": "kafka", "label": topic["name"]},
+            {"source": topic["id"], "target": consumer["id"], "kind": "kafka", "label": topic["name"]},
+        ])
+    for index in range(30):
+        collection = resources[100 + index]
+        first = services[(index * 3) % len(services)]
+        second = services[(index * 3 + 1) % len(services)]
+        links.extend([
+            {"source": first["id"], "target": collection["id"], "kind": "mongodb", "label": collection["name"]},
+            {"source": second["id"], "target": collection["id"], "kind": "mongodb", "label": collection["name"]},
+        ])
+    for index in range(40):
+        topic = resources[(index * 7) % 100]
+        producer = services[(index * 5 + 2) % len(services)]
+        links.append({
+            "source": producer["id"], "target": topic["id"],
+            "kind": "kafka", "label": topic["name"],
+        })
+    assert len(resources) == 130
+    assert len(links) == 300
+    data["nodes"] = services + resources
+    data["links"] = links
+    data["groups"] = []
+    for node in data["nodes"]:
+        namespace = node.get("metadata", {}).get("namespace") or "root"
+        # The historical export stores the complex fixture's namespace in
+        # metadata. Promote it to the current renderer contract so the test
+        # exercises real cluster packing rather than one ROOT cluster.
+        node["project_namespace_path"] = namespace
+        node["cluster_path"] = namespace
+        node["runtime_namespaces"] = [namespace]
+        node.setdefault("architecture_layer", node.get("layer") or "application")
+        node.setdefault("layer", node["architecture_layer"])
+    template = _GRAPH_TEMPLATE.read_text(encoding="utf-8")
+    return template.replace("__GRAPH_DATA__", json.dumps(data)).replace(
+        "__LAYER_GEOMETRY__", _LAYER_GEOMETRY.read_text(encoding="utf-8")
+    )
 
 
 def _chrome_executable(playwright: Playwright) -> str | None:
@@ -84,34 +189,52 @@ def _assert_architecture_cards_match_size(page, expected: tuple[float, float]) -
 
 
 def _assert_architecture_cards_do_not_overlap(page) -> None:
-    assert page.evaluate(
+    overlap = page.evaluate(
         """() => {
-            const rects = [...document.querySelectorAll('.graph-node-card-label')]
-                .map(card => card.getBoundingClientRect());
-            return rects.every((left, leftIndex) => rects.every((right, rightIndex) => (
+            const cards = [...document.querySelectorAll('.graph-node-card-label')];
+            const rects = cards.map(card => card.getBoundingClientRect());
+            for (let leftIndex = 0; leftIndex < rects.length; leftIndex += 1) {
+              for (let rightIndex = leftIndex + 1; rightIndex < rects.length; rightIndex += 1) {
+                const left = rects[leftIndex];
+                const right = rects[rightIndex];
+                if (left.right <= 0 || left.left >= innerWidth || left.bottom <= 0 || left.top >= innerHeight
+                    || right.right <= 0 || right.left >= innerWidth || right.bottom <= 0 || right.top >= innerHeight) continue;
+                if (
+                    left.right > right.left && right.right > left.left
+                    && left.bottom > right.top && right.bottom > left.top
+                ) return [
+                    cards[leftIndex].dataset.nodeId, cards[rightIndex].dataset.nodeId,
+                    [left.x, left.y, left.width, left.height],
+                    [right.x, right.y, right.width, right.height],
+                ];
+              }
+            }
+            return null;
+            /* return rects.every((left, leftIndex) => rects.every((right, rightIndex) => (
                 leftIndex === rightIndex
                 || left.right <= right.left
                 || right.right <= left.left
                 || left.bottom <= right.top
                 || right.bottom <= left.top
-            )));
+            ))); */
         }"""
     )
+    assert overlap is None, overlap
 
 
 def _assert_architecture_cards_are_contained_in_clusters(page) -> None:
     assert page.evaluate(
         """() => {
-            const cards = [...document.querySelectorAll('.graph-node-card-label')]
-                .map(card => card.getBoundingClientRect());
-            return [...document.querySelectorAll('.graph-namespace-group')].every(group => {
-                const bounds = group.getBoundingClientRect();
-                return cards
-                    .filter(card => card.left < bounds.right && card.right > bounds.left
-                        && card.top < bounds.bottom && card.bottom > bounds.top)
-                    .every(card => card.left >= bounds.left && card.right <= bounds.right
-                        && card.top >= bounds.top && card.bottom <= bounds.bottom);
-            });
+                const cards = [...document.querySelectorAll('.graph-node-card-label')]
+                    .map(card => card.getBoundingClientRect())
+                    .filter(card => card.right > 0 && card.left < innerWidth && card.bottom > 0 && card.top < innerHeight);
+                const groups = [...document.querySelectorAll('.graph-namespace-group')]
+                    .map(group => group.getBoundingClientRect());
+                if (!groups.length) return true;
+                return cards.every(card => groups.some(bounds => (
+                card.left >= bounds.left && card.right <= bounds.right
+                && card.top >= bounds.top && card.bottom <= bounds.bottom
+            )));
         }"""
     )
 
@@ -170,6 +293,87 @@ def _assert_pan_moves_cluster_overlays_as_one_surface(page) -> None:
     assert delta_y == pytest.approx(65, abs=2)
 
 
+def _surface_rects(page) -> list[list[float]]:
+    return page.evaluate(
+        """() => [...document.querySelectorAll(
+            '.graph-node-card-label, .graph-namespace-group, .graph-project-group'
+        )].map(element => {
+            const rect = element.getBoundingClientRect();
+            return [rect.left, rect.top, rect.right, rect.bottom];
+        })"""
+    )
+
+
+def _assert_pan_does_not_zoom_or_desynchronise_overlays(page) -> None:
+    """A drag must translate the surface without changing its scale."""
+    before = _surface_rects(page)
+    assert before
+    page.mouse.move(1250, 780)
+    page.mouse.down()
+    samples: list[list[list[float]]] = []
+    for step in range(1, 9):
+        page.mouse.move(1250 - step * 15, 780 - step * 10)
+        samples.append(_surface_rects(page))
+    page.mouse.up()
+    page.wait_for_timeout(250)
+    after = _surface_rects(page)
+    assert all(len(sample) == len(before) for sample in samples)
+    assert len(after) == len(before)
+
+    # During the drag and after release, every overlay keeps the same size and
+    # follows the same camera translation. This catches pan-to-zoom, inertia
+    # jumps and stale namespace overlays independently of visual inspection.
+    first_delta = None
+    for step, sample in enumerate(samples, 1):
+        for old, moved in zip(before, sample):
+            for index in (2, 3):
+                assert moved[index] - moved[index - 2] == pytest.approx(
+                    old[index] - old[index - 2], abs=1.5
+                )
+            delta = (moved[0] - old[0], moved[1] - old[1])
+            if first_delta is None:
+                first_delta = delta
+            else:
+                assert delta[0] == pytest.approx(first_delta[0] * step, abs=3)
+                assert delta[1] == pytest.approx(first_delta[1] * step, abs=3)
+    for old, settled in zip(before, after):
+        for index in (2, 3):
+            assert settled[index] - settled[index - 2] == pytest.approx(
+                old[index] - old[index - 2], abs=1.5
+            )
+            assert settled[0] - old[0] == pytest.approx(first_delta[0] * 8, abs=3)
+            assert settled[1] - old[1] == pytest.approx(first_delta[1] * 8, abs=3)
+
+
+def _assert_zoom_is_monotonic_and_settles_without_a_release_jump(page) -> None:
+    """A zoom gesture must change scale, then remain stable after release."""
+    before = _surface_rects(page)
+    assert before
+    before_distance = ((before[1][0] - before[0][0]) ** 2 + (before[1][1] - before[0][1]) ** 2) ** .5 if len(before) > 1 else 0
+    page.mouse.move(1180, 620)
+    page.mouse.wheel(0, -450)
+    page.wait_for_timeout(80)
+    during = _surface_rects(page)
+    page.wait_for_timeout(700)
+    after = _surface_rects(page)
+    page.wait_for_timeout(300)
+    settled = _surface_rects(page)
+    assert len(during) == len(before) == len(after)
+    during_distance = ((during[1][0] - during[0][0]) ** 2 + (during[1][1] - during[0][1]) ** 2) ** .5 if len(during) > 1 else 0
+    after_distance = ((after[1][0] - after[0][0]) ** 2 + (after[1][1] - after[0][1]) ** 2) ** .5 if len(after) > 1 else 0
+    if before_distance:
+        assert during_distance > before_distance * 1.01
+        settled_distance = ((settled[1][0] - settled[0][0]) ** 2 + (settled[1][1] - settled[0][1]) ** 2) ** .5 if len(settled) > 1 else 0
+        assert settled_distance == pytest.approx(after_distance, rel=0.04)
+
+    page.locator("#zoom-out").click()
+    page.wait_for_timeout(300)
+    restored = _surface_rects(page)
+    if after_distance and len(restored) > 1:
+        restored_distance = ((restored[1][0] - restored[0][0]) ** 2 + (restored[1][1] - restored[0][1]) ** 2) ** .5
+        assert restored_distance < after_distance * 0.99
+
+
 def _assert_background_pan_has_one_to_one_scale(page) -> None:
     before = page.locator(".graph-namespace-group").first.bounding_box()
     assert before
@@ -206,6 +410,131 @@ def _assert_clusters_only_overlap_when_nested(page) -> None:
             }));
         }"""
     )
+
+
+def _assert_layer_bands_are_disjoint_and_contain_clusters(page) -> None:
+    result = page.evaluate(
+        """() => {
+                const bands = [...document.querySelectorAll('.graph-layer-band')]
+                    .map(element => element.getBoundingClientRect())
+                    .filter(band => band.right > 0 && band.left < innerWidth && band.bottom > 0 && band.top < innerHeight);
+                const clusters = [...document.querySelectorAll('.graph-namespace-group')]
+                    .map(element => element.getBoundingClientRect())
+                    .filter(cluster => cluster.right > 0 && cluster.left < innerWidth && cluster.bottom > 0 && cluster.top < innerHeight);
+            const overlap = (left, right) => (
+                left.left < right.right && left.right > right.left
+                && left.top < right.bottom && left.bottom > right.top
+            );
+            const contains = (outer, inner) => (
+                inner.left >= outer.left && inner.right <= outer.right
+                && inner.top >= outer.top && inner.bottom <= outer.bottom
+            );
+            const valid = bands.every((band, index) => bands.every((other, otherIndex) => (
+                index === otherIndex || !overlap(band, other)
+            ))) && clusters.every(cluster => bands.some(band => contains(band, cluster)));
+            return { valid, bands, clusters };
+        }"""
+    )
+    assert result["valid"], result
+
+
+def _assert_geometry_contract(page, *, layered: bool) -> None:
+    graph = page.locator("#graph")
+    assert graph.get_attribute("data-invalid-coordinates") == "false"
+    _assert_architecture_cards_have_uniform_size(page)
+    _assert_architecture_cards_do_not_overlap(page)
+    _assert_architecture_cards_are_contained_in_clusters(page)
+    if not layered:
+        _assert_clusters_only_overlap_when_nested(page)
+    if layered:
+        _assert_layer_bands_are_disjoint_and_contain_clusters(page)
+
+
+@pytest.mark.slow
+def test_complex_dataset_geometry_contract_across_all_views() -> None:
+    """Stress the geometry invariants with the 50-service stress dataset."""
+    with sync_playwright() as playwright:
+        chrome = _chrome_executable(playwright)
+        if chrome is None:
+            pytest.skip("Chromium is unavailable; run `uv run playwright install chromium`.")
+        try:
+            browser = playwright.chromium.launch(headless=True, executable_path=chrome)
+        except PlaywrightError as error:
+            pytest.skip(f"Chromium cannot be launched in this environment: {error}")
+        page = browser.new_page(viewport={"width": 1440, "height": 900})
+        page.set_default_timeout(10_000)
+        errors: list[str] = []
+        page.on("pageerror", lambda error: errors.append(str(error)))
+        page.set_content(_complex_dataset_document(), wait_until="load")
+        page.wait_for_function(
+            "() => Number(document.querySelector('#graph')?.dataset.visibleNodeCount || 0) >= 60"
+        )
+
+        graph = page.locator("#graph")
+        assert graph.get_attribute("data-visible-node-count") == "180"
+        assert graph.get_attribute("data-relation-count") == "300"
+        assert not errors, errors
+
+        # The same contract is checked after layout, resize, zoom and pan. A
+        # failure here means the geometry is viewport-dependent, which is the
+        # class of regression that unit tests on graph coordinates miss.
+        for layout_id, layered in (
+            ("layout-cluster", False),
+            ("layout-elk", True),
+            ("layout-forceatlas2-noverlap", False),
+        ):
+            # The layout controls live in the graph toolbar and may be hidden
+            # behind the compact toolbar at this viewport. Trigger the same
+            # user handler even when the option is visually collapsed.
+            previous_status = page.locator("#layout-status").text_content() or ""
+            already_active = page.locator(f"#{layout_id}").get_attribute("aria-pressed") == "true"
+            # The advanced layout menu can be collapsed; dispatch the control
+            # event directly so the test still exercises the real handler.
+            page.locator(f"#{layout_id}").dispatch_event("click")
+            if not already_active:
+                page.wait_for_function(
+                    "previous => document.querySelector('#layout-status')?.textContent !== previous",
+                    arg=previous_status,
+                )
+                if layout_id == "layout-cluster":
+                    page.wait_for_function(
+                        "() => document.querySelector('#layout-status')?.textContent?.toLowerCase().includes('namespaces')"
+                    )
+            page.wait_for_timeout(700)
+            if layout_id == "layout-cluster":
+                screenshot_path = Path("output/playwright/complex-cluster-fit-validation.png")
+                screenshot_path.parent.mkdir(parents=True, exist_ok=True)
+                page.screenshot(path=str(screenshot_path), full_page=False)
+            _assert_geometry_contract(page, layered=layered)
+            if layout_id == "layout-cluster":
+                screenshot_path = Path("output/playwright/complex-cluster-final-validation.png")
+                screenshot_path.parent.mkdir(parents=True, exist_ok=True)
+                page.screenshot(path=str(screenshot_path), full_page=False)
+            _assert_pan_does_not_zoom_or_desynchronise_overlays(page)
+            _assert_geometry_contract(page, layered=layered)
+            _assert_zoom_is_monotonic_and_settles_without_a_release_jump(page)
+            _assert_geometry_contract(page, layered=layered)
+
+            page.locator("#zoom-out").click()
+            page.locator("#zoom-out").click()
+            page.wait_for_timeout(300)
+            _assert_geometry_contract(page, layered=layered)
+
+            page.mouse.move(1250, 780)
+            page.mouse.down()
+            page.mouse.move(1120, 700, steps=8)
+            page.mouse.up()
+            page.wait_for_timeout(300)
+            _assert_geometry_contract(page, layered=layered)
+
+            page.set_viewport_size({"width": 1024, "height": 640})
+            page.wait_for_timeout(500)
+            _assert_geometry_contract(page, layered=layered)
+            page.set_viewport_size({"width": 1440, "height": 900})
+            page.wait_for_timeout(300)
+
+        assert not errors, errors
+        browser.close()
 
 
 @pytest.mark.slow

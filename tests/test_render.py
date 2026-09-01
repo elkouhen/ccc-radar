@@ -221,19 +221,15 @@ enum PaymentStatus { AUTHORIZED, DECLINED }
     assert 'external: "#64748b"' in document
     assert "layeredClusterView = layout === \"elk\"" in document
     assert "packLayeredClusterGraphPositions();" in document
-    assert "const idsByLayer = new Map" in document
     assert "if (!nodePoints.size)" in document
     assert "if (!layerCenters.length) return" in document
     assert "allLayerPoints.length" in document
-    assert "if (layeredClusterView)" in document
-    assert "const projectedBounds = viewportBoundsFromGraphBounds" in document
     assert "function namespaceForNode(node)" in document
     assert 'link.target === node' in document
     assert "preferredOwnerForNode" in document
     assert "layerRank.get(right.layer)" in document
     assert 'if (data?.kind !== "microservice") return "root"' in document
     assert "? [namespaceForNode(id)]" in document
-    assert "const viewportBoundsFromGraphBounds" in document
     assert "const namespaceBounds = new Map()" in document
     assert "const childNamespaceBounds" in document
     assert "parent group is defined by its rendered children" in document
@@ -254,15 +250,28 @@ enum PaymentStatus { AUTHORIZED, DECLINED }
     assert "inertiaDuration: 0" in document
     assert "inertiaRatio: 0" in document
     assert "const cameraZoomedOut = lastSafeCameraState !== null" in document
-    assert "if (cameraZoomedOut && requiredZoomIn > 1.001" in document
+    assert "if ((cameraZoomedOut || needsInitialLayoutZoom)" in document
     assert "let lastSafeCameraState = null" in document
     assert "const clusterBoundsOverlap =" in document
+    assert "const cardHalfWidth = 110 * cardScale / 2" in document
+    assert "const cardWidth = 110 * cardScale" in document
+    assert document.count("const cardWidth = 110 * cardScale") >= 2
+    assert 'label.style.transform = `translate(-50%, -50%) scale(${clusteredView || layeredClusterView ? ".35" : ".8"})`' in document
+    assert 'transform: translate(-50%, -50%) scale(var(--graph-card-scale, .8))' in document
+    assert 'graphLayersOverlay.querySelectorAll(".graph-namespace-group")' in document
     assert "renderedClusterRects" in document
+    assert 'color = typeof color === "string" && color ? color : "#94a3b8"' in document
+    assert "const nodeGapX = 420" in document
+    assert "const nodeGapY = 300" in document
+    assert "const clusterGapX = 1600" in document
+    assert "const clusterGapY = 900" in document
+    assert "const needsInitialLayoutZoom = false" in document
     assert "renderer.getCamera().setState(lastSafeCameraState)" in document
+    assert "let clusterCameraClamped = false" in document
+    assert "if (!clusterCameraClamped)" in document
     assert "zoomOutButton.disabled = false" in document
     assert "zoomOutButton.disabled = clusteredView" not in document
     assert "blockClusterZoomOut" not in document
-    assert "if (cameraFitAdjusting) return;" in document
     assert "refreshNodeLabels?.();" in document
     assert "Connectivité relative :" in document
     assert "const visualNodeKind = node" in document

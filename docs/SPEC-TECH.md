@@ -292,6 +292,11 @@ Camera updates during pan and zoom are coalesced to the next animation frame.
 The Sigma canvas and the HTML card/cluster overlays are therefore recomputed
 from one camera state per frame, preventing partially rebuilt containers from
 appearing while the user drags the namespace view.
+Wheel zoom is handled once for both the Sigma canvas and the HTML overlays;
+the native Sigma wheel handler is disabled so hovering a card cannot change
+the zoom behavior. Each wheel event applies a bounded exponential camera-ratio
+step, after which the projected collision guard may clamp only an actual
+zoom-out that would create an overlap.
 The ELK layer layout loads independently from the ForceAtlas2 and Noverlap
 modules used by the graph layouts, so unrelated dynamic imports cannot keep
 the layer view in a pending state.
@@ -301,15 +306,25 @@ Sigma's compact node-radius no-overlap pass cannot detect.
 The namespace-cluster packer places microservices in a first sub-layer and
 resources in a second sub-layer on separated grids, then
 packs namespace rectangles with positive margins that include the complete
-projected card/title envelope, not only the node-grid dimensions. Container geometry is kept
-in graph coordinates until it is projected to the viewport. The cluster view
+projected card/title envelope, not only the node-grid dimensions. Its graph-space
+gaps are expressed in the same graph-coordinate scale as the rest of the
+layout, while remaining large enough for the shared 110×70 card envelope.
+Each layout starts with a shared camera-fit operation based on the complete
+normalized node extent and the largest graph axis. The same operation is
+reapplied by the Ajuster action and after a viewport resize, so switching
+between graph, layer, and namespace views does not retain a stale camera
+scale or leave the layout outside the available viewport. Projected collision
+checks and the safe-camera clamp preserve the separation invariant after
+navigation and resize.
+Container geometry is kept in graph coordinates until it is projected to the
+viewport. The cluster view
 uses this deterministic packing as its source of truth; it does
 not wait for a compound force layout that could block the browser before the
 non-overlap fallback runs. When project or other parent groups are enabled,
 their bounds are the union of the already
 projected child namespace bounds plus title/padding margins; node-grid gaps are
 calibrated with generous graph-space margins for the shared 110×70 card at the
-common 0.4 display scale and a dedicated vertical separation between the two
+common 0.8 display scale and a dedicated vertical separation between the two
 sub-layers, so cards do not overlap after projection. This explicit hierarchy prevents
 a parent from being smaller than a nested cluster after
 zooming. Sibling rectangles remain separated, while parent/descendant

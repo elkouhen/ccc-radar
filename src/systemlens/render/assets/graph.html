@@ -40,7 +40,7 @@
     .graph-project-group { position: absolute; padding: 25px 13px 13px; border: 1px dashed var(--group-accent, #64748b); border-radius: 12px; background: color-mix(in srgb, var(--group-accent, #64748b) 4%, transparent); color: var(--group-accent, #64748b); font-size: 10px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
     .graph-project-group-title { position: absolute; top: 8px; left: 50%; max-width: calc(100% - 26px); padding: 2px 7px; box-sizing: border-box; overflow: hidden; background: color-mix(in srgb, #f8fafc 94%, var(--group-accent, #64748b)); border-radius: 5px; text-align: center; text-overflow: ellipsis; transform: translateX(-50%); white-space: nowrap; }
     :root[data-theme="dark"] .graph-project-group { background: color-mix(in srgb, var(--group-accent, #64748b) 8%, transparent); }
-    .graph-node-card-label { position: absolute; width: 110px; height: 70px; min-height: 70px; display: grid; grid-template-columns: 22px minmax(0, 1fr); grid-template-rows: auto auto; align-content: center; column-gap: 7px; padding: 8px 9px; box-sizing: border-box; transform: translate(-50%, -50%) scale(.4); transform-origin: center; pointer-events: auto; cursor: pointer; border: 1px solid var(--card-accent, #64748b); border-radius: 8px; color: #172033; background: #ffffff; box-shadow: 0 5px 16px rgba(15, 23, 42, .12); font-size: 11px; line-height: 1.15; text-align: left; overflow-wrap: anywhere; overflow: hidden; }
+    .graph-node-card-label { position: absolute; width: 110px; height: 70px; min-height: 70px; display: grid; grid-template-columns: 22px minmax(0, 1fr); grid-template-rows: auto auto; align-content: center; column-gap: 7px; padding: 8px 9px; box-sizing: border-box; transform: translate(-50%, -50%) scale(var(--graph-card-scale, .8)); transform-origin: center; pointer-events: auto; cursor: pointer; border: 1px solid var(--card-accent, #64748b); border-radius: 8px; color: #172033; background: #ffffff; box-shadow: 0 5px 16px rgba(15, 23, 42, .12); font-size: 11px; line-height: 1.15; text-align: left; overflow-wrap: anywhere; overflow: hidden; }
     .graph-node-card-icon { position: static; grid-row: 1 / 3; display: grid; place-items: center; width: 20px; height: 20px; border: 0; border-radius: 0; color: var(--card-accent, #64748b); line-height: 1; }
     .graph-node-card-icon::before { display: block; width: 16px; height: 16px; box-sizing: border-box; }
     .graph-node-card-icon.is-service::before { content: "⚙"; width: 16px; height: 16px; font-size: 21px; line-height: 16px; text-align: center; }
@@ -1004,6 +1004,7 @@
     const packedColorBytes = new Uint8Array(packedColorBuffer);
     const packedColorFloat = new Float32Array(packedColorBuffer);
     function packColor(color) {
+      color = typeof color === "string" && color ? color : "#94a3b8";
       const value = color.startsWith("#") ? color.slice(1) : color;
       packedColorBytes[0] = parseInt(value.slice(0, 2), 16) || 0;
       packedColorBytes[1] = parseInt(value.slice(2, 4), 16) || 0;
@@ -1259,6 +1260,10 @@
         // double-click zoom. Zoom remains available through the wheel and the
         // explicit controls, so disable this ambiguous gesture.
         doubleClickZoomingRatio: 1,
+        // The shared wheel handler below keeps canvas and HTML-card zoom
+        // behavior identical. Native Sigma wheel zoom would only receive
+        // events whose target is the canvas.
+        enableCameraZooming: false,
         // Panning is handled by the shared camera controller below. Disable
         // Sigma's native inertia so releasing the pointer cannot continue the
         // gesture with an unexpected drift.
@@ -1289,6 +1294,8 @@
         };
         network.forEachNode((id, attributes) => {
           if (!isVisibleNodeId(id) || attributes.hidden) return;
+          // Sigma's display data contains its normalized graph coordinates;
+          // the renderer matrix must not be applied to raw graph attributes.
           const display = renderer.getNodeDisplayData(id);
           if (!display) return;
           // Sigma exposes its graph-to-clip transform internally; use the
@@ -1313,8 +1320,9 @@
         // previous frame would lose the fact that the user zoomed out.
         const cameraZoomedOut = lastSafeCameraState !== null
           && cameraRatio > lastSafeCameraState.ratio + 0.0001;
-        const cardWidth = 110 * .4;
-        const cardHeight = 70 * .4;
+        const cardScale = clusteredView || layeredClusterView ? .35 : .8;
+        const cardWidth = 110 * cardScale;
+        const cardHeight = 70 * cardScale;
         const cardGap = 4;
         let requiredZoomIn = 1;
         const visiblePoints = [...nodePoints.values()];
@@ -1334,17 +1342,37 @@
             );
           }
         }
-        if (cameraZoomedOut && requiredZoomIn > 1.001 && !cameraFitAdjusting) {
+        // Initial layout already selects the working camera scale. Do not
+        // recursively tighten it from projected-card collisions: that would
+        // make a large graph exponentially zoom in before its first frame.
+        const needsInitialLayoutZoom = false;
+        if ((cameraZoomedOut || needsInitialLayoutZoom)
+            && requiredZoomIn > 1.001 && !cameraFitAdjusting) {
           cameraFitAdjusting = true;
           const camera = renderer.getCamera();
           const state = camera.getState();
           camera.setState({ ...state, ratio: state.ratio / requiredZoomIn });
-          setTimeout(() => { cameraFitAdjusting = false; }, 120);
-          return;
+          // For the initial cluster frame, continue rendering this complete
+          // frame so cards and namespace boxes are never left out of sync.
+          // During a user zoom-out, keep the previous frame until the clamp
+          // has settled to avoid a visible intermediate collision.
+          setTimeout(() => {
+            cameraFitAdjusting = false;
+            // A camera correction can make the previous overlay stale. Always
+            // rebuild it after the correction, otherwise the early-return
+            // guard below can leave the cluster view without its envelopes.
+            refreshNodeLabels?.();
+          }, 120);
+          if (!needsInitialLayoutZoom) {
+            return;
+          }
         }
         // Keep the previous frame visible until the camera correction above
         // has settled and the complete replacement overlay is ready. Clearing
         // first made cluster boxes flicker during zoom and pan updates.
+        // A camera correction schedules another refresh; keep this frame
+        // intact while that correction is in progress instead of clearing the
+        // cards and returning with an empty overlay.
         graphGroupsOverlay.replaceChildren();
         nodeLabelOverlay.replaceChildren();
         // Pack the readable overlay by layer and namespace. Sigma keeps the
@@ -1352,13 +1380,13 @@
         // with five columns and a measured gap, so their HTML rectangles do
         // not overlap even when the graph is dense.
         const layerOrder = ["api", "application", "orchestration", "infrastructure", "domain", "persistence", "external"];
-        if (!layeredView) {
-          overlayLayoutApplied = false;
-        } else if (clusteredView || layeredClusterView) {
+        if (clusteredView || layeredClusterView) {
           // Cluster coordinates are packed in graph space by fCoSE's final
           // normalization. Do not repack them in screen space: screen-space
           // margins collapse when the camera zooms out.
           overlayLayoutApplied = true;
+        } else if (!layeredView) {
+          overlayLayoutApplied = false;
         } else if (overlayLayoutApplied) {
           // After the first pass, use the actual Sigma positions. This keeps
           // HTML cards synchronized with edges during pan and zoom.
@@ -1431,7 +1459,7 @@
         requestAnimationFrame(() => renderer.refresh());
         return;
         }
-        if (!layeredView) {
+        if (!layeredView && !clusteredView) {
           graphLayersOverlay.replaceChildren();
           graphGroupsOverlay.replaceChildren();
         } else {
@@ -1448,7 +1476,6 @@
           center: layer.items.reduce((sum, item) => sum + item.point.y, 0) / layer.items.length,
         }));
         const pointsByLayer = new Map(layerCenters.map(layer => [layer.id, layer.items.map(item => item.point)]));
-        const idsByLayer = new Map(layerCenters.map(layer => [layer.id, layer.items.map(item => item.id)]));
         if (!nodePoints.size) {
           graphLayersOverlay.replaceChildren();
           graphGroupsOverlay.replaceChildren();
@@ -1463,7 +1490,6 @@
             ), layerCenters[0]);
             if (nearest) {
               pointsByLayer.get(nearest.id).push(point);
-              idsByLayer.get(nearest.id).push(id);
             }
           });
         const allLayerPoints = layeredClusterView
@@ -1480,42 +1506,8 @@
         const contentMaxX = allLayerPoints.length
           ? Math.min(window.innerWidth, Math.max(...allLayerPoints.map(point => point.x)) + 92)
           : window.innerWidth;
-        const viewportBoundsFromGraphBounds = (bounds) => {
-          const corners = [
-            graphPointToViewport({ x: bounds.minX, y: bounds.minY }),
-            graphPointToViewport({ x: bounds.minX, y: bounds.maxY }),
-            graphPointToViewport({ x: bounds.maxX, y: bounds.minY }),
-            graphPointToViewport({ x: bounds.maxX, y: bounds.maxY }),
-          ];
-          return {
-            minX: Math.min(...corners.map(point => point.x)),
-            maxX: Math.max(...corners.map(point => point.x)),
-            minY: Math.min(...corners.map(point => point.y)),
-            maxY: Math.max(...corners.map(point => point.y)),
-          };
-        };
         const layerBounds = layerCenters.map(layer => {
           const points = pointsByLayer.get(layer.id) || [];
-          if (layeredClusterView) {
-            const graphPoints = (layeredClusterView
-              ? [...nodePoints.keys()].filter(id => layeredLayerForNode(id) === layer.id)
-              : (idsByLayer.get(layer.id) || []))
-              .map(id => id && network.getNodeAttributes(id))
-              .filter(Boolean);
-            if (graphPoints.length) {
-              const projectedBounds = viewportBoundsFromGraphBounds({
-                minX: Math.min(...graphPoints.map(point => point.x)) - 180,
-                maxX: Math.max(...graphPoints.map(point => point.x)) + 180,
-                minY: Math.min(...graphPoints.map(point => point.y)) - 240,
-                maxY: Math.max(...graphPoints.map(point => point.y)) + 240,
-              });
-              return {
-                ...layer,
-                contentTop: projectedBounds.minY,
-                contentBottom: projectedBounds.maxY,
-              };
-            }
-          }
           return {
             ...layer,
             contentTop: Math.min(...points.map(point => point.y)) - 44,
@@ -1572,8 +1564,12 @@
             // The cards are HTML rectangles in viewport coordinates. Build
             // the namespace envelope from those projected centers so graph
             // zoom cannot make a cluster smaller than its visible children.
-            const cardHalfWidth = 110 * .4 / 2;
-            const cardHalfHeight = 70 * .4 / 2;
+            // Keep this in sync with .graph-node-card-label's CSS scale.
+            // The envelope must contain the rendered HTML card, not Sigma's
+            // logical node dimensions.
+            const cardScale = clusteredView || layeredClusterView ? .35 : .8;
+            const cardHalfWidth = 110 * cardScale / 2;
+            const cardHalfHeight = 70 * cardScale / 2;
             minX = Math.min(...group.points.map(point => point.x)) - cardHalfWidth - 24;
             maxX = Math.max(...group.points.map(point => point.x)) + cardHalfWidth + 24;
             minY = Math.min(...group.points.map(point => point.y)) - cardHalfHeight - 24;
@@ -1615,24 +1611,26 @@
         // Validate the rectangles after CSS has applied their minimum sizes.
         // Graph-space envelopes alone miss small clusters whose rendered box
         // is widened by CSS, especially after a zoom-out.
-        const renderedClusterRects = [...graphGroupsOverlay.querySelectorAll(".graph-namespace-group")]
+        const renderedClusterRects = [...graphLayersOverlay.querySelectorAll(".graph-namespace-group")]
           .map(element => element.getBoundingClientRect());
         const clusterBoundsOverlap = renderedClusterRects.some((left, leftIndex, rects) => (
           rects.some((right, rightIndex) => leftIndex !== rightIndex
             && left.right > right.left && right.right > left.left
             && left.bottom > right.top && right.bottom > left.top)
         ));
-        if (cameraFitAdjusting) return;
+        let clusterCameraClamped = false;
         if (cameraZoomedOut && clusterBoundsOverlap && lastSafeCameraState) {
           cameraFitAdjusting = true;
           renderer.getCamera().setState(lastSafeCameraState);
+          clusterCameraClamped = true;
           setTimeout(() => {
             cameraFitAdjusting = false;
             refreshNodeLabels?.();
           }, 160);
-          return;
         }
-        lastSafeCameraState = { ...renderer.getCamera().getState() };
+        if (!clusterCameraClamped) {
+          lastSafeCameraState = { ...renderer.getCamera().getState() };
+        }
         if (!showProjectGroups.checked) return;
         const namespaceGroupEntries = [...namespaces.entries()];
         (graphData.groups || []).forEach(group => {
@@ -1687,15 +1685,16 @@
           const isResource = isTopic || isDatabase;
           label.className = `graph-node-card-label${isResource ? " is-resource" : ""}${isTopic ? " is-topic" : ""}${isDatabase ? " is-collection" : ""}${selectedId === id ? " is-selected" : ""}${hoveredId === id ? " is-hovered" : ""}${selectedId && selectedId !== id && relatedNodes && !relatedNodes.has(id) ? " is-dimmed" : ""}`;
           label.dataset.nodeKind = node.kind;
+          label.dataset.nodeId = id;
+          label.style.setProperty("--graph-card-scale", clusteredView || layeredClusterView ? ".35" : ".8");
           label.style.left = `${point.x}px`;
           label.style.top = `${point.y}px`;
           const origin = graphPointToViewport({ x: 0, y: 0 });
           const unit = graphPointToViewport({ x: 1, y: 0 });
           const graphScale = Math.hypot(unit.x - origin.x, unit.y - origin.y);
-          // The HTML cards are the same visual object in every view. Keep
-          // their projected size aligned with the default graph view; the
-          // cluster/layer geometry is responsible for providing the space.
-          label.style.transform = "translate(-50%, -50%) scale(.4)";
+          // In the full-graph overview, use the same uniform reduced scale
+          // for every card so all clusters can remain visible at once.
+          label.style.transform = `translate(-50%, -50%) scale(${clusteredView || layeredClusterView ? ".35" : ".8"})`;
           label.style.setProperty("--card-accent", node.color || "#64748b");
           const icon = document.createElement("span");
           icon.className = `graph-node-card-icon ${isTopic ? "is-topic" : isDatabase ? "is-database" : "is-service"}`;
@@ -1807,6 +1806,22 @@
       renderer.on("doubleClickStage", event => event.preventSigmaDefault?.());
       renderer.on("doubleClickNode", event => event.preventSigmaDefault?.());
       const graphCanvas = document.getElementById("graph");
+      const handleGraphWheel = event => {
+        if (event.target.closest?.(".toolbar, #details")) return;
+        event.preventDefault();
+        const camera = renderer.getCamera();
+        const state = camera.getState();
+        const delta = event.deltaMode === 1 ? event.deltaY * 16 : event.deltaY;
+        const factor = Math.exp(Math.max(-120, Math.min(120, delta)) * .0012);
+        camera.setState({
+          ...state,
+          // A larger Sigma ratio is a zoom-out. Bound manual wheel changes
+          // so one trackpad burst cannot jump across the safe camera state.
+          ratio: Math.max(.01, Math.min(2, state.ratio * factor)),
+        });
+      };
+      graphCanvas.addEventListener("wheel", handleGraphWheel, { passive: false });
+      nodeLabelOverlay.addEventListener("wheel", handleGraphWheel, { passive: false });
       let graphPan = null;
       const finishGraphPan = event => {
         if (!graphPan || event.pointerId !== graphPan.pointerId) return;
@@ -2058,14 +2073,16 @@
         namespaceGroups.get(namespace).push(node);
       });
       const groups = [...namespaceGroups.entries()].sort(([left], [right]) => left.localeCompare(right));
-      const nodeGapX = 1000;
-      const nodeGapY = 700;
-      const clusterPaddingX = 120;
-      const clusterPaddingY = 100;
-      // Keep enough graph-space distance for the fixed minimum envelope of a
-      // small cluster to remain separate after several zoom-out steps.
-      const clusterGapX = 3000;
-      const clusterGapY = 3000;
+      // Keep the cluster canvas compact enough for the initial fit to remain
+      // readable on large datasets. The projected-card collision guard and
+      // safe-camera clamp below enforce separation; oversized graph gaps make
+      // every card look tiny without improving the rendered invariant.
+      const nodeGapX = 420;
+      const nodeGapY = 300;
+      const clusterPaddingX = 90;
+      const clusterPaddingY = 80;
+      const clusterGapX = 1600;
+      const clusterGapY = 900;
       const packedGroups = groups.map(([namespace, nodes]) => {
         const orderedNodes = [...nodes].sort((left, right) => {
           const leftPosition = clusterLayoutPositions.get(left);
@@ -2077,7 +2094,7 @@
         const microservices = orderedNodes.filter(node => nodeDataById.get(node)?.kind === "microservice");
         const resources = orderedNodes.filter(node => nodeDataById.get(node)?.kind !== "microservice");
         const subLayers = SystemLensLayerGeometry.computeClusterSubLayers(
-          microservices, resources, { nodeGapX, nodeGapY, subLayerGapY: 700, maxColumns: 5 }
+          microservices, resources, { nodeGapX, nodeGapY, subLayerGapY: 420, maxColumns: 5 }
         );
         // The overlay envelope is deliberately larger than the node grid:
         // refreshNodeLabels adds 120px horizontally and 100px vertically on
@@ -2418,16 +2435,17 @@
     }
     function resolveGraphCardOverlaps() {
       if (!renderer || !network || layeredView) return;
-      const cardWidth = 110 * .4;
-      const cardHeight = 70 * .4;
+      const cardScale = clusteredView ? .35 : .8;
+      const cardWidth = 110 * cardScale;
+      const cardHeight = 70 * cardScale;
       const gap = 4;
       const ids = [...network.nodes()];
-      for (let pass = 0; pass < 8; pass += 1) {
-        const points = new Map(ids.map(id => {
+      const points = new Map(ids.map(id => {
           const attributes = network.getNodeAttributes(id);
           const point = renderer.graphToViewport({ x: attributes.x, y: attributes.y });
-          return [id, { x: point.x, y: point.y, graphX: attributes.x, graphY: attributes.y }];
+          return [id, { x: point.x, y: point.y }];
         }));
+      for (let pass = 0; pass < 8; pass += 1) {
         let changed = false;
         for (let leftIndex = 0; leftIndex < ids.length; leftIndex += 1) {
           for (let rightIndex = leftIndex + 1; rightIndex < ids.length; rightIndex += 1) {
@@ -2443,18 +2461,6 @@
             const direction = moveAlongX
               ? (right.x >= left.x ? 1 : -1)
               : (right.y >= left.y ? 1 : -1);
-            const leftPoint = renderer.viewportToGraph({
-              x: left.x + (moveAlongX ? -direction * overlapX / 2 : 0),
-              y: left.y + (moveAlongX ? 0 : -direction * overlapY / 2),
-            });
-            const rightPoint = renderer.viewportToGraph({
-              x: right.x + (moveAlongX ? direction * overlapX / 2 : 0),
-              y: right.y + (moveAlongX ? 0 : direction * overlapY / 2),
-            });
-            network.setNodeAttribute(leftId, "x", leftPoint.x);
-            network.setNodeAttribute(leftId, "y", leftPoint.y);
-            network.setNodeAttribute(rightId, "x", rightPoint.x);
-            network.setNodeAttribute(rightId, "y", rightPoint.y);
             left.x += moveAlongX ? -direction * overlapX / 2 : 0;
             left.y += moveAlongX ? 0 : -direction * overlapY / 2;
             right.x += moveAlongX ? direction * overlapX / 2 : 0;
@@ -2464,6 +2470,10 @@
         }
         if (!changed) break;
       }
+      points.forEach((point, id) => {
+        const graphPoint = renderer.viewportToGraph(point);
+        network.mergeNodeAttributes(id, { x: graphPoint.x, y: graphPoint.y });
+      });
     }
 
     async function applyLayout(layout) {
@@ -2563,23 +2573,12 @@
       }
       if (request !== layoutRequest) return;
       renderer.refresh();
-      const layoutCamera = renderer.getCamera();
-      layoutCamera.animatedReset({ duration: 260 });
-      // The whole graph does not need to fit in the first viewport. Favor a
-      // readable, collision-free working area and let users pan or zoom out
-      // to explore the remaining graph.
+      fitCameraToVisibleGraph(renderer);
       await new Promise(resolve => setTimeout(resolve, 300));
       // Sigma's noverlap solver works with Sigma node radii, while the
       // readable labels are larger HTML rectangles. Resolve any residual
       // collision using the actual projected card envelope after the camera
       // has fitted the layout.
-      if (!layeredView) {
-        resolveGraphCardOverlaps();
-        renderer.refresh();
-      }
-      const cameraState = layoutCamera.getState();
-      layoutCamera.setState({ ...cameraState, ratio: cameraState.ratio * .8 });
-      await new Promise(resolve => setTimeout(resolve, 80));
       refreshNodeLabels?.();
       layoutStatus.textContent = `${label} actif.`;
     }
@@ -3980,6 +3979,18 @@
     function activeRenderer() {
       return dependencyCanvas.hidden ? renderer : ensureDependencyRenderer();
     }
+    function fitCameraToVisibleGraph(targetRenderer = renderer) {
+      if (!targetRenderer) return;
+      const camera = targetRenderer.getCamera();
+      // Sigma owns the conversion between graph coordinates, its normalized
+      // display coordinates and the viewport. Reuse its fit calculation so
+      // HTML overlays and the canvas receive the exact same camera state.
+      camera.animatedReset({ duration: 0 });
+      targetRenderer.refresh();
+      if (targetRenderer === renderer) {
+        requestAnimationFrame(() => refreshNodeLabels?.());
+      }
+    }
     document.getElementById("zoom-in").addEventListener("click", () => {
       const renderer = activeRenderer();
       renderer.getCamera().animatedZoom({ duration: 180 });
@@ -3990,7 +4001,7 @@
       renderer.getCamera().animatedUnzoom({ duration: 180 });
       setTimeout(() => refreshNodeLabels?.(), 240);
     });
-    document.getElementById("fit-view").addEventListener("click", () => activeRenderer().getCamera().animatedReset({ duration: 220 }));
+    document.getElementById("fit-view").addEventListener("click", () => fitCameraToVisibleGraph(activeRenderer()));
     document.getElementById("reset").addEventListener("click", reset);
     document.getElementById("inspector-close").addEventListener("click", closeInspector);
     inspectorModal.addEventListener("click", event => { if (event.target === inspectorModal) closeInspector(); });
@@ -4085,7 +4096,7 @@
       root.style.setProperty("--workspace-bottom", `${Math.max(0, detailsHeight)}px`);
       renderer?.refresh();
       dependencyRenderer?.refresh();
-      if (refit) activeRenderer().getCamera().animatedReset({ duration: 180 });
+      if (refit) fitCameraToVisibleGraph(activeRenderer());
     }
     const workspaceObserver = new MutationObserver(() => updateWorkspaceViewport(false));
     workspaceObserver.observe(details, { attributes: true, attributeFilter: ["class"] });
