@@ -1,0 +1,25 @@
+name: systemlens
+version: 1.0.0
+description: Agent context and workflows for the SystemLens project
+author: Mehdi El kouhen
+# Which agent platforms to deploy to.
+# Resolution order: --target flag > this field > auto-detect from filesystem.
+# Accepted values: agent-skills, antigravity, claude, codex, copilot, cursor, gemini, grok-build, kiro, opencode, vscode, windsurf
+targets:
+- claude
+- codex
+- copilot
+- cursor
+- gemini
+- grok-build
+- kiro
+- opencode
+- windsurf
+dependencies:
+  apm: []
+  mcp: []
+includes: auto
+scripts:
+  lint: uv run ruff check src tests
+  test: uv run pytest
+  typecheck: uv run mypy

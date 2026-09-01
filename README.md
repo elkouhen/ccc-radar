@@ -77,6 +77,28 @@ Indexing is incremental. Use `systemlens index --full` after a broad change, and
 `systemlens index --topic-strategy strategy1` only for repositories that follow the
 documented Strategy1 Kafka and REST conventions.
 
+## Agent Package Manager (APM)
+
+This repository includes an `apm.yml` manifest for reproducing its agent setup
+across supported coding-agent harnesses. Install APM, then run:
+
+```bash
+apm install
+```
+
+The manifest currently contains no external agent or MCP dependency; the
+repository's `AGENTS.md` remains the source of project instructions. The
+following project checks are also available through APM:
+
+```bash
+apm run lint
+apm run test
+apm run typecheck
+```
+
+Keep `apm.yml` under version control. The generated `apm_modules/` directory is
+local installation state and must not be committed.
+
 ## What is extracted
 
 - Spring MVC/WebFlux routes and Spring Data REST exposure.

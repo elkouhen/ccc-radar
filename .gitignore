@@ -2,5 +2,6 @@
 __pycache__/
 .systemlens/
 *.db
+apm_modules/
 .idea/
 .mcp.json
