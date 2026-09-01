@@ -250,13 +250,13 @@ enum PaymentStatus { AUTHORIZED, DECLINED }
     assert "inertiaDuration: 0" in document
     assert "inertiaRatio: 0" in document
     assert "const cameraZoomedOut = lastSafeCameraState !== null" in document
-    assert "if ((cameraZoomedOut || needsInitialLayoutZoom)" in document
+    assert "if ((cameraZoomedOut || needsInitialLayoutZoom || clusteredView || layeredClusterView)" in document
     assert "let lastSafeCameraState = null" in document
     assert "const clusterBoundsOverlap =" in document
     assert "const cardHalfWidth = 110 * cardScale / 2" in document
     assert "const cardWidth = 110 * cardScale" in document
     assert document.count("const cardWidth = 110 * cardScale") >= 2
-    assert 'label.style.transform = `translate(-50%, -50%) scale(${clusteredView || layeredClusterView ? ".35" : ".8"})`' in document
+    assert 'label.style.transform = `translate(-50%, -50%) scale(${clusteredView || layeredClusterView ? ".25" : ".8"})`' in document
     assert 'transform: translate(-50%, -50%) scale(var(--graph-card-scale, .8))' in document
     assert 'graphLayersOverlay.querySelectorAll(".graph-namespace-group")' in document
     assert "renderedClusterRects" in document

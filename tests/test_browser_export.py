@@ -40,9 +40,10 @@ def _complex_dataset_document() -> str:
     services = [node for node in data["nodes"] if node["kind"] == "microservice"][:50]
     assert len(services) == 50, "The source complex dataset must contain 50 services"
     namespaces = [
-        "platform-edge", "platform-core", "platform-domain", "platform-infra",
-        "platform-shared", "platform-ops", "platform-data", "platform-security",
-        "platform-workflow", "platform-reporting",
+        "platform-edge/sub-1", "platform-edge/sub-2", "platform-edge/sub-3",
+        "platform-core", "platform-domain", "platform-infra", "platform-shared",
+        "platform-ops", "platform-data", "platform-security", "platform-workflow",
+        "platform-reporting",
     ]
     layers = ["api", "application", "orchestration", "infrastructure", "domain", "persistence"]
     for index, node in enumerate(services):
@@ -104,7 +105,15 @@ def _complex_dataset_document() -> str:
     assert len(links) == 300
     data["nodes"] = services + resources
     data["links"] = links
-    data["groups"] = []
+    nested_namespace_ids = [
+        node["id"] for node in data["nodes"]
+        if str(node.get("metadata", {}).get("namespace", "")).startswith("platform-edge/")
+    ]
+    data["groups"] = [{
+        "name": "platform-edge",
+        "namespace": "platform-edge",
+        "children": nested_namespace_ids,
+    }]
     for node in data["nodes"]:
         namespace = node.get("metadata", {}).get("namespace") or "root"
         # The historical export stores the complex fixture's namespace in
@@ -412,6 +421,39 @@ def _assert_clusters_only_overlap_when_nested(page) -> None:
     )
 
 
+def _assert_nested_namespace_cluster_contains_three_children(page) -> None:
+    result = page.evaluate(
+        """() => {
+            const parent = document.querySelector(
+                '.graph-project-group[data-namespace-group="platform-edge"]'
+            );
+            const children = [...document.querySelectorAll(
+                '.graph-namespace-group[data-namespace^="platform-edge/"]'
+            )];
+            if (!parent || children.length !== 3) return { valid: false, children: children.length };
+            const outer = parent.getBoundingClientRect();
+            const rects = children.map(child => child.getBoundingClientRect());
+            const contains = rect => (
+                rect.left >= outer.left && rect.right <= outer.right
+                && rect.top >= outer.top && rect.bottom <= outer.bottom
+            );
+            const overlap = (left, right) => (
+                left.left < right.right && left.right > right.left
+                && left.top < right.bottom && left.bottom > right.top
+            );
+            return {
+                valid: rects.every(contains)
+                    && rects.every((left, index) => rects.every((right, other) => (
+                        index === other || !overlap(left, right)
+                    ))),
+                parent: [outer.left, outer.top, outer.width, outer.height],
+                children: rects.map(rect => [rect.left, rect.top, rect.width, rect.height]),
+            };
+        }"""
+    )
+    assert result["valid"], result
+
+
 def _assert_layer_bands_are_disjoint_and_contain_clusters(page) -> None:
     result = page.evaluate(
         """() => {
@@ -507,6 +549,7 @@ def test_complex_dataset_geometry_contract_across_all_views() -> None:
                 page.screenshot(path=str(screenshot_path), full_page=False)
             _assert_geometry_contract(page, layered=layered)
             if layout_id == "layout-cluster":
+                _assert_nested_namespace_cluster_contains_three_children(page)
                 screenshot_path = Path("output/playwright/complex-cluster-final-validation.png")
                 screenshot_path.parent.mkdir(parents=True, exist_ok=True)
                 page.screenshot(path=str(screenshot_path), full_page=False)

@@ -1320,7 +1320,7 @@
         // previous frame would lose the fact that the user zoomed out.
         const cameraZoomedOut = lastSafeCameraState !== null
           && cameraRatio > lastSafeCameraState.ratio + 0.0001;
-        const cardScale = clusteredView || layeredClusterView ? .35 : .8;
+        const cardScale = clusteredView || layeredClusterView ? .25 : .8;
         const cardWidth = 110 * cardScale;
         const cardHeight = 70 * cardScale;
         const cardGap = 4;
@@ -1346,7 +1346,7 @@
         // recursively tighten it from projected-card collisions: that would
         // make a large graph exponentially zoom in before its first frame.
         const needsInitialLayoutZoom = false;
-        if ((cameraZoomedOut || needsInitialLayoutZoom)
+        if ((cameraZoomedOut || needsInitialLayoutZoom || clusteredView || layeredClusterView)
             && requiredZoomIn > 1.001 && !cameraFitAdjusting) {
           cameraFitAdjusting = true;
           const camera = renderer.getCamera();
@@ -1567,7 +1567,7 @@
             // Keep this in sync with .graph-node-card-label's CSS scale.
             // The envelope must contain the rendered HTML card, not Sigma's
             // logical node dimensions.
-            const cardScale = clusteredView || layeredClusterView ? .35 : .8;
+            const cardScale = clusteredView || layeredClusterView ? .25 : .8;
             const cardHalfWidth = 110 * cardScale / 2;
             const cardHalfHeight = 70 * cardScale / 2;
             minX = Math.min(...group.points.map(point => point.x)) - cardHalfWidth - 24;
@@ -1581,6 +1581,7 @@
             minX, maxX: minX + renderedWidth, minY, maxY: minY + renderedHeight,
           });
           const box = document.createElement("div"); box.className = "graph-namespace-group";
+          box.dataset.namespace = group.namespace;
           box.style.left = `${minX}px`; box.style.top = `${minY}px`;
           box.style.width = `${renderedWidth}px`;
           box.style.height = `${renderedHeight}px`;
@@ -1637,7 +1638,9 @@
           const children = group.children || [];
           const childNamespaceBounds = namespaceGroupEntries
             .filter(([, namespaceGroup]) => (
-              (!group.namespace || namespaceGroup.namespace === group.namespace)
+              (!group.namespace
+                || namespaceGroup.namespace === group.namespace
+                || namespaceGroup.namespace.startsWith(`${group.namespace}/`))
               && namespaceGroup.ids.some(id => children.includes(id))
             ))
             .map(([key]) => namespaceBounds.get(key))
@@ -1663,6 +1666,7 @@
           }
           const container = document.createElement("div");
           container.className = "graph-project-group";
+          container.dataset.namespaceGroup = group.namespace || group.name || "root";
           container.style.left = `${minX}px`;
           container.style.top = `${minY}px`;
           container.style.width = `${Math.max(150, maxX - minX)}px`;
@@ -1686,7 +1690,7 @@
           label.className = `graph-node-card-label${isResource ? " is-resource" : ""}${isTopic ? " is-topic" : ""}${isDatabase ? " is-collection" : ""}${selectedId === id ? " is-selected" : ""}${hoveredId === id ? " is-hovered" : ""}${selectedId && selectedId !== id && relatedNodes && !relatedNodes.has(id) ? " is-dimmed" : ""}`;
           label.dataset.nodeKind = node.kind;
           label.dataset.nodeId = id;
-          label.style.setProperty("--graph-card-scale", clusteredView || layeredClusterView ? ".35" : ".8");
+          label.style.setProperty("--graph-card-scale", clusteredView || layeredClusterView ? ".25" : ".8");
           label.style.left = `${point.x}px`;
           label.style.top = `${point.y}px`;
           const origin = graphPointToViewport({ x: 0, y: 0 });
@@ -1694,7 +1698,7 @@
           const graphScale = Math.hypot(unit.x - origin.x, unit.y - origin.y);
           // In the full-graph overview, use the same uniform reduced scale
           // for every card so all clusters can remain visible at once.
-          label.style.transform = `translate(-50%, -50%) scale(${clusteredView || layeredClusterView ? ".35" : ".8"})`;
+          label.style.transform = `translate(-50%, -50%) scale(${clusteredView || layeredClusterView ? ".25" : ".8"})`;
           label.style.setProperty("--card-accent", node.color || "#64748b");
           const icon = document.createElement("span");
           icon.className = `graph-node-card-icon ${isTopic ? "is-topic" : isDatabase ? "is-database" : "is-service"}`;
