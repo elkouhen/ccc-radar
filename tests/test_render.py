@@ -249,6 +249,13 @@ enum PaymentStatus { AUTHORIZED, DECLINED }
     assert "enableCameraPanning: false" in document
     assert "inertiaDuration: 0" in document
     assert "inertiaRatio: 0" in document
+    assert "let graphWheelCleanup = null" in document
+    assert "graphWheelCleanup?.();" in document
+    assert "graphCanvas.removeEventListener(\"wheel\", handleGraphWheel)" in document
+    assert "const collisionBuckets = new Map()" in document
+    assert "Keep the graph point under the cursor fixed" in document
+    assert "dependencyCanvas.addEventListener(\"wheel\", handleDependencyWheel" in document
+    assert "dependencyCanvas.setPointerCapture?.(event.pointerId)" in document
     assert "const cameraZoomedOut = lastSafeCameraState !== null" in document
     assert "if ((cameraZoomedOut || needsInitialLayoutZoom || clusteredView || layeredClusterView)" in document
     assert "let lastSafeCameraState = null" in document

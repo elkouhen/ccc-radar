@@ -1192,6 +1192,7 @@
     let cameraFitAdjusting = false;
     let lastSafeCameraState = null;
     let graphPanCleanup = null;
+    let graphWheelCleanup = null;
     let activeLayout = "forceatlas2-noverlap";
     function rebuildGraph() {
       const visibleLinks = graphData.links.filter(link => (
@@ -1212,6 +1213,17 @@
       ];
       graphPanCleanup?.();
       graphPanCleanup = null;
+      graphWheelCleanup?.();
+      graphWheelCleanup = null;
+      // A filtered/layout graph has a new coordinate system. Never compare
+      // its camera with a safe state captured from the previous graph.
+      cameraFitAdjusting = false;
+      lastSafeCameraState = null;
+      overlayLayoutApplied = false;
+      clusterLayoutPositions = new Map();
+      graphLayersOverlay.replaceChildren();
+      graphGroupsOverlay.replaceChildren();
+      nodeLabelOverlay.replaceChildren();
       renderer?.kill();
       network = new graphology.MultiDirectedGraph();
       const visualNodeKind = node => {
@@ -1326,22 +1338,37 @@
         const cardGap = 4;
         let requiredZoomIn = 1;
         const visiblePoints = [...nodePoints.values()];
-        for (let leftIndex = 0; leftIndex < visiblePoints.length; leftIndex += 1) {
-          for (let rightIndex = leftIndex + 1; rightIndex < visiblePoints.length; rightIndex += 1) {
-            const left = visiblePoints[leftIndex];
-            const right = visiblePoints[rightIndex];
-            const distanceX = Math.abs(right.x - left.x);
-            const distanceY = Math.abs(right.y - left.y);
-            if (distanceX >= cardWidth + cardGap || distanceY >= cardHeight + cardGap) continue;
-            requiredZoomIn = Math.max(
-              requiredZoomIn,
-              Math.min(2, Math.max(
-                (cardWidth + cardGap) / Math.max(distanceX, 1),
-                (cardHeight + cardGap) / Math.max(distanceY, 1),
-              )),
-            );
+        // Use a spatial hash instead of comparing every pair. The old
+        // quadratic pass became several million comparisons per frame on a
+        // large architecture model and made pan/zoom visibly stutter.
+        const collisionBuckets = new Map();
+        const collisionCellWidth = cardWidth + cardGap;
+        const collisionCellHeight = cardHeight + cardGap;
+        visiblePoints.forEach(right => {
+          const cellX = Math.floor(right.x / collisionCellWidth);
+          const cellY = Math.floor(right.y / collisionCellHeight);
+          for (let offsetX = -1; offsetX <= 1; offsetX += 1) {
+            for (let offsetY = -1; offsetY <= 1; offsetY += 1) {
+              const key = `${cellX + offsetX}:${cellY + offsetY}`;
+              for (const left of collisionBuckets.get(key) || []) {
+                const distanceX = Math.abs(right.x - left.x);
+                const distanceY = Math.abs(right.y - left.y);
+                if (distanceX >= cardWidth + cardGap || distanceY >= cardHeight + cardGap) continue;
+                requiredZoomIn = Math.max(
+                  requiredZoomIn,
+                  Math.min(2, Math.max(
+                    (cardWidth + cardGap) / Math.max(distanceX, 1),
+                    (cardHeight + cardGap) / Math.max(distanceY, 1),
+                  )),
+                );
+              }
+            }
           }
-        }
+          const ownKey = `${cellX}:${cellY}`;
+          const ownBucket = collisionBuckets.get(ownKey) || [];
+          ownBucket.push(right);
+          collisionBuckets.set(ownKey, ownBucket);
+        });
         // Initial layout already selects the working camera scale. Do not
         // recursively tighten it from projected-card collisions: that would
         // make a large graph exponentially zoom in before its first frame.
@@ -1723,6 +1750,7 @@
             forwardedPointer = null;
             suppressNextCardClick = wasDrag;
             nodeLabelOverlay.style.pointerEvents = "none";
+            label.releasePointerCapture?.(event.pointerId);
             window.removeEventListener("pointermove", moveForwardedPointer, true);
             window.removeEventListener("pointerup", finishForwardedPointer, true);
             window.removeEventListener("pointercancel", finishForwardedPointer, true);
@@ -1763,6 +1791,7 @@
             };
             event.preventDefault();
             event.stopPropagation();
+            label.setPointerCapture?.(event.pointerId);
             nodeLabelOverlay.style.pointerEvents = "none";
             window.addEventListener("pointermove", moveForwardedPointer, true);
             window.addEventListener("pointerup", finishForwardedPointer, true);
@@ -1815,17 +1844,39 @@
         event.preventDefault();
         const camera = renderer.getCamera();
         const state = camera.getState();
+        const viewport = graphCanvas.getBoundingClientRect();
+        const cursor = {
+          x: event.clientX - viewport.left,
+          y: event.clientY - viewport.top,
+        };
+        const graphPoint = renderer.viewportToGraph(cursor);
         const delta = event.deltaMode === 1 ? event.deltaY * 16 : event.deltaY;
         const factor = Math.exp(Math.max(-120, Math.min(120, delta)) * .0012);
+        const ratio = Math.max(.01, Math.min(2, state.ratio * factor));
         camera.setState({
           ...state,
           // A larger Sigma ratio is a zoom-out. Bound manual wheel changes
           // so one trackpad burst cannot jump across the safe camera state.
-          ratio: Math.max(.01, Math.min(2, state.ratio * factor)),
+          ratio,
+        });
+        const projected = renderer.graphToViewport(graphPoint);
+        const dx = cursor.x - projected.x;
+        const dy = cursor.y - projected.y;
+        const nextState = camera.getState();
+        const width = Math.max(viewport.width, 1);
+        camera.setState({
+          ...nextState,
+          // Keep the graph point under the cursor fixed while changing scale.
+          x: nextState.x - dx / width,
+          y: nextState.y + dy / width,
         });
       };
       graphCanvas.addEventListener("wheel", handleGraphWheel, { passive: false });
       nodeLabelOverlay.addEventListener("wheel", handleGraphWheel, { passive: false });
+      graphWheelCleanup = () => {
+        graphCanvas.removeEventListener("wheel", handleGraphWheel);
+        nodeLabelOverlay.removeEventListener("wheel", handleGraphWheel);
+      };
       let graphPan = null;
       const finishGraphPan = event => {
         if (!graphPan || event.pointerId !== graphPan.pointerId) return;
@@ -1833,6 +1884,7 @@
         window.removeEventListener("pointermove", moveGraphPan, true);
         window.removeEventListener("pointerup", finishGraphPan, true);
         window.removeEventListener("pointercancel", finishGraphPan, true);
+        graphCanvas.releasePointerCapture?.(event.pointerId);
       };
       const moveGraphPan = event => {
         if (!graphPan || event.pointerId !== graphPan.pointerId) return;
@@ -1854,6 +1906,7 @@
         };
         event.preventDefault();
         event.stopImmediatePropagation();
+        graphCanvas.setPointerCapture?.(event.pointerId);
         window.addEventListener("pointermove", moveGraphPan, true);
         window.addEventListener("pointerup", finishGraphPan, true);
         window.addEventListener("pointercancel", finishGraphPan, true);
@@ -1861,6 +1914,7 @@
       graphCanvas.addEventListener("pointerdown", startGraphPan, true);
       graphPanCleanup = () => {
         graphCanvas.removeEventListener("pointerdown", startGraphPan, true);
+        graphCanvas.releasePointerCapture?.(graphPan?.pointerId);
         window.removeEventListener("pointermove", moveGraphPan, true);
         window.removeEventListener("pointerup", finishGraphPan, true);
         window.removeEventListener("pointercancel", finishGraphPan, true);
@@ -1935,9 +1989,74 @@
         labelDensity: .12,
         labelGridCellSize: 110,
         labelRenderedSizeThreshold: 8,
+        // Keep camera behavior consistent with the architecture views. The
+        // shared controls below provide zoom, pan and no-inertia semantics.
+        doubleClickZoomingRatio: 1,
+        enableCameraZooming: false,
+        enableCameraPanning: false,
+        inertiaDuration: 0,
+        inertiaRatio: 0,
       });
       dependencyRenderer.on("clickNode", ({ node }) => selectDependencyModule(node));
       dependencyRenderer.on("clickStage", reset);
+      dependencyRenderer.on("doubleClickStage", event => event.preventSigmaDefault?.());
+      dependencyRenderer.on("doubleClickNode", event => event.preventSigmaDefault?.());
+      const handleDependencyWheel = event => {
+        event.preventDefault();
+        const camera = dependencyRenderer.getCamera();
+        const state = camera.getState();
+        const viewport = dependencyCanvas.getBoundingClientRect();
+        const cursor = { x: event.clientX - viewport.left, y: event.clientY - viewport.top };
+        const graphPoint = dependencyRenderer.viewportToGraph(cursor);
+        const delta = event.deltaMode === 1 ? event.deltaY * 16 : event.deltaY;
+        const factor = Math.exp(Math.max(-120, Math.min(120, delta)) * .0012);
+        const ratio = Math.max(.01, Math.min(2, state.ratio * factor));
+        camera.setState({ ...state, ratio });
+        const projected = dependencyRenderer.graphToViewport(graphPoint);
+        const nextState = camera.getState();
+        const width = Math.max(viewport.width, 1);
+        camera.setState({
+          ...nextState,
+          x: nextState.x - (cursor.x - projected.x) / width,
+          y: nextState.y + (cursor.y - projected.y) / width,
+        });
+      };
+      dependencyCanvas.addEventListener("wheel", handleDependencyWheel, { passive: false });
+      let dependencyPan = null;
+      const finishDependencyPan = event => {
+        if (!dependencyPan || event.pointerId !== dependencyPan.pointerId) return;
+        dependencyCanvas.releasePointerCapture?.(event.pointerId);
+        dependencyPan = null;
+        window.removeEventListener("pointermove", moveDependencyPan, true);
+        window.removeEventListener("pointerup", finishDependencyPan, true);
+        window.removeEventListener("pointercancel", finishDependencyPan, true);
+      };
+      const moveDependencyPan = event => {
+        if (!dependencyPan || event.pointerId !== dependencyPan.pointerId) return;
+        const state = dependencyPan.cameraState;
+        const width = Math.max(dependencyCanvas.getBoundingClientRect().width, 1);
+        dependencyRenderer.getCamera().setState({
+          ...state,
+          x: state.x - (event.clientX - dependencyPan.startX) / width,
+          y: state.y + (event.clientY - dependencyPan.startY) / width,
+        });
+      };
+      const startDependencyPan = event => {
+        if (event.button !== 0) return;
+        dependencyPan = {
+          pointerId: event.pointerId,
+          startX: event.clientX,
+          startY: event.clientY,
+          cameraState: dependencyRenderer.getCamera().getState(),
+        };
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        dependencyCanvas.setPointerCapture?.(event.pointerId);
+        window.addEventListener("pointermove", moveDependencyPan, true);
+        window.addEventListener("pointerup", finishDependencyPan, true);
+        window.addEventListener("pointercancel", finishDependencyPan, true);
+      };
+      dependencyCanvas.addEventListener("pointerdown", startDependencyPan, true);
       return dependencyRenderer;
     }
     const indexingIssuesList = document.getElementById("indexing-issues");

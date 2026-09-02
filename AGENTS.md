@@ -107,6 +107,26 @@ If the prescribed environment or command is unavailable, do not substitute an
 unverified setup silently: report the missing prerequisite and the validation
 that could not be performed.
 
+## AI operating practices
+
+To keep long agent sessions reliable and reviewable:
+
+1. Compact the conversation when context becomes large or before starting a
+   new substantial phase of work. Preserve the current objective, decisions,
+   changed files, unresolved risks, and validation results in the handoff.
+2. Before compaction, leave a short checkpoint in the working notes or
+   conversation so work can resume without rereading the repository from
+   scratch.
+3. Re-check the latest user request after compaction; treat it as authoritative
+   and do not repeat completed work unless validation requires it.
+4. Prefer small, reversible edits, inspect the diff, and run proportionate
+   focused tests before reporting progress or completion.
+5. Never claim browser, network, or external-system validation when the
+   prerequisite was unavailable; state the unverified risk explicitly.
+6. When a session is becoming long or crosses several work phases, remind the
+   user of the useful options: compact the conversation, record a checkpoint,
+   split unrelated work into a new thread, and preserve the validation status.
+
 ## Cross-functional review
 
 Before delivering a non-trivial change, examine it from the relevant points of
