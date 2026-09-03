@@ -18,11 +18,24 @@
     :root { color: #172033; background: #f5f7fb; font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
     * { box-sizing: border-box; }
     body { margin: 0; overflow: hidden; }
-    #graph, #dependency-graph { width: 100vw; height: 100vh; background: #f8fafc; touch-action: none; }
+    #graph, #dependency-graph { background: #f8fafc; touch-action: none; }
     /* Keep Sigma's canvas in a dedicated background layer. The floating
        workspace controls must remain above it, regardless of DOM order. */
-    #graph { position: fixed; inset: 0; z-index: 0; }
-    #dependency-graph { position: fixed; inset: 0; z-index: 0; }
+    /* Sigma and every HTML overlay must share the same containing rectangle.
+       The workspace variables reserve the toolbar/details area; sizing the
+       canvas differently from the overlays makes graphToViewport() and
+       getBoundingClientRect() disagree as soon as the camera is zoomed or
+       panned. */
+    #graph, #dependency-graph {
+      position: fixed;
+      left: var(--workspace-left, 0px);
+      right: var(--workspace-right, 0px);
+      top: var(--workspace-top, 0px);
+      bottom: var(--workspace-bottom, 0px);
+      width: auto;
+      height: auto;
+      z-index: 0;
+    }
     #graph-layers { position: absolute; inset: 0; pointer-events: none; z-index: 1; overflow: hidden; }
     #graph-groups { position: absolute; inset: 0; pointer-events: none; z-index: 2; overflow: hidden; }
     #graph-node-labels { position: absolute; inset: 0; pointer-events: none; z-index: 3; overflow: hidden; }
@@ -272,12 +285,6 @@
     }
     body { background: #eef2f8; }
     #graph, #dependency-graph {
-      left: var(--workspace-left, 0px);
-      right: var(--workspace-right, 0px);
-      top: var(--workspace-top, 0px);
-      bottom: var(--workspace-bottom, 0px);
-      width: auto;
-      height: auto;
       background:
         radial-gradient(circle at 72% 18%, rgba(199, 210, 254, .34), transparent 28%),
         radial-gradient(circle at 42% 82%, rgba(186, 230, 253, .24), transparent 30%),
@@ -1310,15 +1317,12 @@
           // the renderer matrix must not be applied to raw graph attributes.
           const display = renderer.getNodeDisplayData(id);
           if (!display) return;
-          // Sigma exposes its graph-to-clip transform internally; use the
-          // current matrix so the HTML card overlay follows camera movement.
-          const matrix = renderer.matrix;
-          const clipX = matrix[0] * display.x + matrix[3] * display.y + matrix[6];
-          const clipY = matrix[1] * display.x + matrix[4] * display.y + matrix[7];
-          const point = {
-            x: (clipX + 1) * renderer.width / 2,
-            y: (1 - clipY) * renderer.height / 2,
-          };
+          // Use Sigma's public conversion instead of reimplementing its
+          // matrix projection. The internal matrix is easy to misinterpret
+          // (display coordinates, viewport offsets and aspect-ratio handling
+          // differ between Sigma versions), which made cluster envelopes
+          // drift away from their cards after zoom/pan.
+          const point = graphPointToViewport({ x: display.x, y: display.y });
           const node = nodeDataById.get(id);
           if (!node || !point) return;
           nodePoints.set(id, point);
