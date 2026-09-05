@@ -62,6 +62,18 @@ def _html_graph_data(document: str) -> dict[str, object]:
     return json.loads(match.group(1))
 
 
+def test_graph_html_uses_one_workspace_viewport_for_canvas_and_overlays() -> None:
+    document = render_graph_html({}, [])
+
+    assert "#graph, #dependency-graph {\n      position: fixed;" in document
+    assert "left: var(--workspace-left, 0px);" in document
+    assert "const point = graphPointToViewport({ x: attributes.x, y: attributes.y });" in document
+    assert "const display = renderer.getNodeDisplayData(id);" not in document
+    assert "const matrix = renderer.matrix;" not in document
+    assert "__GRAPH_CSS__" not in document
+    assert "__GRAPH_JS__" not in document
+
+
 def test_microservice_graph_exposes_software_layers_and_namespaces() -> None:
     module = DiscoveredModule(
         name="domain-orders",
@@ -194,10 +206,12 @@ enum PaymentStatus { AUTHORIZED, DECLINED }
     assert 'appendRelationList("Services utilisant cette collection"' in document
     assert 'appendList("Stockee par", [node.owner], relationsGroup)' not in document
     assert "function rebuildGraph()" in document
+    assert "Commit the view mode only after its layout and camera are ready" in document
+    assert "const previousLayout = graphState.activeLayout" in document
     assert "const visibleLinks = graphData.links.filter(link => (" in document
     assert "renderer?.refresh();" in document
-    assert 'let activeLayout = "forceatlas2-noverlap"' in document
-    assert "applyLayout(activeLayout)" in document
+    assert 'activeLayout: "forceatlas2-noverlap"' in document
+    assert "applyLayout(graphState.activeLayout)" in document
     assert 'id="node-suggestions"' in document
     assert 'id="inventory-status"' in document
     assert "const isolatedNodeIds = new Set(" in document
@@ -219,7 +233,7 @@ enum PaymentStatus { AUTHORIZED, DECLINED }
     assert '"external"]' in document
     assert '"orchestration"' in document
     assert 'external: "#64748b"' in document
-    assert "layeredClusterView = layout === \"elk\"" in document
+    assert "layeredClusterView: layout === \"elk\"" in document
     assert "packLayeredClusterGraphPositions();" in document
     assert "if (!nodePoints.size)" in document
     assert "if (!layerCenters.length) return" in document
@@ -241,7 +255,7 @@ enum PaymentStatus { AUTHORIZED, DECLINED }
     assert '? { elk: typeof window.ELK === "function" ? new window.ELK() : null }' in document
     assert ': await layoutLibraries;' in document
     assert "async function applyFcoseClusterLayout()" in document
-    assert 'const nextLayout = !layeredView' in document
+    assert 'const nextLayout = !graphState.layeredView' in document
     assert '? "cluster"' in document
     assert "labelGridCellSize: 160" in document
     assert "labelRenderedSizeThreshold: 10" in document
@@ -249,37 +263,29 @@ enum PaymentStatus { AUTHORIZED, DECLINED }
     assert "enableCameraPanning: false" in document
     assert "inertiaDuration: 0" in document
     assert "inertiaRatio: 0" in document
-    assert "let graphWheelCleanup = null" in document
+    assert "graphWheelCleanup: null" in document
     assert "graphWheelCleanup?.();" in document
     assert "graphCanvas.removeEventListener(\"wheel\", handleGraphWheel)" in document
-    assert "const collisionBuckets = new Map()" in document
     assert "Keep the graph point under the cursor fixed" in document
     assert "dependencyCanvas.addEventListener(\"wheel\", handleDependencyWheel" in document
     assert "dependencyCanvas.setPointerCapture?.(event.pointerId)" in document
-    assert "const cameraZoomedOut = lastSafeCameraState !== null" in document
-    assert "if ((cameraZoomedOut || needsInitialLayoutZoom || clusteredView || layeredClusterView)" in document
-    assert "let lastSafeCameraState = null" in document
-    assert "const clusterBoundsOverlap =" in document
+    assert "const GRAPH_CARD_SCALE = 1" in document
+    assert "const GRAPH_CARD_WIDTH = 110 * GRAPH_CARD_SCALE" in document
+    assert "const GRAPH_CARD_HEIGHT = 70 * GRAPH_CARD_SCALE" in document
+    assert "lastSafeCameraState: null" in document
     assert "const cardHalfWidth = 110 * cardScale / 2" in document
     assert "const cardWidth = 110 * cardScale" in document
-    assert document.count("const cardWidth = 110 * cardScale") >= 2
-    assert 'label.style.transform = `translate(-50%, -50%) scale(${clusteredView || layeredClusterView ? ".25" : ".8"})`' in document
-    assert 'transform: translate(-50%, -50%) scale(var(--graph-card-scale, .8))' in document
-    assert 'graphLayersOverlay.querySelectorAll(".graph-namespace-group")' in document
-    assert "renderedClusterRects" in document
+    assert 'label.style.transform = `translate(-50%, -50%) scale(${cardScale})`' in document
+    assert 'transform: translate(-50%, -50%) scale(var(--graph-card-scale, 1))' in document
     assert 'color = typeof color === "string" && color ? color : "#94a3b8"' in document
-    assert "const nodeGapX = 420" in document
-    assert "const nodeGapY = 300" in document
-    assert "const clusterGapX = 1600" in document
-    assert "const clusterGapY = 900" in document
-    assert "const needsInitialLayoutZoom = false" in document
-    assert "renderer.getCamera().setState(lastSafeCameraState)" in document
-    assert "let clusterCameraClamped = false" in document
-    assert "if (!clusterCameraClamped)" in document
+    assert "const nodeGapX = 1100" in document
+    assert "const nodeGapY = 900" in document
+    assert "const clusterGapX = 3600" in document
+    assert "const clusterGapY = 2600" in document
     assert "zoomOutButton.disabled = false" in document
     assert "zoomOutButton.disabled = clusteredView" not in document
     assert "blockClusterZoomOut" not in document
-    assert "refreshNodeLabels?.();" in document
+    assert "renderOverlays?.();" in document
     assert "Connectivité relative :" in document
     assert "const visualNodeKind = node" in document
     assert "Namespace architectural" not in document

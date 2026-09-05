@@ -1,7 +1,8 @@
 """Standalone interactive HTML export (Sigma.js) of the microservice graph.
 
-The heavy JS/CSS payload lives in ``assets/graph.html``; this module only
-builds the JSON data model injected into that static template.
+The HTML shell, stylesheet, and browser controller are kept as separate source
+files for maintainability. They are inlined here so the generated report stays
+a single self-contained document.
 """
 
 import json
@@ -50,6 +51,9 @@ from systemlens.render.likec4_export import _complexity_ranking
 from systemlens.render_snapshot import kafka_dto_views
 
 _GRAPH_HTML_TEMPLATE = (Path(__file__).parent / "assets" / "graph.html").read_text(encoding="utf-8")
+_GRAPH_CSS = (Path(__file__).parent / "assets" / "graph.css").read_text(encoding="utf-8")
+_GRAPH_JS_MODULES = tuple(sorted((Path(__file__).parent / "assets" / "graph").glob("*.js")))
+_GRAPH_JS = "\n".join(path.read_text(encoding="utf-8") for path in _GRAPH_JS_MODULES)
 _LAYER_GEOMETRY_JS = (Path(__file__).parent / "assets" / "layer_geometry.js").read_text(encoding="utf-8")
 
 
@@ -1176,6 +1180,10 @@ def render_graph_html(
         },
         ensure_ascii=False,
     ).replace("</", "<\\/")
-    return _GRAPH_HTML_TEMPLATE.replace("__GRAPH_DATA__", graph_data).replace(
-        "__LAYER_GEOMETRY__", _LAYER_GEOMETRY_JS
+    return (
+        _GRAPH_HTML_TEMPLATE
+        .replace("__GRAPH_CSS__", _GRAPH_CSS)
+        .replace("__GRAPH_JS__", _GRAPH_JS)
+        .replace("__GRAPH_DATA__", graph_data)
+        .replace("__LAYER_GEOMETRY__", _LAYER_GEOMETRY_JS)
     )

@@ -283,11 +283,25 @@ its evidence is intended for a human or an AI to assess a conservative rule.
 ## Graph layout algorithms
 
 The HTML renderer keeps graph coordinates as the source of truth for layout.
-The shared card size remains stable during navigation; when a zoom-out would
-make projected card envelopes intersect, the camera ratio is clamped to the
-last safe level instead of shrinking cards or moving the layout.
-This protection is gated on an actual increase of the camera ratio (zoom-out),
-so camera translations caused by panning never trigger an automatic zoom.
+Sigma's canvas and the HTML card/cluster overlays share the same workspace
+rectangle (including the space reserved for the navigation and details
+panels). Overlay positions are obtained from Sigma's public
+`graphToViewport` conversion using the raw graph coordinates; renderer
+internal matrices and full-window canvas coordinates are not mixed with the
+workspace-local overlay coordinates.
+The browser controller is maintained as ordered source modules under
+`src/systemlens/render/assets/graph/`: core setup, graph rebuilding and camera
+events, controls, layouts, details, path exploration, and bootstrap wiring.
+The export assembler concatenates these modules into the standalone script.
+Mutable selection, view, layout, and camera state is held in one
+`graphState` object. Overlay refreshes go through one animation-frame
+scheduler (`requestGraphRender`) so canvas and HTML overlays observe one
+coalesced render cycle.
+The shared card size remains stable during navigation. The initial fit uses
+the projected node centers, with a small margin, so every visible node is
+framed without shrinking cards. Card overlap is an accepted dense-overview
+state; zooming and panning never move nodes to repair it or clamp the camera.
+Relations remain rendered by Sigma independently of the HTML card overlays.
 Camera updates during pan and zoom are coalesced to the next animation frame.
 The Sigma canvas and the HTML card/cluster overlays are therefore recomputed
 from one camera state per frame, preventing partially rebuilt containers from
@@ -295,40 +309,36 @@ appearing while the user drags the namespace view.
 Wheel zoom is handled once for both the Sigma canvas and the HTML overlays;
 the native Sigma wheel handler is disabled so hovering a card cannot change
 the zoom behavior. Each wheel event applies a bounded exponential camera-ratio
-step, after which the projected collision guard may clamp only an actual
-zoom-out that would create an overlap.
+step without collision-based clamping.
 The ELK layer layout loads independently from the ForceAtlas2 and Noverlap
 modules used by the graph layouts, so unrelated dynamic imports cannot keep
 the layer view in a pending state.
-After force-based placement, the graph view runs a projected-card collision pass
-against the HTML card envelope; this covers residual diagonal intersections that
-Sigma's compact node-radius no-overlap pass cannot detect.
+Force-based placement uses Sigma's node radius to preserve the graph structure;
+it does not mutate positions after the camera fit to repair HTML-card overlap.
 The namespace-cluster packer places microservices in a first sub-layer and
 resources in a second sub-layer on separated grids, then
 packs namespace rectangles with positive margins that include the complete
 projected card/title envelope, not only the node-grid dimensions. Its graph-space
 gaps are expressed in the same graph-coordinate scale as the rest of the
 layout, while remaining large enough for the shared 110×70 card envelope.
-Each layout starts with a shared camera-fit operation based on the complete
-normalized node extent and the largest graph axis. The same operation is
-reapplied by the Ajuster action and after a viewport resize, so switching
-between graph, layer, and namespace views does not retain a stale camera
-scale or leave the layout outside the available viewport. Projected collision
-checks and the safe-camera clamp preserve the separation invariant after
-navigation and resize.
+Each layout starts with a shared camera-fit operation based on the projected
+node centers and a small margin. The same operation is reapplied by the Ajuster
+action and after a viewport resize, so switching between graph, layer, and
+namespace views does not retain a stale camera scale or leave node centers
+outside the available viewport. Overlapping cards and cluster rectangles are
+allowed in dense views; their fixed screen-space dimensions are preserved
+during navigation.
 Container geometry is kept in graph coordinates until it is projected to the
 viewport. The cluster view
 uses this deterministic packing as its source of truth; it does
-not wait for a compound force layout that could block the browser before the
-non-overlap fallback runs. When project or other parent groups are enabled,
+not wait for a compound force layout that could block the browser. When project
+or other parent groups are enabled,
 their bounds are the union of the already
 projected child namespace bounds plus title/padding margins; node-grid gaps are
-calibrated with generous graph-space margins for the shared 110×70 card at the
-common 0.8 display scale and a dedicated vertical separation between the two
-sub-layers, so cards do not overlap after projection. This explicit hierarchy prevents
-a parent from being smaller than a nested cluster after
-zooming. Sibling rectangles remain separated, while parent/descendant
-intersection is intentional. Project groups carry their owning project
+calibrated with the shared 110×70 card envelope and a dedicated vertical
+separation between the two sub-layers. This explicit hierarchy prevents a
+parent from being smaller than a nested cluster after zooming. Project groups
+carry their owning project
 namespace and full namespace path. Structural project groups contain only
 their owning projects; resource nodes resolve their cluster
 from incoming producer edges before consulting resource metadata; this keeps
@@ -353,8 +363,16 @@ layer separation.
 Layer bands reserve a left graph-space gutter for their titles, so the title
 overlay cannot cover the first namespace or project cluster.
 This calculation is implemented in the embedded `layer_geometry.js` module
-and is covered by renderer geometry unit tests for ordering, containment,
-shared bounds, and sibling non-overlap.
+and is covered by renderer geometry unit tests for ordering, containment, and
+shared bounds. Browser integration tests additionally capture a PNG and JSON
+geometry snapshot after each significant browser action (load, view change,
+filter, selection, zoom, pan, and resize); the PNG pixels are inspected for
+actual rendered content in the graph region, not only the DOM. The tests also
+verify node-center visibility, fixed card dimensions, and pan/zoom
+synchronization. Snapshots are written under `output/playwright/` for visual
+inspection when a regression occurs.
+The browser launcher tries Playwright Chromium first, then Firefox and WebKit;
+an integration test is skipped only when all three engines fail to launch.
 
 ## Persistence and compatibility
 

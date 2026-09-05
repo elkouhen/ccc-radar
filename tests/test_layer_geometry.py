@@ -50,6 +50,31 @@ def test_layer_bands_share_bounds_and_reserve_title_gutter() -> None:
     assert all(band["left"] + 182 <= 300 for band in bands)
 
 
+def test_layer_bands_scale_to_a_large_architecture_without_overlaps() -> None:
+    """Exercise the layer band algorithm with a realistic large layer count."""
+    script = f"""
+const geometry = require({json.dumps(str(_MODULE))});
+const layerBounds = Array.from({{length: 1000}}, (_, index) => ({{
+  contentTop: index * 140,
+  contentBottom: index * 140 + 100,
+}}));
+const bands = geometry.computeLayerBands(layerBounds, {{
+  contentMinX: 1200,
+  contentMaxX: 5200,
+  viewportWidth: 1440,
+}});
+const overlaps = bands.slice(1).some((band, index) =>
+  geometry.rectanglesOverlap(bands[index], band)
+);
+console.log(JSON.stringify({{count: bands.length, overlaps, first: bands[0], last: bands.at(-1)}}));
+"""
+    result = _run_node(script)
+    assert result["count"] == 1000
+    assert result["overlaps"] is False
+    assert result["first"]["top"] == 0
+    assert result["last"]["top"] > result["first"]["top"]
+
+
 def test_cluster_sub_layers_place_services_above_resources() -> None:
     script = f"""
 const geometry = require({json.dumps(str(_MODULE))});
