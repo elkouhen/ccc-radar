@@ -3,5 +3,7 @@ __pycache__/
 .systemlens/
 *.db
 apm_modules/
+.playwright-cli/
+output/
 .idea/
 .mcp.json

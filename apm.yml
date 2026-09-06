@@ -16,7 +16,8 @@ targets:
 - opencode
 - windsurf
 dependencies:
-  apm: []
+  apm:
+    - openai/skills/skills/.curated/playwright
   mcp: []
 includes: auto
 scripts:

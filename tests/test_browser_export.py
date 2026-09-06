@@ -21,7 +21,7 @@ pytestmark = pytest.mark.integration
 
 
 _COMPLEX_DATASET_EXPORT = (
-    Path(__file__).parents[1] / "examples" / "plateforme-agree" / "plateforme-agreee.html"
+    Path(__file__).parents[1] / "examples" / "supermarket" / "supermarket.html"
 )
 _GRAPH_TEMPLATE = (
     Path(__file__).parents[1] / "src" / "systemlens" / "render" / "assets" / "graph.html"
@@ -123,7 +123,7 @@ def _complex_dataset_document() -> str:
     }]
     for node in data["nodes"]:
         namespace = node.get("metadata", {}).get("namespace") or "root"
-        # The historical export stores the complex fixture's namespace in
+        # The supermarket export stores each bounded context namespace in
         # metadata. Promote it to the current renderer contract so the test
         # exercises real cluster packing rather than one ROOT cluster.
         node["project_namespace_path"] = namespace
@@ -575,7 +575,7 @@ def _assert_nested_namespace_cluster_contains_three_children(page) -> None:
                 && rect.top >= outer.top && rect.bottom <= outer.bottom
             );
             return {
-                valid: rects.every(contains)
+                valid: rects.every(contains),
                 parent: [outer.left, outer.top, outer.width, outer.height],
                 children: rects.map(rect => [rect.left, rect.top, rect.width, rect.height]),
             };
