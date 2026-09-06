@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="SystemLens documentation and interactive architecture examples.">
+  <title>SystemLens — Architecture context for coding agents</title>
+  <style>
+    :root { color-scheme: dark; --ink: #e6edf7; --muted: #aab9ce; --surface: #111d33; --line: #29405f; --accent: #59b4ff; --mint: #4fe0ae; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font: 16px/1.55 Inter, ui-sans-serif, system-ui, sans-serif; color: var(--ink); background: #091426; }
+    main { max-width: 1120px; margin: auto; padding: 64px 24px; }
+    .eyebrow { color: var(--mint); font-weight: 700; letter-spacing: .08em; text-transform: uppercase; font-size: .78rem; }
+    h1 { font-size: clamp(2.5rem, 7vw, 5rem); line-height: 1; max-width: 800px; margin: 14px 0 20px; }
+    h2 { margin: 0 0 12px; font-size: 1.45rem; }
+    p { color: var(--muted); max-width: 760px; }
+    a { color: var(--accent); }
+    .actions { display: flex; flex-wrap: wrap; gap: 12px; margin: 28px 0 56px; }
+    .button { display: inline-block; padding: 10px 16px; border: 1px solid var(--accent); border-radius: 8px; text-decoration: none; font-weight: 700; }
+    .button.primary { color: #061426; background: var(--accent); }
+    .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 18px; }
+    .card { padding: 24px; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; }
+    .facts { display: flex; flex-wrap: wrap; gap: 8px; margin: 18px 0 22px; }
+    .facts span { padding: 4px 9px; border: 1px solid var(--line); border-radius: 999px; color: var(--mint); font-size: .86rem; }
+    code { padding: .12em .35em; border-radius: 4px; background: #182844; color: #cce8ff; }
+    footer { margin-top: 60px; padding-top: 22px; border-top: 1px solid var(--line); color: var(--muted); font-size: .9rem; }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="eyebrow">SystemLens</div>
+    <h1>Architecture context, kept local.</h1>
+    <p>SystemLens gives coding agents source-evidenced Java/Spring architecture context before they change a system. It indexes REST, Kafka, build modules, OpenAPI, MongoDB, and explicit architecture facts into a local SQLite snapshot.</p>
+    <div class="actions">
+      <a class="button primary" href="models/simple-supermarket.html">Open the simple model</a>
+      <a class="button" href="models/supermarket.html">Explore the supermarket model</a>
+      <a class="button" href="https://github.com/elkouhen/systemlens">View on GitHub</a>
+    </div>
+
+    <section aria-labelledby="quickstart">
+      <h2 id="quickstart">Quick start</h2>
+      <p>At the root of a Java/Spring repository, run <code>systemlens init</code>, <code>systemlens doctor</code>, and <code>systemlens index</code>. Use <code>systemlens mcp</code> for an agent workflow, or export an interactive graph with <code>systemlens export microservices --html architecture.html</code>.</p>
+    </section>
+
+    <section aria-labelledby="documentation" style="margin-top: 48px">
+      <h2 id="documentation">Project documentation</h2>
+      <div class="cards">
+        <article class="card">
+          <h2>Use and contracts</h2>
+          <p>Command-line behavior, MCP tools, rule packs, and expected error handling.</p>
+          <a href="https://github.com/elkouhen/systemlens/blob/main/docs/SPEC-FONC.md">Read the functional specification →</a>
+        </article>
+        <article class="card">
+          <h2>Architecture and design</h2>
+          <p>Storage, extraction boundaries, component structure, and accepted decisions.</p>
+          <p><a href="https://github.com/elkouhen/systemlens/blob/main/docs/SPEC-TECH.md">Technical specification</a> · <a href="https://github.com/elkouhen/systemlens/blob/main/docs/ARCHITECTURE.md">Architecture map</a> · <a href="https://github.com/elkouhen/systemlens/blob/main/docs/ADR.md">ADRs</a></p>
+        </article>
+      </div>
+    </section>
+
+    <section aria-labelledby="examples" style="margin-top: 48px">
+      <h2 id="examples">Interactive models</h2>
+      <div class="cards">
+        <article class="card">
+          <h2>Simple supermarket flow</h2>
+          <p>A compact checkout journey: catalog lookup, an order Kafka event, stock update, and one shared inventory schema.</p>
+          <div class="facts"><span>3 services</span><span>1 Kafka topic</span><span>1 schema</span><span>5 relations</span></div>
+          <a href="models/simple-supermarket.html">Open the simple model →</a>
+        </article>
+        <article class="card">
+          <h2>Supermarket platform</h2>
+          <p>A stress-sized retail architecture across customer, catalog, inventory, procurement, commerce, payment, store, delivery, marketing, and platform domains.</p>
+          <div class="facts"><span>50 services</span><span>100 Kafka topics</span><span>50 schemas</span><span>300 relations</span><span>10 clusters</span></div>
+          <a href="models/supermarket.html">Open the large model →</a>
+        </article>
+      </div>
+    </section>
+
+    <footer>Generated architecture examples use synthetic, relative evidence only. See the repository documentation for the functional and technical specifications.</footer>
+  </main>
+</body>
+</html>

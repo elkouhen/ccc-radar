@@ -1,0 +1,38 @@
+name: Generate static documentation site
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "docs/**"
+      - "examples/supermarket/**"
+      - "scripts/generate_supermarket_demo.py"
+      - "src/systemlens/render/**"
+      - "pyproject.toml"
+      - "uv.lock"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-static-site:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync --group dev --frozen
+      - run: uv run python scripts/generate_supermarket_demo.py
+      - run: >-
+          uv run systemlens export microservices
+          --graph examples/supermarket/architecture.simple-supermarket.json
+          --html docs/models/simple-supermarket.html
+      - run: >-
+          uv run systemlens export microservices
+          --graph examples/supermarket/architecture.supermarket.pass-001.json
+          --html docs/models/supermarket.html
+      - uses: actions/upload-artifact@v4
+        with:
+          name: static-documentation-site
+          path: docs

@@ -144,6 +144,7 @@ to enrich graphs with SQL, Redis, RabbitMQ, SQS or other middleware facts.
 
 ## Documentation
 
+- [Project documentation site](docs/index.html) — GitHub Pages entry point and interactive examples.
 - [Functional specification](docs/SPEC-FONC.md) — CLI and MCP contracts.
 - [Technical specification](docs/SPEC-TECH.md) — extraction and storage design.
 - [REST detection coverage](docs/REST_DETECTION.md).
