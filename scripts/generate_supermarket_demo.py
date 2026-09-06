@@ -13,7 +13,6 @@ from pathlib import Path
 
 DEMO_ROOT = Path(__file__).parents[1] / "examples" / "supermarket"
 MANIFEST_PATH = DEMO_ROOT / "architecture.supermarket.pass-001.json"
-SIMPLE_MANIFEST_PATH = DEMO_ROOT / "architecture.simple-supermarket.json"
 
 # Each bounded context is a rendering cluster and contains five services.
 DOMAINS = {
@@ -129,71 +128,9 @@ def generate() -> dict[str, object]:
     }
 
 
-def generate_simple() -> dict[str, object]:
-    """Return a small, readable supermarket flow for the documentation site."""
-    services = (
-        ("product-catalog", "catalog", "application"),
-        ("checkout", "commerce", "api"),
-        ("stock-availability", "inventory", "domain"),
-    )
-    nodes: list[dict[str, object]] = [
-        {
-            "id": f"service-{name}", "kind": "service", "name": name,
-            "status": "confirmed", "confidence": "high",
-            "metadata": metadata(domain, layer),
-            "evidence": evidence(domain, name, "service"),
-        }
-        for name, domain, layer in services
-    ]
-    nodes.extend((
-        {
-            "id": "topic-order-placed", "kind": "message_channel",
-            "name": "supermarket.commerce.order-placed.v1", "technology": "Kafka",
-            "status": "confirmed", "confidence": "high",
-            "metadata": metadata("commerce", "application"),
-            "evidence": evidence("commerce", "order-placed", "topic"),
-        },
-        {
-            "id": "schema-stock", "kind": "data_schema", "name": "inventory-stock-schema",
-            "status": "confirmed", "confidence": "high",
-            "metadata": metadata("inventory", "persistence"),
-            "evidence": evidence("inventory", "stock", "schema"),
-        },
-    ))
-    edges = [
-        ("calls", "service-checkout", "service-product-catalog", "GET /products/{sku}"),
-        ("publishes", "service-checkout", "topic-order-placed", "supermarket.commerce.order-placed.v1"),
-        ("consumes", "topic-order-placed", "service-stock-availability", "supermarket.commerce.order-placed.v1"),
-        ("writes", "service-stock-availability", "schema-stock", "inventory-stock-schema"),
-        ("reads", "service-product-catalog", "schema-stock", "inventory-stock-schema"),
-    ]
-    return {
-        "format": "systemlens-ai-graph-v1", "project": "simple-supermarket-demo",
-        "generated_by": {
-            "agent": "systemlens-demo-generator", "model": "synthetic-fixture",
-            "source_revision": "demo-2026-09-06", "pass": "simple-supermarket-001",
-            "namespace": "supermarket-demo",
-        },
-        "mode": "complete", "nodes": nodes,
-        "edges": [
-            {
-                "id": f"edge-{index:03d}", "kind": relation, "relation": relation,
-                "source": source, "target": target, "channel": channel,
-                "status": "confirmed", "confidence": "high",
-                "metadata": metadata("commerce", "application"),
-                "evidence": evidence("commerce", channel, relation),
-            }
-            for index, (relation, source, target, channel) in enumerate(edges, start=1)
-        ],
-    }
-
-
 def main() -> None:
     DEMO_ROOT.mkdir(parents=True, exist_ok=True)
     MANIFEST_PATH.write_text(json.dumps(generate(), ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    SIMPLE_MANIFEST_PATH.write_text(
-        json.dumps(generate_simple(), ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
-    )
 
 
 if __name__ == "__main__":
